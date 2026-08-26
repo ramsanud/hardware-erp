@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Layers, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Card } from '@/shared/components/ui/card';
@@ -12,6 +13,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
 import { PageHeader } from '@/shared/components/PageHeader';
+import { PRODUCT_ROUTES } from '../constants';
+import { SearchInput } from '@/shared/components/SearchInput';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog';
@@ -39,7 +42,20 @@ export function CategoryListPage() {
   const [deleting, setDeleting] = useState<CategoryResponse | null>(null);
 
   const { data, loading, error, reload } = useAsyncList(fetchAllAsPage, []);
-  const categories = data?.content ?? [];
+  const allCategories = data?.content ?? [];
+
+  // Client-side filter: the category list is a shop's own vocabulary, tens
+  // of rows not thousands, so it is already fully loaded here. A server
+  // round-trip per keystroke would be slower and no more correct.
+  const [filter, setFilter] = useState('');
+  const categories = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return allCategories;
+    return allCategories.filter((c) =>
+      c.categoryName.toLowerCase().includes(needle)
+      || c.categoryCode.toLowerCase().includes(needle)
+      || (c.parentCategoryName ?? "").toLowerCase().includes(needle));
+  }, [allCategories, filter]);
 
   const handleCreate = async (values: CategoryValues) => {
     await categoryService.create({
@@ -82,7 +98,7 @@ export function CategoryListPage() {
 
   // A category cannot be its own parent, directly or through a descendant.
   const parentOptionsFor = (self?: CategoryResponse) =>
-    categories.filter((c) => c.id !== self?.id);
+    allCategories.filter((c) => c.id !== self?.id);
 
   return (
     <>
@@ -95,6 +111,11 @@ export function CategoryListPage() {
           </PermissionGate>
         }
       />
+
+      <div className="mb-4">
+        <SearchInput value={filter} onChange={setFilter}
+                     placeholder="Search categories by name or code..." />
+      </div>
 
       <Card>
         {error ? (
@@ -125,7 +146,15 @@ export function CategoryListPage() {
                     </span>
                   </TableCell>
                   <TableCell className="hidden sm:table-cell">{row.parentCategoryName ?? '—'}</TableCell>
-                  <TableCell className="tabular hidden md:table-cell">{row.productCount}</TableCell>
+                  <TableCell className="tabular hidden md:table-cell">
+                    {row.productCount > 0 ? (
+                      <Link to={`${PRODUCT_ROUTES.list}?categoryId=${row.id}`}
+                            className="text-primary underline-offset-4 hover:underline"
+                            aria-label={`View ${row.productCount} products in ${row.categoryName}`}>
+                        {row.productCount}
+                      </Link>
+                    ) : row.productCount}
+                  </TableCell>
                   <TableCell><CategoryStatusBadge status={row.status} /></TableCell>
                   <TableCell>
                     <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>

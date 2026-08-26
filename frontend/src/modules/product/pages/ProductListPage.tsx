@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ImageIcon, MoreHorizontal, Package, Pencil, Plus, Trash2, Upload,
 } from 'lucide-react';
@@ -72,10 +72,15 @@ export function ProductListPage() {
   // Edit is only offered when both permissions are held.
   const canEdit = hasPermission(PERMISSIONS.PRODUCT_MANAGE) && hasPermission(PERMISSIONS.PRODUCT_VIEW_COST);
 
+  // Category and Brand drill through to here with ?categoryId= / ?brandId=,
+  // so "12 products" on those pages lands on this list already filtered
+  // rather than making the user re-pick the filter they just clicked.
+  const [searchParams] = useSearchParams();
+
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>(ALL);
-  const [categoryId, setCategoryId] = useState<string>(ALL);
-  const [brandId, setBrandId] = useState<string>(ALL);
+  const [categoryId, setCategoryId] = useState<string>(searchParams.get('categoryId') ?? ALL);
+  const [brandId, setBrandId] = useState<string>(searchParams.get('brandId') ?? ALL);
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
 

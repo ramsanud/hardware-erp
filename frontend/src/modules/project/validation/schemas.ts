@@ -1,17 +1,57 @@
 import { z } from 'zod';
 
+/**
+ * `<input type="date">` always hands back ISO yyyy-MM-dd, so anything that is
+ * neither empty nor ISO came from a paste or a hand-typed value and must be
+ * rejected before it reaches the backend's LocalDate parser as a 400.
+ */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const optionalIsoDate = (label: string) =>
+  z.string().trim()
+    .refine((value) => value === '' || ISO_DATE.test(value), `${label} must be a valid date`)
+    .refine(
+      (value) => value === '' || !Number.isNaN(new Date(`${value}T00:00:00`).getTime()),
+      `${label} is not a real date`,
+    )
+    .optional()
+    .or(z.literal(''));
+
 export const projectSchema = z.object({
   projectName: z.string().trim().min(1, 'Project name is required').max(200),
   customerId: z.number({ message: 'Select a customer' }).int().positive('Select a customer'),
   workTypeId: z.number({ message: 'Select a work type' }).int().positive('Select a work type'),
   description: z.string().trim().max(2000).optional().or(z.literal('')),
   siteAddress: z.string().trim().max(500).optional().or(z.literal('')),
-  startDate: z.string().trim().optional().or(z.literal('')),
-  expectedCompletionDate: z.string().trim().optional().or(z.literal('')),
-  customerDeadline: z.string().trim().optional().or(z.literal('')),
+  startDate: optionalIsoDate('Start date'),
+  expectedCompletionDate: optionalIsoDate('Expected completion'),
+  customerDeadline: optionalIsoDate('Customer deadline'),
   projectValueRupees: z.number({ message: 'Enter the project value' }).min(0, 'Cannot be negative'),
   notes: z.string().trim().max(2000).optional().or(z.literal('')),
-});
+})
+  // Cross-field date ordering. Each check is reported on the LATER field,
+  // because that is the one the user most recently chose and the one they
+  // will look at first. All three dates are optional, so every comparison
+  // only fires when both of its operands are actually present.
+  .superRefine((values, ctx) => {
+    const { startDate, expectedCompletionDate, customerDeadline } = values;
+
+    if (startDate && expectedCompletionDate && expectedCompletionDate < startDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expectedCompletionDate'],
+        message: 'Expected completion cannot be before the start date',
+      });
+    }
+
+    if (startDate && customerDeadline && customerDeadline < startDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customerDeadline'],
+        message: 'Customer deadline cannot be before the start date',
+      });
+    }
+  });
 export type ProjectValues = z.infer<typeof projectSchema>;
 
 export const workTypeSchema = z.object({

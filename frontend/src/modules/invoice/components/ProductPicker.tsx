@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
 import { Input } from '@/shared/components/ui/input';
 import { Button } from '@/shared/components/ui/button';
@@ -52,12 +52,26 @@ export function ProductPicker({ onPick, excludeIds }: ProductPickerProps) {
     }
     setLoading(true);
     const timer = setTimeout(() => {
-      productService.search({ search: term, status: 'ACTIVE', size: 8 })
+      // 8 was too small once a few lines were on the invoice: already-added
+      // products still occupied those 8 slots but render disabled, so a broad
+      // search came back as a list of greyed-out rows and read as "nothing
+      // more can be added" (BUG-FE-014). Fetch a wider window and order the
+      // addable ones first, so there is always something clickable on screen.
+      productService.search({ search: term, status: 'ACTIVE', size: 25 })
         .then((page) => setResults(page.content))
         .finally(() => setLoading(false));
     }, 250);
     return () => clearTimeout(timer);
   }, [query]);
+
+  // Addable first, already-added last. Both stay visible - hiding a product
+  // the user just added would read as it vanishing from the catalogue - but
+  // the clickable ones are never pushed below the fold by disabled rows.
+  const orderedResults = useMemo(() => {
+    const addable = results.filter((product) => !excludeIds.includes(product.id));
+    const added = results.filter((product) => excludeIds.includes(product.id));
+    return [...addable, ...added];
+  }, [results, excludeIds]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -130,7 +144,7 @@ export function ProductPicker({ onPick, excludeIds }: ProductPickerProps) {
                 ) : null}
               </div>
             ) : (
-              results.map((product) => {
+              orderedResults.map((product) => {
                 const alreadyAdded = excludeIds.includes(product.id);
                 return (
                   <button
