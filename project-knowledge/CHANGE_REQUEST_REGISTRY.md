@@ -39,6 +39,7 @@ Nothing is implemented from conversation memory.
 | CR-039 | 2026-08-26 | User | (1) **Amend a document instead of rebuilding it.** Quotations are editable while DRAFT or SENT (not ACCEPTED - those figures are agreed - nor CONVERTED, REJECTED, EXPIRED). Invoices are editable only while UNPAID with zero payment rows: number and date are preserved, and stock is applied as a per-product **delta** rather than a full reverse-and-reapply, so unchanged lines write no movement and cannot spuriously trip the stock guard. Refused with INVOICE_ALREADY_PAID once any payment exists - a GST tax invoice the customer has settled against is amended by credit/debit note, not silently. Both wizards reused via router state so create and edit cannot drift. On edit the Payment step explains itself rather than offering fields (PUT takes no initial payment) and Coupon is hidden (usage is counted at creation). (2) **Terms & Conditions gate on shop registration** - unticked checkbox, Terms and Privacy in dialogs so a half-filled form survives reading them, zod literal(true) as the real gate with the disabled button as its visible half. **Frontend only: the registration API has no field for consent and was NOT modified.** See the note below on persisting acceptance for audit. | **APPROVED 2026-08-26 — applied and live-verified (30/30 scenario audit); consent persistence deliberately not implemented, pending your decision** |
 | CR-038 | 2026-08-26 | User | Login hardening, first slice of a larger export/import + security request. (1) **Cloudflare Turnstile** on sign-in: server-side token verification before authentication, a public /v1/auth/captcha-config so the login page knows whether to render the widget, and a Turnstile component that loads its script on demand so an install without CAPTCHA makes no third-party request at all. Off by default, and treated as off whenever either key is blank - a missing key must never lock users out of a working system. Fail-safe contract verified end to end against Cloudflare's published always-pass and always-fail test keys, including that correct credentials with a rejected token still do NOT sign in. (2) **BUG-ENV-003**: /actuator/health returned 503 on a fully healthy app because Boot folds the SMTP indicator into the aggregate status - which would have restart-looped the documented Render deploy. Mail indicator disabled; POST /v1/settings/mail/test added so mail failures stay discoverable, returning the mail server's own rejection text. **Email OTP deliberately NOT built this round**: the SMTP credentials are currently rejected by Gmail, and shipping OTP on unproven email locks every user out of their own account. It is next, once a test email is confirmed to arrive. Export/import for all entities also still outstanding. | **APPROVED 2026-08-26 — CAPTCHA + health fix applied and live-verified; Email OTP and export/import not started** |
 | CR-041 | 2026-08-26 | User | **Per-tenant document number allocator, replacing MAX+1 in ten call sites.** Every generated code — `INV-`, `QUO-`, `PUR-`, `CUS-`, `SUP-`, `PRD-`, `CAT-`, `BRD-`, `PRJ-` — was allocated as `findHighestGeneratedCodeNumber(tenantId) + 1`: a read, then a write, with no lock. Two concurrent counter staff read the same MAX and both attempted the same number; the `UNIQUE (tenant_id, <code>)` constraint on every one of those tables caught it, so **no duplicate was ever stored**, but the losing request died on a constraint violation and its document was lost. New `document_sequence` table (V29) holds one row per tenant per document type, allocated under `SELECT … FOR UPDATE`. Allocation joins the caller's transaction (`Propagation.MANDATORY`) rather than `REQUIRES_NEW`, so a rolled-back invoice does not burn a number — GST requires an unbroken consecutive serial. Lock ordering is sequence-first everywhere, which keeps it deadlock-free. Prerequisite for CR-043 (offline sync), where replaying a queued batch would have hit this constantly. | **APPROVED 2026-08-26 — applied, 6/6 regression tests green against real PostgreSQL** |
+| CR-045 | 2026-08-26 | User | **Version 1 Git and environment foundation.** Repository placed under version control (it had no commits). Branch strategy main / develop / feature|bugfix|hotfix, with runtime environments expressed as Spring profiles rather than branches. Two new profiles: `local` (one developer's machine) and `test` (the QA deployment). Production hardened: springdoc api-docs and swagger-ui disabled, actuator limited to health, whitelabel error page off. **Developer inspection** added at `/v1/dev/inspection/*` behind two independent server-side gates - the environment (`app.developer-inspection.enabled`, hard false in prod plus a code-level prod override) AND the new `DEVELOPER_INSPECT` permission, which **no default role holds, OWNER included** - so "admin" never means "developer". Deliberately NOT implemented: any attempt to block F12/right-click/DevTools, which is theatre rather than security. Production source maps off and asserted by CI. GitHub Actions CI added (backend verify, frontend typecheck+build+source-map assertion, secret scan). Two pre-existing test failures found and fixed along the way: BUG-AUTH-014 and BUG-SEC-003. | **APPROVED 2026-08-26 — applied, full suite green** |
 ---
 
 ## CR-003 — Module 1 audit corrections (APPROVED, re-baselined under CR-010)
@@ -1003,3 +1004,114 @@ moves to Testcontainers 2.x.
 New table `document_sequence`. New enum `DocumentType`. No renames — every
 existing code keeps its exact prefix and width, and the V29 backfill
 continues each tenant's existing run rather than restarting it.
+
+---
+
+## CR-045 — Version 1 Git and environment foundation (APPROVED 2026-08-26)
+
+The repository had **no commits at all**. Everything below was built on a
+working tree that had never been under version control.
+
+### Branches are workflow; profiles are environments
+
+```
+main                    production-ready, tagged releases
+  └── develop           integration
+        ├── feature/*
+        ├── bugfix/*
+        └── hotfix/*    branched from main, merged back into main AND develop
+```
+
+No `production`, `development` or `testing` branch. A branch named after an
+environment invites merging *to deploy*, which is how a repository acquires
+three diverging mainlines. Where the software runs is a Spring profile:
+`local`, `dev`, `test`, `prod`.
+
+`application-local.yml` and `application-test.yml` are new. The QA `test`
+profile is treated as production for data handling (schema-only Flyway, no
+seed accounts) and as development for diagnostics (DEBUG application logging),
+because QA needs to see why something failed but a QA box's configuration
+resembles production's closely enough to be worth protecting.
+
+`src/test/resources/application-test.yml` shadows the deployable one during
+`mvn test` — `target/test-classes` precedes `target/classes` on the classpath.
+Keeping both named `test` is deliberate; only one is ever loaded.
+
+### Developer inspection: environment AND person, never role alone
+
+The requirement was "developers can inspect in non-production; normal users
+never can, and an admin is not automatically a developer".
+
+Two independent gates, both server-side, both required:
+
+| Gate | Mechanism | Where enforced |
+|---|---|---|
+| Environment | `app.developer-inspection.enabled` | `SecurityConfig` denies the whole `/v1/dev` and `/v1/debug` trees when false; `DeveloperInspectionService` re-checks |
+| Person | `DEVELOPER_INSPECT` permission (V30) | `@PreAuthorize` per endpoint |
+
+Production is closed twice over: `application-prod.yml` sets a literal `false`
+with no `${...}` behind it, so no environment variable can open it, and
+`DeveloperInspectionService.environmentAllows()` returns false whenever the
+`prod` profile is active regardless of configuration. The second lock exists so
+that a later edit to the first cannot quietly re-open it — the same stance
+`JwtSecretGuard` already takes on the placeholder signing key.
+
+**The OWNER exclusion needed two changes, not one.** Roles acquire grants two
+different ways, and both had to be closed:
+
+1. `V30__developer_inspection_permission.sql` deliberately omits the OWNER
+   grant that every other module migration ends with.
+2. `TenantRegistrationServiceImpl` assigns OWNER from the *live* permission
+   table so future codes are picked up automatically — exactly the behaviour
+   that would have leaked this one. It now filters out the `DEVELOPER` module.
+
+Without the second, every shop registered after this migration would have had a
+diagnostics console on the owner account. `DeveloperInspectionAccessIT` asserts
+no seeded role holds it and that the owner — who holds every ERP permission —
+still receives 403.
+
+Endpoints: `status` (both gates reported separately, so a developer can tell
+"wrong environment" from "permission not granted"), `runtime` (a fixed list of
+named fields, never a system-property or environment dump), and `request-echo`
+(credential-bearing headers removed, not masked). Diagnostics answer **404, not
+403**, where inspection is off: a 403 confirms the route exists.
+
+Actuator beyond `/actuator/health` now requires `DEVELOPER_INSPECT`. `env`,
+`configprops` and `beans` would otherwise print the datasource password and the
+JWT signing key to any authenticated user. `/actuator/health` stays public
+because the hosting platform uses it as a liveness probe.
+
+### Explicitly rejected: DevTools blocking
+
+No F12 interception, no right-click blocking, no Ctrl+Shift+I handler, no
+DevTools detection loop, no console clearing. All of it is trivially bypassed,
+none of it protects anything, and it makes the application feel broken to the
+honest majority. Production safety comes from authentication, authorization,
+server-side access control, sanitized errors and the source-map policy.
+
+### Secrets
+
+`application.yml` shipped a real developer database login as the default for
+`spring.datasource.username` / `password`, and pointed at a database name and
+port the running container had not used since 2026-08-23. Replaced with the
+throwaway docker-compose values **before the first commit**, so it never
+entered history. `.gitignore` extended to keys, certificates, TypeScript build
+info and JVM crash dumps.
+
+### Two pre-existing failures found by running the suite end to end
+
+Both reproduced identically at the baseline commit; neither was caused by this
+change. Recorded as **BUG-AUTH-014** (refresh-token reuse detection had no
+working test since BUG-AUTH-009) and **BUG-SEC-003** (`RateLimitFilter` keyed on
+`getServletPath()`, which MockMvc leaves empty, so rate limiting — the
+brute-force control — had never been exercised by any test).
+
+Both were coverage holes rather than production holes, which is precisely why
+they had survived: a red test that has been red for a while stops being read as
+a signal. CI is the answer, and it is part of this change.
+
+### Effect on the naming registry
+
+New permission code `DEVELOPER_INSPECT`, new `permission.module_code` value
+`DEVELOPER`. New package `com.hardware.erp.developer`. New helper
+`SecurityUtils.requestPath`. No renames.
