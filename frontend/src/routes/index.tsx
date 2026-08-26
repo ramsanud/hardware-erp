@@ -58,6 +58,8 @@ import { WorkerListPage } from '@/modules/labour/pages/WorkerListPage';
 import { WorkerDetailPage } from '@/modules/labour/pages/WorkerDetailPage';
 import { AttendancePage } from '@/modules/labour/pages/AttendancePage';
 import { RegisterPage } from '@/modules/tenant/pages/RegisterPage';
+import { DEVELOPER_ROUTES } from '@/modules/developer/constants';
+import { DeveloperInspectionPage } from '@/modules/developer/pages/DeveloperInspectionPage';
 import { NotFoundPage } from '@/shared/components/NotFoundPage';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RequirePermission } from './RequirePermission';
@@ -181,6 +183,13 @@ export function AppRoutes() {
 
           <Route element={<RequirePermission permission={PERMISSIONS.SETTINGS_VIEW} />}>
             <Route path={SETTINGS_ROUTES.shop} element={<ShopSettingsPage />} />
+          </Route>
+
+          {/* Developer inspection (CR-045). This gate is convenience only:
+              the endpoints behind the page refuse anyone without
+              DEVELOPER_INSPECT, and refuse everyone in production. */}
+          <Route element={<RequirePermission permission={PERMISSIONS.DEVELOPER_INSPECT} />}>
+            <Route path={DEVELOPER_ROUTES.inspection} element={<DeveloperInspectionPage />} />
           </Route>
 
           {/* Every role can reach the dashboard - it only renders the cards
