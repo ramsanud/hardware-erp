@@ -167,6 +167,18 @@ app:
     # 0 = never delete audit records. Set deliberately or not at all.
     audit-retention-days: 0
 
+  # Developer inspection (CR-045). Two independent gates, both required:
+  #   1. this flag, which is an ENVIRONMENT decision - false here so any
+  #      profile that does not deliberately opt in has it off, and hard
+  #      false in application-prod.yml with no env-var override;
+  #   2. the DEVELOPER_INSPECT permission, which is a PERSON decision and
+  #      which no default role holds - not even OWNER, because
+  #      administering a shop is not the same job as debugging the software.
+  # Enforced server-side in SecurityConfig and DeveloperInspectionService.
+  # The React page only decides whether to render a menu entry.
+  developer-inspection:
+    enabled: ${APP_DEVELOPER_INSPECTION_ENABLED:false}
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html

@@ -1,0 +1,65 @@
+# ---------------------------------------------------------------------
+# TEST / QA - the deployed environment QA signs into with real browsers.
+#
+# IMPORTANT: this file is NOT the automated test-suite configuration. That is
+# backend/src/test/resources/application-test.yml, which shadows this one -
+# target/test-classes precedes target/classes on the classpath, so `mvn test`
+# resolves classpath:/application-test.yml to the test-resources copy and
+# never sees this file. A packaged jar contains only this one. Keeping both
+# named 'test' is deliberate: the automated suite and the QA deployment are
+# the same environment conceptually, and only one is ever loaded at a time.
+#
+# Treated as production for data handling and as development for
+# diagnostics: QA needs to see why something failed, but a QA box holds
+# real-looking customer records often enough that leaking its environment
+# configuration is still a leak.
+# ---------------------------------------------------------------------
+spring:
+  flyway:
+    # Schema only. db/seed is deliberately absent - CR-009's reasoning applies
+    # to any environment a human signs into. QA fixtures are loaded by the QA
+    # process, not by Flyway.
+    locations: classpath:db/migration
+    clean-disabled: true
+  jpa:
+    show-sql: false
+
+server:
+  forward-headers-strategy: native
+
+app:
+  security:
+    cookie-secure: ${COOKIE_SECURE:true}
+  bootstrap:
+    enabled: ${APP_BOOTSTRAP_ENABLED:false}
+  mail:
+    log-links-when-unconfigured: true
+  rate-limit:
+    # On, but loose enough that a QA pass through the sign-in screens is not
+    # mistaken for credential stuffing.
+    enabled: true
+    login-per-ip-per-minute: 60
+    login-per-identifier-per-minute: 30
+  developer-inspection:
+    # QA may hold DEVELOPER_INSPECT to diagnose a failing run. Both halves of
+    # the gate still apply - see CR-045.
+    enabled: ${APP_DEVELOPER_INSPECTION_ENABLED:true}
+
+# Deliberately narrower than local/dev: env, configprops and beans would
+# disclose the QA box's own configuration, which is close enough to
+# production's to be worth protecting. All but health require
+# DEVELOPER_INSPECT - see SecurityConfig.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,loggers
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    root: INFO
+    com.hardware.erp: DEBUG
+    org.springframework.security: INFO

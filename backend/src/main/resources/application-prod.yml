@@ -15,6 +15,27 @@ spring:
 
 server:
   forward-headers-strategy: native
+  error:
+    # Already the default in application.yml; repeated here because these
+    # three are the difference between a sanitized error body and one that
+    # names internal classes and file paths, and a profile file is where a
+    # reader looks to confirm what production actually does.
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+    include-exception: false
+    whitelabel:
+      enabled: false
+
+# The interactive API browser and the machine-readable schema both describe
+# every endpoint, parameter and DTO this application has. That is a map for
+# an attacker and of no use to a shop owner, so production serves neither -
+# SecurityConfig's permitAll on those paths then matches nothing (CR-045).
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
 
 app:
   security:
@@ -24,6 +45,30 @@ app:
     log-links-when-unconfigured: false
   rate-limit:
     enabled: true
+  developer-inspection:
+    # Hard false, with no ${...} placeholder, so there is no environment
+    # variable that turns developer diagnostics on in production. Belt and
+    # braces: DeveloperInspectionService also forces this off whenever the
+    # 'prod' profile is active, so a future edit to this line cannot quietly
+    # re-enable it either (CR-045).
+    enabled: false
+
+# health only, and without details. /actuator/health is the hosting
+# platform's liveness probe and is the single actuator path SecurityConfig
+# leaves public; env, beans, mappings, configprops, loggers, heapdump and
+# threaddump are all off because each one discloses configuration or memory
+# contents that production has no reason to publish.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+  info:
+    env:
+      enabled: false
 
 logging:
   level:

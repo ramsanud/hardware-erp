@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------
+# LOCAL - one developer's own machine, against the docker-compose database.
+#
+# Distinct from 'dev', which is the shared development server. Everything a
+# developer wants turned up loud lives here; nothing here is ever deployed.
+#
+#   docker compose up -d
+#   cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=local
+# ---------------------------------------------------------------------
+spring:
+  flyway:
+    # Schema AND seed data, same as dev - see application-dev.yml for why
+    # out-of-order is safe here and never used in production.
+    locations: classpath:db/migration,classpath:db/seed
+    out-of-order: true
+  jpa:
+    # The one profile where seeing the generated SQL is worth the noise.
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+app:
+  security:
+    # Local runs over plain http, so a Secure cookie would never be sent.
+    cookie-secure: false
+  bootstrap:
+    # Not needed: V900 seeds an owner account.
+    enabled: false
+  mail:
+    # Prints the password-reset link to the console when SMTP is unconfigured.
+    log-links-when-unconfigured: true
+  rate-limit:
+    # Relaxed so manual Swagger/Postman testing is not throttled.
+    login-per-ip-per-minute: 200
+    login-per-identifier-per-minute: 100
+    forgot-password-per-ip-per-hour: 100
+    forgot-password-per-identifier-per-hour: 100
+  developer-inspection:
+    # Environment half of the developer-inspection gate (CR-045). The other
+    # half is the DEVELOPER_INSPECT permission, which no default role holds -
+    # turning this on does not by itself give anyone access.
+    enabled: true
+
+# Everything an actuator endpoint can tell you is useful on a laptop. They are
+# still not public: SecurityConfig requires DEVELOPER_INSPECT for every
+# actuator path except /actuator/health.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env,loggers,mappings,beans,configprops
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.hardware.erp: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
