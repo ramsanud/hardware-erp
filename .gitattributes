@@ -1,0 +1,25 @@
+# Normalize line endings in the repository. The team works on Windows; without
+# this every file committed from a Git Bash / WSL shell shows as fully changed
+# against one committed from PowerShell.
+* text=auto eol=lf
+
+# Windows-only helpers keep CRLF in the working tree.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binary - never diff or convert.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.jar  binary
+*.xlsx binary
+
+# Generated - collapse in pull request diffs.
+frontend/package-lock.json linguist-generated=true -diff

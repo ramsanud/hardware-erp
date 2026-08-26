@@ -1,0 +1,300 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Soft off-white, not pure white - matches surface-0 below. Pure white
+       next to near-black text is the single biggest cause of "light mode
+       hurts my eyes" reports; this is the standard fix. */
+    --background: 210 20% 98%;
+    --foreground: 222 40% 16%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    /* Deep slate-blue: reads as enterprise software, not a consumer app. */
+    --primary: 217 91% 35%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 142 71% 32%;
+    --success-foreground: 210 40% 98%;
+    --warning: 32 95% 44%;
+    --warning-foreground: 210 40% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 217 91% 35%;
+    --radius: 0.5rem;
+
+    /* Elevation. surface-0 is the page canvas, 1 and 2 step above it. */
+    --surface-0: 210 20% 98%;
+    --surface-1: 0 0% 100%;
+    --surface-2: 0 0% 100%;
+
+    /*
+     * The sidebar is deep navy in BOTH themes. This is the single choice that
+     * separates a premium SaaS shell from a Bootstrap admin template: the
+     * navigation reads as chrome rather than as content, so the working area
+     * stays the brightest thing on screen.
+     */
+    --sidebar: 222 47% 11%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-muted: 215 20% 62%;
+    --sidebar-section: 215 16% 47%;
+    --sidebar-active: 217 91% 60%;
+    --sidebar-active-bg: 217 60% 20%;
+    --sidebar-border: 217 33% 18%;
+    --sidebar-hover: 217 33% 16%;
+
+    /* Chart ramp. Categorical, not a rainbow - each keeps its meaning. */
+    --chart-1: 217 91% 55%;
+    --chart-2: 142 66% 42%;
+    --chart-3: 262 70% 60%;
+    --chart-4: 32 90% 52%;
+    --chart-5: 215 16% 60%;
+
+    /*
+     * CR-034: generic surface/control tokens, written by DesignStyleProvider
+     * (theme/DesignStyleProvider.tsx) - these defaults are the Minimal style
+     * at "standard" elevation, so a page still looks correct even before
+     * the provider's effect has run on first paint. Never hardcode a
+     * shadow/blur/opacity value into a component - read these instead, so
+     * a new design style is a token change, not a component rewrite.
+     */
+    --surface-bg-opacity: 1;
+    --surface-blur: 0px;
+    --surface-border-opacity: 1;
+    --surface-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+    --control-shadow: none;
+    --control-inset-shadow: none;
+    --motion-duration: 150ms;
+  }
+
+  .dark {
+    --background: 222 47% 9%;
+    --foreground: 210 40% 96%;
+    --card: 222 44% 12%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 44% 12%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 217 33% 18%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 33% 18%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 18%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 0 63% 50%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 142 60% 45%;
+    --success-foreground: 222 47% 11%;
+    --warning: 32 90% 55%;
+    --warning-foreground: 222 47% 11%;
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 217 91% 60%;
+
+    --surface-0: 222 47% 9%;
+    --surface-1: 222 44% 12%;
+    --surface-2: 222 40% 15%;
+
+    /* Slightly deeper than the page, so the rail still reads as chrome. */
+    --sidebar: 222 47% 7%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-muted: 215 20% 60%;
+    --sidebar-section: 215 16% 45%;
+    --sidebar-active: 217 91% 65%;
+    --sidebar-active-bg: 217 60% 18%;
+    --sidebar-border: 217 33% 14%;
+    --sidebar-hover: 217 33% 13%;
+
+    --chart-1: 217 91% 62%;
+    --chart-2: 142 60% 50%;
+    --chart-3: 262 70% 68%;
+    --chart-4: 32 90% 58%;
+    --chart-5: 215 20% 65%;
+  }
+
+  * { @apply border-border; }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+    /* Respects the notch on phones without assuming a fixed viewport. */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* A thin, themed scrollbar everywhere - the bare OS default reads as
+     unfinished next to a designed interface. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+    background-clip: content-box;
+  }
+
+  /* Tabular figures keep numeric table columns aligned across rows. */
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* Money and large dashboard numbers. Tighter tracking reads as deliberate. */
+  .figure {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    font-weight: 500;
+  }
+}
+
+@layer components {
+  /* CR-034: the shared "surface" treatment - Card, DialogContent, DropdownMenuContent all use this instead of a flat bg-card/shadow-sm, so the active design style (theme/designStyles.ts) reaches every one of them for free. */
+  .surface-panel {
+    background-color: hsl(var(--card) / var(--surface-bg-opacity));
+    -webkit-backdrop-filter: blur(var(--surface-blur));
+    backdrop-filter: blur(var(--surface-blur));
+    box-shadow: var(--surface-shadow);
+    border-color: hsl(var(--border) / var(--surface-border-opacity));
+    transition: box-shadow var(--motion-duration) ease, background-color var(--motion-duration) ease;
+  }
+  /*
+   * Sticky header/footer bar inside a scrolling DialogContent. Derived from
+   * the same --card token as .surface-panel rather than a hardcoded bg-card,
+   * so the design style still reaches it (CR-034's whole point). Opacity is
+   * boosted towards solid - a bar at the panel's own 0.55 glass opacity lets
+   * the scrolling content read straight through it - and the blur keeps the
+   * glass styles from looking like a flat band was pasted on top.
+   */
+  .surface-sticky-bar {
+    background-color: hsl(var(--card) / calc(var(--surface-bg-opacity) * 0.55 + 0.45));
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  /* The same idea for Button/Input - most styles leave this at "none" (a plain flat control reads better inside a glass/liquid-glass card than a second competing effect), Neomorphism/Claymorphism/Liquid-Glass are the ones that actually set it. */
+  .control-surface {
+    box-shadow: var(--control-shadow);
+    transition: box-shadow var(--motion-duration) ease, transform var(--motion-duration) ease;
+  }
+  .control-surface-inset {
+    box-shadow: var(--control-inset-shadow);
+  }
+
+  .sidebar-link {
+    @apply flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors;
+    color: hsl(var(--sidebar-muted));
+  }
+  .sidebar-link:hover {
+    background: hsl(var(--sidebar-hover));
+    color: hsl(var(--sidebar-foreground));
+  }
+  .sidebar-link[data-active='true'] {
+    background: hsl(var(--sidebar-active-bg));
+    color: hsl(var(--sidebar-active));
+    font-weight: 500;
+  }
+  .sidebar-section {
+    @apply px-3 pb-1 pt-4 text-[11px] font-medium uppercase tracking-wider;
+    color: hsl(var(--sidebar-section));
+  }
+  /*
+   * Below the lg breakpoint the sidebar is a touch drawer, not a pointer
+   * rail: py-2 gives a ~36px row, under the 44px minimum a finger needs.
+   * Scoped to the drawer's own range so the desktop rail keeps its density.
+   */
+  @media (max-width: 1023px) {
+    .sidebar-link {
+      @apply py-2.5;
+      min-height: 2.75rem;
+    }
+    .sidebar-section {
+      @apply pb-1.5 pt-5;
+    }
+  }
+
+  /*
+   * CR-034 §21: Bento layout for the dashboard KPI row only - large
+   * "hero" cell for the primary figure, two narrower cells beside it, one
+   * full-width cell beneath. Applied via a `data-bento` attribute on the
+   * grid wrapper (DashboardPage.tsx) rather than gating on the design
+   * style directly in the component, so the CSS stays the single source
+   * of truth for what "Bento" means layout-wise. Collapses to a plain
+   * single column on mobile - an asymmetric grid at 360px width is not
+   * information density, it's noise.
+   */
+  .bento-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+  @media (min-width: 640px) {
+    .bento-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas: 'hero hero' 'sales stock';
+    }
+    .bento-grid > :nth-child(1) { grid-area: hero; }
+    .bento-grid > :nth-child(2) { grid-area: sales; }
+    .bento-grid > :nth-child(3) { grid-area: stock; }
+  }
+  @media (min-width: 1024px) {
+    .bento-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-areas: 'hero hero sales stock';
+    }
+  }
+}
+
+/*
+ * CR-034 §16/§26: the OS-level "reduce motion" accessibility preference
+ * always wins, regardless of the stored Motion setting - DesignStyleProvider
+ * already forces data-motion="reduced" when this media query matches, this
+ * is the actual enforcement. Matches the standard prefers-reduced-motion
+ * pattern (near-zero duration rather than `display: none`, which would
+ * break transitions that also gate visibility).
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * CR-034 §8/§26: "if a visual effect causes poor contrast, automatically
+ * reduce the effect" - translucency is the one effect in this system that
+ * can genuinely hurt contrast (a blurred, partially-see-through card over
+ * a busy background). When the OS/browser is asked for more contrast,
+ * every design style's glass/blur falls back to a fully opaque surface;
+ * the shadow-based depth cue still applies, so Glass/Liquid Glass remain
+ * visually distinct from Minimal without ever becoming hard to read.
+ */
+@media (prefers-contrast: more) {
+  :root {
+    --surface-blur: 0px !important;
+    --surface-bg-opacity: 1 !important;
+    --surface-border-opacity: 1 !important;
+  }
+}

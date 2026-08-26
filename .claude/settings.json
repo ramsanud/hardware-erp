@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn *)",
+      "Bash(npm *)",
+      "Bash(npx tsc *)",
+      "Bash(docker compose *)",
+      "Bash(python3 registry/*)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)"
+    ],
+    "deny": [
+      "Bash(docker compose down -v*)",
+      "Bash(rm -rf *)",
+      "Read(./.env)",
+      "Read(./backend/src/main/resources/application-prod.yml)"
+    ]
+  }
+}

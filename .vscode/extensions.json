@@ -1,0 +1,15 @@
+{
+  "// note": "VS Code offers to install these when the project is opened.",
+  "recommendations": [
+    "vscjava.vscode-java-pack",
+    "vmware.vscode-boot-dev-pack",
+    "vscjava.vscode-lombok",
+    "bradlc.vscode-tailwindcss",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "ms-azuretools.vscode-docker",
+    "ckolkman.vscode-postgres",
+    "rangav.vscode-thunder-client",
+    "eamodio.gitlens"
+  ]
+}

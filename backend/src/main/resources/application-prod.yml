@@ -1,0 +1,32 @@
+# Production. Every secret comes from the environment.
+spring:
+  flyway:
+    # Schema only. db/seed is deliberately absent - CR-009. Production must
+    # never receive test accounts.
+    locations: classpath:db/migration
+    clean-disabled: true
+  jpa:
+    show-sql: false
+  datasource:
+    hikari:
+      # PostgreSQL's default max_connections is 100. Leave headroom for
+      # psql sessions, pg_dump and the backup job.
+      maximum-pool-size: 20
+
+server:
+  forward-headers-strategy: native
+
+app:
+  security:
+    # HTTPS is mandatory. HSTS headers are meaningless without it.
+    cookie-secure: true
+  mail:
+    log-links-when-unconfigured: false
+  rate-limit:
+    enabled: true
+
+logging:
+  level:
+    root: WARN
+    com.hardware.erp: INFO
+    org.springframework.security: WARN

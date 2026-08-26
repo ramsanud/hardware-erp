@@ -1,0 +1,2637 @@
+{
+  "info": {
+    "name": "Hardware ERP - Module 1 - Authentication & User Management",
+    "description": "Module 1 of the Hardware ERP: authentication, users, roles, permissions and the security audit log.\n\n## Before you start\n\n1. Start PostgreSQL: `docker compose up -d`\n2. Start the backend: `cd backend && ./mvnw spring-boot:run`\n3. Import `hardware-erp-module-01.postman_environment.json` and select it in the environment dropdown (top right).\n4. Run **1. Authentication > Login as OWNER**. Every other request uses the token it stores.\n\n## How the tokens work\n\nThe **access token** comes back in the response body and is saved to the `accessToken` collection variable by a test script.\n\nThe **refresh token** is never in the body. The backend sets it as an HttpOnly, SameSite=Strict cookie scoped to `/api/v1/auth`. Postman's cookie jar stores and replays it automatically, so `POST /v1/auth/refresh` works with an empty body.\n\n## Running everything at once\n\nUse the Collection Runner in folder order 1 to 6. Folder 5 asserts rejections: a 200 there is a failure, not a success.\n\n## Seed credentials (development only)\n\n| Role | Identifier | Password |\n|---|---|---|\n| OWNER | 9876543210 | Owner@2026 |\n| MANAGER | 9840112233 | Manager@2026 |\n| ACCOUNTANT | 9840223344 | Account@2026 |\n| STAFF | 9843012345 | Staff@2026 |\n\nThese exist only in `db/seed/V900__seed_dev_data.sql`, which the production Flyway configuration does not load.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Authentication",
+      "description": "Run **Login as OWNER** first. It stores the access token in a collection variable that every other request uses. The refresh token never appears in the response body: it arrives as an HttpOnly cookie, which Postman's cookie jar stores and replays automatically.",
+      "item": [
+        {
+          "name": "Login as OWNER",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Seed account EMP001 (Saravanan Murugan). Holds every permission.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"9876543210\",\n  \"password\": \"Owner@2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('accessToken', body.data.accessToken);",
+                  "pm.test('Access token returned', function () {",
+                  "    pm.expect(body.data.accessToken).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.data.tokenType).to.eql('Bearer');",
+                  "});",
+                  "pm.test('Access token is a JWT with three parts', function () {",
+                  "    pm.expect(body.data.accessToken.split('.')).to.have.lengthOf(3);",
+                  "});",
+                  "pm.test('JWT carries no role or permission data', function () {",
+                  "    // A JWT is signed, not encrypted. Anyone holding it reads the payload,",
+                  "    // so it must contain only sub, tv, iat, exp and iss.",
+                  "    const payload = atob(body.data.accessToken.split('.')[1]",
+                  "        .replace(/-/g, '+').replace(/_/g, '/'));",
+                  "    pm.expect(payload).to.not.include('perm');",
+                  "    pm.expect(payload).to.not.include('role');",
+                  "    pm.expect(payload).to.not.include('name');",
+                  "});",
+                  "pm.test('Signed in as OWNER', function () {",
+                  "    pm.expect(body.data.user.roleCode).to.eql('OWNER');",
+                  "});",
+                  "pm.test('Response leaks no credential material', function () {",
+                  "    const text = pm.response.text();",
+                  "    pm.expect(text).to.not.include('passwordHash');",
+                  "    pm.expect(text).to.not.include('$2a$');",
+                  "    pm.expect(text).to.not.include('tokenVersion');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as MANAGER",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Seed account EMP003. Sees cost, cannot manage users.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"9840112233\",\n  \"password\": \"Manager@2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('managerToken', body.data.accessToken);",
+                  "pm.test('Access token returned', function () {",
+                  "    pm.expect(body.data.accessToken).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.data.tokenType).to.eql('Bearer');",
+                  "});",
+                  "pm.test('Access token is a JWT with three parts', function () {",
+                  "    pm.expect(body.data.accessToken.split('.')).to.have.lengthOf(3);",
+                  "});",
+                  "pm.test('JWT carries no role or permission data', function () {",
+                  "    // A JWT is signed, not encrypted. Anyone holding it reads the payload,",
+                  "    // so it must contain only sub, tv, iat, exp and iss.",
+                  "    const payload = atob(body.data.accessToken.split('.')[1]",
+                  "        .replace(/-/g, '+').replace(/_/g, '/'));",
+                  "    pm.expect(payload).to.not.include('perm');",
+                  "    pm.expect(payload).to.not.include('role');",
+                  "    pm.expect(payload).to.not.include('name');",
+                  "});",
+                  "pm.test('Signed in as MANAGER', function () {",
+                  "    pm.expect(body.data.user.roleCode).to.eql('MANAGER');",
+                  "});",
+                  "pm.test('Response leaks no credential material', function () {",
+                  "    const text = pm.response.text();",
+                  "    pm.expect(text).to.not.include('passwordHash');",
+                  "    pm.expect(text).to.not.include('$2a$');",
+                  "    pm.expect(text).to.not.include('tokenVersion');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as STAFF",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Seed account EMP005. Counter staff: deliberately has no PRODUCT_VIEW_COST and no USER_VIEW.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"9843012345\",\n  \"password\": \"Staff@2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('staffToken', body.data.accessToken);",
+                  "pm.test('Access token returned', function () {",
+                  "    pm.expect(body.data.accessToken).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.data.tokenType).to.eql('Bearer');",
+                  "});",
+                  "pm.test('Access token is a JWT with three parts', function () {",
+                  "    pm.expect(body.data.accessToken.split('.')).to.have.lengthOf(3);",
+                  "});",
+                  "pm.test('JWT carries no role or permission data', function () {",
+                  "    // A JWT is signed, not encrypted. Anyone holding it reads the payload,",
+                  "    // so it must contain only sub, tv, iat, exp and iss.",
+                  "    const payload = atob(body.data.accessToken.split('.')[1]",
+                  "        .replace(/-/g, '+').replace(/_/g, '/'));",
+                  "    pm.expect(payload).to.not.include('perm');",
+                  "    pm.expect(payload).to.not.include('role');",
+                  "    pm.expect(payload).to.not.include('name');",
+                  "});",
+                  "pm.test('Signed in as STAFF', function () {",
+                  "    pm.expect(body.data.user.roleCode).to.eql('STAFF');",
+                  "});",
+                  "pm.test('Response leaks no credential material', function () {",
+                  "    const text = pm.response.text();",
+                  "    pm.expect(text).to.not.include('passwordHash');",
+                  "    pm.expect(text).to.not.include('$2a$');",
+                  "    pm.expect(text).to.not.include('tokenVersion');",
+                  "});",
+                  "pm.test('STAFF cannot see product cost', function () {",
+                  "    pm.expect(pm.response.json().data.permissions)",
+                  "        .to.not.include('PRODUCT_VIEW_COST');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login with email instead of mobile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "The single `identifier` field accepts either. Counter staff do not remember which one they were registered with.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"owner@sarahardware.in\",\n  \"password\": \"Owner@2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Same account as the mobile login', function () {",
+                  "    pm.expect(pm.response.json().data.user.mobileNo).to.eql('9876543210');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Current user (GET /auth/me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Identity comes from the token, never from a path or body."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Success envelope shape', function () {",
+                  "    pm.expect(body).to.have.property('success', true);",
+                  "    pm.expect(body).to.have.property('timestamp');",
+                  "});",
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns effective permissions', function () {",
+                  "    pm.expect(pm.response.json().data.permissions).to.be.an('array');",
+                  "});",
+                  "pm.test('Response leaks no credential material', function () {",
+                  "    const text = pm.response.text();",
+                  "    pm.expect(text).to.not.include('passwordHash');",
+                  "    pm.expect(text).to.not.include('$2a$');",
+                  "    pm.expect(text).to.not.include('tokenVersion');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update my profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Accepts name and email only. Role and status cannot be self-edited, and the target user is taken from the token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Saravanan Murugan\",\n  \"email\": \"owner@sarahardware.in\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh token pair",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Reads the refresh token from the HttpOnly cookie. Each call rotates it: the presented token is revoked and a new one issued. Replaying a rotated token is treated as theft and revokes every session for that user.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('accessToken', body.data.accessToken);",
+                  "pm.test('Refresh token is NOT in the response body', function () {",
+                  "    // Cookie transport is the default, so JavaScript must never",
+                  "    // be able to read the long-lived credential.",
+                  "    pm.expect(body.data.refreshToken).to.be.oneOf([null, undefined]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My active sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "sessions"
+              ]
+            },
+            "description": "Devices signed in to this account. Carries no token material."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "if (body.data.length > 0) {",
+                  "    pm.collectionVariables.set('sessionId', body.data[0].id);",
+                  "}",
+                  "pm.test('No token hashes exposed', function () {",
+                  "    pm.expect(pm.response.text()).to.not.include('tokenHash');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke one session",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/sessions/{{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "sessions",
+                "{{sessionId}}"
+              ]
+            },
+            "description": "Signs out a single device. Returns 204 with no body. Revoking your own current session is allowed but will end this run."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 204 or 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "Always returns the same 200 message whether or not the account exists. Any other behaviour would let this endpoint be used to discover which mobile numbers are registered.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"9876543210\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('forgotKnownBody',",
+                  "    pm.response.text().replace(/\"timestamp\":\"[^\"]*\"/, ''));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forgot password for an account that does not exist",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "Must be indistinguishable from the request above.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"9000000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Identical to the known-account response', function () {",
+                  "    const known = pm.collectionVariables.get('forgotKnownBody');",
+                  "    const unknown = pm.response.text()",
+                  "        .replace(/\"timestamp\":\"[^\"]*\"/, '');",
+                  "    pm.expect(unknown).to.eql(known);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset password with a token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "reset-password"
+              ]
+            },
+            "description": "The token is single-use and expires in 30 minutes. In the dev profile with no SMTP configured, the link is printed to the backend console. Expect 400 with the placeholder token above.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"paste-token-from-the-reset-email\",\n  \"newPassword\": \"NewPass@2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Placeholder token is rejected with 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().code).to.eql('INVALID_RESET_TOKEN');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Change my password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "change-password"
+              ]
+            },
+            "description": "DISABLED BY DEFAULT in a run: succeeding here changes the seed password and signs you out everywhere, breaking later requests. Send it manually when you want to test the flow, then log in with the new password.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Owner@2026\",\n  \"newPassword\": \"Owner@2027\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 or 400', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 400]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout (this device only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Revokes only the presented refresh token. Other devices stay signed in, so closing the counter terminal does not sign the owner out on their phone.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout of all devices",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/logout-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "logout-all"
+              ]
+            },
+            "description": "Revokes every session and increments token_version, which kills all outstanding access tokens at once. Run last.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Users",
+      "description": "There is no self-registration endpoint. `POST /v1/users` is the only way an account is created and it requires USER_MANAGE.",
+      "item": [
+        {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users?page=0&size=20&sortBy=fullName&sortDir=asc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "fullName"
+                },
+                {
+                  "key": "sortDir",
+                  "value": "asc"
+                }
+              ]
+            },
+            "description": "Seeded with 12 users, one of which is soft-deleted and must not appear."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Success envelope shape', function () {",
+                  "    pm.expect(body).to.have.property('success', true);",
+                  "    pm.expect(body).to.have.property('timestamp');",
+                  "});",
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const page = pm.response.json().data;",
+                  "pm.test('Page envelope shape', function () {",
+                  "    pm.expect(page).to.have.all.keys('content', 'page', 'size',",
+                  "        'totalElements', 'totalPages', 'first', 'last');",
+                  "});",
+                  "pm.test('Soft-deleted user is excluded', function () {",
+                  "    pm.expect(pm.response.text()).to.not.include('9843089012');",
+                  "});",
+                  "pm.test('Response leaks no credential material', function () {",
+                  "    const text = pm.response.text();",
+                  "    pm.expect(text).to.not.include('passwordHash');",
+                  "    pm.expect(text).to.not.include('$2a$');",
+                  "    pm.expect(text).to.not.include('tokenVersion');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users?search=Karthik",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "Karthik"
+                }
+              ]
+            },
+            "description": "Matches name, mobile, email or employee code."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Finds the seeded staff member', function () {",
+                  "    pm.expect(pm.response.json().data.content[0].mobileNo)",
+                  "        .to.eql('9843012345');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter by status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users?status=SUSPENDED",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "SUSPENDED"
+                }
+              ]
+            },
+            "description": "Seed contains exactly one suspended account (EMP010)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Page size is clamped to 100",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users?size=100000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "100000"
+                }
+              ]
+            },
+            "description": "The backend clamps size so a huge request cannot exhaust memory."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Size clamped to 100', function () {",
+                  "    pm.expect(pm.response.json().data.size).to.eql(100);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sort field is whitelisted (injection attempt)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users?sortBy=password_hash; DROP TABLE app_user",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "sortBy",
+                  "value": "password_hash; DROP TABLE app_user"
+                }
+              ]
+            },
+            "description": "An unknown sort field falls back to the default instead of reaching ORDER BY."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200, table survives', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().data.content).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ]
+            },
+            "description": "roleId 4 is STAFF in the seed data. Stores the new id for the update and delete requests below.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Postman Test Employee\",\n  \"mobileNo\": \"9811100099\",\n  \"email\": \"postman.test@sarahardware.in\",\n  \"employeeCode\": \"EMP199\",\n  \"roleId\": 4,\n  \"password\": \"Welcome@2026\",\n  \"mustChangePassword\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('createdUserId', body.data.id);",
+                  "pm.test('Forced password change is set', function () {",
+                  "    pm.expect(body.data.mustChangePassword).to.be.true;",
+                  "});",
+                  "pm.test('Response leaks no credential material', function () {",
+                  "    const text = pm.response.text();",
+                  "    pm.expect(text).to.not.include('passwordHash');",
+                  "    pm.expect(text).to.not.include('$2a$');",
+                  "    pm.expect(text).to.not.include('tokenVersion');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get user by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users/{{createdUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users",
+                "{{createdUserId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update user",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users/{{createdUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users",
+                "{{createdUserId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Postman Test Employee (renamed)\",\n  \"mobileNo\": \"9811100099\",\n  \"email\": \"postman.test@sarahardware.in\",\n  \"employeeCode\": \"EMP199\",\n  \"roleId\": 4,\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Name updated', function () {",
+                  "    pm.expect(pm.response.json().data.fullName)",
+                  "        .to.include('renamed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin reset of a user password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users/{{createdUserId}}/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users",
+                "{{createdUserId}}",
+                "reset-password"
+              ]
+            },
+            "description": "Forces a change at next sign-in and revokes that user's sessions.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"Temp@2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deactivate user (soft delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users/{{createdUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users",
+                "{{createdUserId}}"
+              ]
+            },
+            "description": "Returns 204. The row survives so historical created_by references still resolve."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deleting twice returns 404",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users/{{createdUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users",
+                "{{createdUserId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Roles and Permissions",
+      "description": "Authorisation is permission-based. Roles are just named permission sets.",
+      "item": [
+        {
+          "name": "List roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "roles"
+              ]
+            },
+            "description": "Four seeded system roles plus the STOCK_CLERK custom role."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Success envelope shape', function () {",
+                  "    pm.expect(body).to.have.property('success', true);",
+                  "    pm.expect(body).to.have.property('timestamp');",
+                  "});",
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const roles = pm.response.json().data;",
+                  "const staff = roles.find(r => r.code === 'STAFF');",
+                  "pm.test('STAFF cannot see product cost', function () {",
+                  "    pm.expect(staff.permissions).to.not.include('PRODUCT_VIEW_COST');",
+                  "});",
+                  "pm.test('System roles are flagged', function () {",
+                  "    pm.expect(roles.find(r => r.code === 'OWNER').systemRole).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get role by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/roles/4",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "roles",
+                "4"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create custom role",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "roles"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"POSTMAN_TEST\",\n  \"name\": \"Postman Test Role\",\n  \"description\": \"Created by the Postman collection\",\n  \"permissions\": [\n    \"PRODUCT_VIEW\",\n    \"INVENTORY_VIEW\"\n  ],\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('createdRoleId', pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update custom role",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/roles/{{createdRoleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "roles",
+                "{{createdRoleId}}"
+              ]
+            },
+            "description": "Changing permissions signs out every user holding the role.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"POSTMAN_TEST\",\n  \"name\": \"Postman Test Role\",\n  \"description\": \"Updated\",\n  \"permissions\": [\n    \"PRODUCT_VIEW\",\n    \"INVENTORY_VIEW\",\n    \"INVENTORY_ADJUST\"\n  ],\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Now has three permissions', function () {",
+                  "    pm.expect(pm.response.json().data.permissions).to.have.lengthOf(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete custom role",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/roles/{{createdRoleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "roles",
+                "{{createdRoleId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List all permissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "permissions"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('At least 31 permissions seeded', function () {",
+                  "    pm.expect(pm.response.json().data.length).to.be.at.least(31);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Permissions grouped by module",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/permissions/grouped",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "permissions",
+                "grouped"
+              ]
+            },
+            "description": "Drives the permission picker on the role screen."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Grouped by module', function () {",
+                  "    pm.expect(pm.response.json().data[0]).to.have.property('moduleCode');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Security Audit Log",
+      "description": "Security events only. Requires AUDIT_VIEW, which only OWNER holds.",
+      "item": [
+        {
+          "name": "Search the security log",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/security-audit-logs?page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "security-audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Seeded with 12 events plus everything this collection generates."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Success envelope shape', function () {",
+                  "    pm.expect(body).to.have.property('success', true);",
+                  "    pm.expect(body).to.have.property('timestamp');",
+                  "});",
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Never logs credential material', function () {",
+                  "    const text = pm.response.text();",
+                  "    pm.expect(text).to.not.include('passwordHash');",
+                  "    pm.expect(text).to.not.include('$2a$');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter by failed logins",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/security-audit-logs?action=LOGIN_FAILURE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "security-audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "action",
+                  "value": "LOGIN_FAILURE"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter by token reuse detection",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/security-audit-logs?action=REFRESH_TOKEN_REUSE_DETECTED",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "security-audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "action",
+                  "value": "REFRESH_TOKEN_REUSE_DETECTED"
+                }
+              ]
+            },
+            "description": "The seed contains one of these. In production it means a refresh token was stolen and replayed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Security Tests",
+      "description": "Each request here asserts a rejection. A 200 in this folder is a failure.",
+      "item": [
+        {
+          "name": "401 - no token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "me"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Error envelope shape', function () {",
+                  "    pm.expect(body).to.have.property('success', false);",
+                  "    pm.expect(body).to.have.property('code');",
+                  "    pm.expect(body).to.have.property('message');",
+                  "    pm.expect(body).to.have.property('timestamp');",
+                  "});",
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Code is UNAUTHENTICATED', function () {",
+                  "    pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401 - malformed JWT",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer not.a.real.token"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "me"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401 - tampered signature",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tamperedToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Runs the valid token through a one-character edit. The signature no longer verifies."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401 - wrong password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"9876543210\",\n  \"password\": \"DefinitelyWrong@1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Error envelope shape', function () {",
+                  "    pm.expect(body).to.have.property('success', false);",
+                  "    pm.expect(body).to.have.property('code');",
+                  "    pm.expect(body).to.have.property('message');",
+                  "    pm.expect(body).to.have.property('timestamp');",
+                  "});",
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('wrongPasswordBody',",
+                  "    pm.response.text().replace(/\"(timestamp|requestId)\":\"[^\"]*\"/g, ''));",
+                  "pm.test('Generic message only', function () {",
+                  "    pm.expect(body.message).to.eql('Invalid credentials');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401 - unknown account is indistinguishable",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "This is the user-enumeration check. The body must match the wrong-password response exactly.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"9000000000\",\n  \"password\": \"DefinitelyWrong@1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Byte-identical to the wrong-password response', function () {",
+                  "    const wrong = pm.collectionVariables.get('wrongPasswordBody');",
+                  "    const unknown = pm.response.text()",
+                  "        .replace(/\"(timestamp|requestId)\":\"[^\"]*\"/g, '');",
+                  "    pm.expect(unknown).to.eql(wrong);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401 - inactive account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Seed account EMP009 is INACTIVE. Same generic response.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"9843056789\",\n  \"password\": \"Staff@2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401 - soft-deleted account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Seed account EMP012 is soft-deleted.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"9843089012\",\n  \"password\": \"Staff@2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 - STAFF cannot list users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{staffToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ]
+            },
+            "description": "Requires the STAFF login to have run first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Error envelope shape', function () {",
+                  "    pm.expect(body).to.have.property('success', false);",
+                  "    pm.expect(body).to.have.property('code');",
+                  "    pm.expect(body).to.have.property('message');",
+                  "    pm.expect(body).to.have.property('timestamp');",
+                  "});",
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Does not name the missing permission', function () {",
+                  "    // Naming it would map the authorisation model for an attacker.",
+                  "    pm.expect(pm.response.json().message)",
+                  "        .to.eql('You do not have permission for this action');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 - MANAGER cannot manage roles",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{managerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "roles"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"SHOULD_FAIL\",\n  \"name\": \"Should Fail\",\n  \"permissions\": [\n    \"PRODUCT_VIEW\"\n  ],\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 - validation error names the field",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"\",\n  \"mobileNo\": \"12345\",\n  \"email\": \"not-an-email\",\n  \"employeeCode\": \"X\",\n  \"roleId\": 4,\n  \"password\": \"weak\",\n  \"mustChangePassword\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Error envelope shape', function () {",
+                  "    pm.expect(body).to.have.property('success', false);",
+                  "    pm.expect(body).to.have.property('code');",
+                  "    pm.expect(body).to.have.property('message');",
+                  "    pm.expect(body).to.have.property('timestamp');",
+                  "});",
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('Field errors present', function () {",
+                  "    pm.expect(body.code).to.eql('VALIDATION_ERROR');",
+                  "    pm.expect(body.errors).to.have.property('fullName');",
+                  "    pm.expect(body.errors).to.have.property('mobileNo');",
+                  "    pm.expect(body.errors).to.have.property('password');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 - duplicate mobile number",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Duplicate Mobile\",\n  \"mobileNo\": \"9876543210\",\n  \"email\": \"dup1@sarahardware.in\",\n  \"employeeCode\": \"EMP198\",\n  \"roleId\": 4,\n  \"password\": \"Welcome@2026\",\n  \"mustChangePassword\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Code is DUPLICATE_RESOURCE', function () {",
+                  "    pm.expect(pm.response.json().code).to.eql('DUPLICATE_RESOURCE');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 - duplicate email differing only by case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ]
+            },
+            "description": "Regression check for BUG-AUTH-009. PostgreSQL compares case-sensitively, so this is blocked by a functional unique index on lower(email), not by the collation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Duplicate Email Case\",\n  \"mobileNo\": \"9811100098\",\n  \"email\": \"OWNER@SaraHardware.in\",\n  \"employeeCode\": \"EMP197\",\n  \"roleId\": 4,\n  \"password\": \"Welcome@2026\",\n  \"mustChangePassword\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - OWNER role cannot lose a permission",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/roles/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "roles",
+                "1"
+              ]
+            },
+            "description": "Otherwise the shop could lock itself out of its own administration.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"OWNER\",\n  \"name\": \"Owner\",\n  \"description\": \"Reduced\",\n  \"permissions\": [\n    \"PRODUCT_VIEW\"\n  ],\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - system role cannot be deleted",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/roles/4",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "roles",
+                "4"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - unknown user",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users/999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "users",
+                "999999"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Code is NOT_FOUND', function () {",
+                  "    pm.expect(pm.response.json().code).to.eql('NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Every response carries a correlation id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "X-Request-ID is what support uses to find the request in the logs."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('X-Request-ID header present', function () {",
+                  "    pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Rate Limiting",
+      "description": "The dev profile relaxes the limits so manual testing is not throttled (100/min per IP on login). To see a 429, start the backend with the default profile: `SPRING_PROFILES_ACTIVE=default ./mvnw spring-boot:run`, which allows 10 logins per minute per IP and 3 forgot-password requests per hour.",
+      "item": [
+        {
+          "name": "Hammer login until 429",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Send this repeatedly with Postman's Runner (iterations: 15). Under the default profile the 11th call returns 429 with a Retry-After header.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"9000000000\",\n  \"password\": \"Wrong@1234\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Either rejected credentials or rate limited', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([401, 429]);",
+                  "});",
+                  "if (pm.response.code === 429) {",
+                  "    pm.test('Retry-After header present', function () {",
+                  "        pm.expect(pm.response.headers.get('Retry-After')).to.be.a('string');",
+                  "    });",
+                  "    pm.test('Code is RATE_LIMIT_EXCEEDED', function () {",
+                  "        pm.expect(pm.response.json().code).to.eql('RATE_LIMIT_EXCEEDED');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forgot password rate limit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "Default profile allows 3 per hour per IP. Prevents this endpoint being used to flood someone's mailbox.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"9876543210\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 or 429', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 429]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Derive a deliberately corrupted token for the tampered-signature test.",
+          "const token = pm.collectionVariables.get('accessToken');",
+          "if (token && token.length > 8) {",
+          "    pm.collectionVariables.set('tamperedToken',",
+          "        token.slice(0, -4) + 'AAAA');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "managerToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "staffToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tamperedToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "createdUserId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "createdRoleId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sessionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "wrongPasswordBody",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "forgotKnownBody",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

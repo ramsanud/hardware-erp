@@ -1,0 +1,44 @@
+# Local development database. PostgreSQL is the single source of truth (CR-014).
+#
+#   docker compose up -d
+#   cd backend && ./mvnw spring-boot:run
+#
+# The application creates no schema itself: Flyway owns it and Hibernate runs
+# with ddl-auto=validate.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hardware-erp-postgres
+    restart: unless-stopped
+    environment:
+      # Must match whatever the actual data volume was first initialized
+      # with - POSTGRES_DB/USER/PASSWORD only take effect on an empty
+      # volume; editing them here does not rename an already-initialized
+      # user or database. These three were found drifted from the real
+      # running container during a 2026-08-23 audit (this file said
+      # hardware_shop/<a personal login>/port 5432; the live container - and every
+      # DB_USER/DB_PASSWORD/DB_NAME the app has actually been started
+      # with - was hardware_erp/hardware_erp/hardware_erp on port 5433)
+      # and corrected to match reality, not the other way round.
+      POSTGRES_DB: ${DB_NAME:-hardware_erp}
+      POSTGRES_USER: ${DB_USER:-hardware_erp}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-hardware_erp}
+      # UTF8 explicitly. The old MySQL schema declared utf8mb4 per table;
+      # in PostgreSQL it is a database-level property set at creation.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+      TZ: Asia/Kolkata
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Named user and database, otherwise pg_isready reports ready while
+      # the init scripts are still running and the app fails its first migration.
+      test: ["CMD-SHELL", "pg_isready -U hardware_erp -d hardware_erp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+    name: hardware-erp-postgres-data

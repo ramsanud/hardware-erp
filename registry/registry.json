@@ -1,0 +1,747 @@
+{
+  "project": "hardware-erp",
+  "architecture": "single-shop monolith",
+  "modules_locked": [
+    "01-authentication"
+  ],
+  "base_package": "com.hardware.erp",
+  "api_context_path": "/api",
+  "tables": {
+    "role": {
+      "columns": {
+        "role_id": "BIGINT",
+        "role_code": "VARCHAR(30)",
+        "role_name": "VARCHAR(100)",
+        "description": "VARCHAR(255)",
+        "is_system": "BOOLEAN",
+        "active": "BOOLEAN",
+        "created_at": "DATETIME(3)",
+        "created_by": "BIGINT",
+        "updated_at": "DATETIME(3)",
+        "updated_by": "BIGINT",
+        "version": "INT"
+      }
+    },
+    "role_permission": {
+      "columns": {
+        "role_id": "BIGINT",
+        "permission_code": "VARCHAR(60)"
+      }
+    },
+    "app_user": {
+      "columns": {
+        "user_id": "BIGINT",
+        "role_id": "BIGINT",
+        "employee_code": "VARCHAR(30)",
+        "full_name": "VARCHAR(200)",
+        "mobile_no": "VARCHAR(15)",
+        "email": "VARCHAR(255)",
+        "password_hash": "VARCHAR(255)",
+        "status": "VARCHAR(20)",
+        "must_change_password": "BOOLEAN",
+        "token_version": "INT",
+        "failed_login_attempts": "INT",
+        "locked_until": "DATETIME(3)",
+        "last_login_at": "DATETIME(3)",
+        "password_changed_at": "DATETIME(3)",
+        "created_at": "DATETIME(3)",
+        "created_by": "BIGINT",
+        "updated_at": "DATETIME(3)",
+        "updated_by": "BIGINT",
+        "deleted_at": "DATETIME(3)",
+        "version": "INT"
+      }
+    },
+    "refresh_token": {
+      "columns": {
+        "refresh_token_id": "BIGINT",
+        "user_id": "BIGINT",
+        "token_hash": "CHAR(64)",
+        "expires_at": "DATETIME(3)",
+        "revoked_at": "DATETIME(3)",
+        "replaced_by_hash": "CHAR(64)",
+        "user_agent": "VARCHAR(255)",
+        "ip_address": "VARCHAR(45)",
+        "created_at": "DATETIME(3)"
+      }
+    },
+    "password_reset_token": {
+      "columns": {
+        "reset_token_id": "BIGINT",
+        "user_id": "BIGINT",
+        "token_hash": "CHAR(64)",
+        "expires_at": "DATETIME(3)",
+        "used_at": "DATETIME(3)",
+        "created_at": "DATETIME(3)"
+      }
+    },
+    "audit_log": {
+      "columns": {
+        "audit_id": "BIGINT",
+        "entity_type": "VARCHAR(60)",
+        "entity_id": "BIGINT",
+        "action": "VARCHAR(30)",
+        "user_id": "BIGINT",
+        "user_name": "VARCHAR(200)",
+        "ip_address": "VARCHAR(45)",
+        "detail": "TEXT",
+        "created_at": "DATETIME(3)"
+      }
+    }
+  },
+  "entities": {
+    "AuditLog": {
+      "table": "audit_log",
+      "package": "com.hardware.erp.auth.entity",
+      "fields": {
+        "id": {
+          "column": "audit_id",
+          "javaType": "Long"
+        },
+        "entityType": {
+          "column": "entity_type",
+          "javaType": "String"
+        },
+        "entityId": {
+          "column": "entity_id",
+          "javaType": "Long"
+        },
+        "action": {
+          "column": "action",
+          "javaType": "String"
+        },
+        "userId": {
+          "column": "user_id",
+          "javaType": "Long"
+        },
+        "userName": {
+          "column": "user_name",
+          "javaType": "String"
+        },
+        "ipAddress": {
+          "column": "ip_address",
+          "javaType": "String"
+        },
+        "detail": {
+          "column": "detail",
+          "javaType": "String"
+        },
+        "createdAt": {
+          "column": "created_at",
+          "javaType": "LocalDateTime"
+        }
+      }
+    },
+    "PasswordResetToken": {
+      "table": "password_reset_token",
+      "package": "com.hardware.erp.auth.entity",
+      "fields": {
+        "id": {
+          "column": "reset_token_id",
+          "javaType": "Long"
+        },
+        "tokenHash": {
+          "column": "token_hash",
+          "javaType": "String"
+        },
+        "expiresAt": {
+          "column": "expires_at",
+          "javaType": "LocalDateTime"
+        },
+        "usedAt": {
+          "column": "used_at",
+          "javaType": "LocalDateTime"
+        },
+        "createdAt": {
+          "column": "created_at",
+          "javaType": "LocalDateTime"
+        },
+        "user": {
+          "column": "user_id",
+          "javaType": "User",
+          "fk": true
+        }
+      }
+    },
+    "RefreshToken": {
+      "table": "refresh_token",
+      "package": "com.hardware.erp.auth.entity",
+      "fields": {
+        "id": {
+          "column": "refresh_token_id",
+          "javaType": "Long"
+        },
+        "tokenHash": {
+          "column": "token_hash",
+          "javaType": "String"
+        },
+        "expiresAt": {
+          "column": "expires_at",
+          "javaType": "LocalDateTime"
+        },
+        "revokedAt": {
+          "column": "revoked_at",
+          "javaType": "LocalDateTime"
+        },
+        "replacedByHash": {
+          "column": "replaced_by_hash",
+          "javaType": "String"
+        },
+        "userAgent": {
+          "column": "user_agent",
+          "javaType": "String"
+        },
+        "ipAddress": {
+          "column": "ip_address",
+          "javaType": "String"
+        },
+        "createdAt": {
+          "column": "created_at",
+          "javaType": "LocalDateTime"
+        },
+        "user": {
+          "column": "user_id",
+          "javaType": "User",
+          "fk": true
+        }
+      }
+    },
+    "Role": {
+      "table": "role",
+      "package": "com.hardware.erp.auth.entity",
+      "fields": {
+        "id": {
+          "column": "role_id",
+          "javaType": "Long"
+        },
+        "code": {
+          "column": "role_code",
+          "javaType": "String"
+        },
+        "name": {
+          "column": "role_name",
+          "javaType": "String"
+        },
+        "description": {
+          "column": "description",
+          "javaType": "String"
+        },
+        "system": {
+          "column": "is_system",
+          "javaType": "boolean"
+        },
+        "active": {
+          "column": "active",
+          "javaType": "boolean"
+        },
+        "permissions": {
+          "column": "permission_code",
+          "javaType": "Set<String>"
+        }
+      }
+    },
+    "User": {
+      "table": "app_user",
+      "package": "com.hardware.erp.auth.entity",
+      "fields": {
+        "id": {
+          "column": "user_id",
+          "javaType": "Long"
+        },
+        "employeeCode": {
+          "column": "employee_code",
+          "javaType": "String"
+        },
+        "fullName": {
+          "column": "full_name",
+          "javaType": "String"
+        },
+        "mobileNo": {
+          "column": "mobile_no",
+          "javaType": "String"
+        },
+        "email": {
+          "column": "email",
+          "javaType": "String"
+        },
+        "passwordHash": {
+          "column": "password_hash",
+          "javaType": "String"
+        },
+        "status": {
+          "column": "status",
+          "javaType": "UserStatus"
+        },
+        "mustChangePassword": {
+          "column": "must_change_password",
+          "javaType": "boolean"
+        },
+        "tokenVersion": {
+          "column": "token_version",
+          "javaType": "Integer"
+        },
+        "failedLoginAttempts": {
+          "column": "failed_login_attempts",
+          "javaType": "Integer"
+        },
+        "lockedUntil": {
+          "column": "locked_until",
+          "javaType": "LocalDateTime"
+        },
+        "lastLoginAt": {
+          "column": "last_login_at",
+          "javaType": "LocalDateTime"
+        },
+        "passwordChangedAt": {
+          "column": "password_changed_at",
+          "javaType": "LocalDateTime"
+        },
+        "deletedAt": {
+          "column": "deleted_at",
+          "javaType": "LocalDateTime"
+        },
+        "role": {
+          "column": "role_id",
+          "javaType": "Role",
+          "fk": true
+        }
+      }
+    }
+  },
+  "dtos": {
+    "ChangePasswordRequest": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "currentPassword": "String",
+        "newPassword": "String"
+      }
+    },
+    "CreateUserRequest": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "fullName": "String",
+        "mobileNo": "String",
+        "email": "String",
+        "employeeCode": "String",
+        "roleId": "Long",
+        "password": "String",
+        "mustChangePassword": "boolean"
+      }
+    },
+    "ForgotPasswordRequest": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "login": "String"
+      }
+    },
+    "LoginRequest": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "login": "String",
+        "password": "String"
+      }
+    },
+    "LoginResponse": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "accessToken": "String",
+        "refreshToken": "String",
+        "tokenType": "String",
+        "expiresInSeconds": "long",
+        "mustChangePassword": "boolean",
+        "user": "UserResponse"
+      }
+    },
+    "RefreshRequest": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "refreshToken": "String"
+      }
+    },
+    "ResetPasswordRequest": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "token": "String",
+        "newPassword": "String"
+      }
+    },
+    "ResetUserPasswordRequest": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "newPassword": "String"
+      }
+    },
+    "RoleRequest": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "code": "String",
+        "name": "String",
+        "description": "String",
+        "permissions": "Set<String>",
+        "active": "boolean"
+      }
+    },
+    "RoleResponse": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "id": "Long",
+        "code": "String",
+        "name": "String",
+        "description": "String",
+        "system": "boolean",
+        "active": "boolean",
+        "permissions": "Set<String>",
+        "userCount": "long"
+      }
+    },
+    "UpdateProfileRequest": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "fullName": "String",
+        "email": "String"
+      }
+    },
+    "UpdateUserRequest": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "fullName": "String",
+        "mobileNo": "String",
+        "email": "String",
+        "employeeCode": "String",
+        "roleId": "Long",
+        "status": "UserStatus"
+      }
+    },
+    "UserResponse": {
+      "package": "com.hardware.erp.auth.dto",
+      "fields": {
+        "id": "Long",
+        "fullName": "String",
+        "mobileNo": "String",
+        "email": "String",
+        "employeeCode": "String",
+        "roleId": "Long",
+        "roleCode": "String",
+        "roleName": "String",
+        "permissions": "Set<String>",
+        "status": "UserStatus",
+        "mustChangePassword": "boolean",
+        "lastLoginAt": "LocalDateTime",
+        "createdAt": "LocalDateTime"
+      }
+    }
+  },
+  "endpoints": {
+    "POST /api/v1/auth/login": {
+      "controller": "AuthController",
+      "method": "login",
+      "permission": "authenticated",
+      "returns": "ApiResponse<LoginResponse>"
+    },
+    "POST /api/v1/auth/refresh": {
+      "controller": "AuthController",
+      "method": "refresh",
+      "permission": "authenticated",
+      "returns": "ApiResponse<LoginResponse>"
+    },
+    "POST /api/v1/auth/logout": {
+      "controller": "AuthController",
+      "method": "logout",
+      "permission": "authenticated",
+      "returns": "ApiResponse<Void>"
+    },
+    "POST /api/v1/auth/logout-all": {
+      "controller": "AuthController",
+      "method": "logoutAll",
+      "permission": "authenticated",
+      "returns": "ApiResponse<Void>"
+    },
+    "GET /api/v1/auth/me": {
+      "controller": "AuthController",
+      "method": "me",
+      "permission": "authenticated",
+      "returns": "ApiResponse<UserResponse>"
+    },
+    "PUT /api/v1/auth/me": {
+      "controller": "AuthController",
+      "method": "updateProfile",
+      "permission": "authenticated",
+      "returns": "ApiResponse<UserResponse>"
+    },
+    "POST /api/v1/auth/change-password": {
+      "controller": "AuthController",
+      "method": "changePassword",
+      "permission": "authenticated",
+      "returns": "ApiResponse<Void>"
+    },
+    "POST /api/v1/auth/forgot-password": {
+      "controller": "AuthController",
+      "method": "forgotPassword",
+      "permission": "authenticated",
+      "returns": "ApiResponse<Void>"
+    },
+    "POST /api/v1/auth/reset-password": {
+      "controller": "AuthController",
+      "method": "resetPassword",
+      "permission": "authenticated",
+      "returns": "ApiResponse<Void>"
+    },
+    "GET /api/v1/roles/{id}": {
+      "controller": "RoleController",
+      "method": "get",
+      "permission": "ROLE_VIEW",
+      "returns": "ApiResponse<RoleResponse>"
+    },
+    "POST /api/v1/roles": {
+      "controller": "RoleController",
+      "method": "create",
+      "permission": "ROLE_MANAGE",
+      "returns": "ApiResponse<RoleResponse>"
+    },
+    "PUT /api/v1/roles/{id}": {
+      "controller": "RoleController",
+      "method": "update",
+      "permission": "ROLE_MANAGE",
+      "returns": "ApiResponse<RoleResponse>"
+    },
+    "DELETE /api/v1/roles/{id}": {
+      "controller": "RoleController",
+      "method": "delete",
+      "permission": "ROLE_MANAGE",
+      "returns": "ApiResponse<Void>"
+    },
+    "POST /api/v1/users": {
+      "controller": "UserController",
+      "method": "create",
+      "permission": "USER_MANAGE",
+      "returns": "ApiResponse<UserResponse>"
+    },
+    "GET /api/v1/users/{id}": {
+      "controller": "UserController",
+      "method": "get",
+      "permission": "USER_VIEW",
+      "returns": "ApiResponse<UserResponse>"
+    },
+    "PUT /api/v1/users/{id}": {
+      "controller": "UserController",
+      "method": "update",
+      "permission": "USER_MANAGE",
+      "returns": "ApiResponse<UserResponse>"
+    },
+    "POST /api/v1/users/{id}/reset-password": {
+      "controller": "UserController",
+      "method": "resetPassword",
+      "permission": "USER_MANAGE",
+      "returns": "ApiResponse<Void>"
+    },
+    "DELETE /api/v1/users/{id}": {
+      "controller": "UserController",
+      "method": "delete",
+      "permission": "USER_MANAGE",
+      "returns": "ApiResponse<Void>"
+    }
+  },
+  "classes": {
+    "HardwareErpApplication": {
+      "package": "com.hardware.erp",
+      "kind": "class"
+    },
+    "AuthController": {
+      "package": "com.hardware.erp.auth.controller",
+      "kind": "class"
+    },
+    "RoleController": {
+      "package": "com.hardware.erp.auth.controller",
+      "kind": "class"
+    },
+    "UserController": {
+      "package": "com.hardware.erp.auth.controller",
+      "kind": "class"
+    },
+    "UserMapper": {
+      "package": "com.hardware.erp.auth.mapper",
+      "kind": "class"
+    },
+    "AuditLogRepository": {
+      "package": "com.hardware.erp.auth.repository",
+      "kind": "interface"
+    },
+    "PasswordResetTokenRepository": {
+      "package": "com.hardware.erp.auth.repository",
+      "kind": "interface"
+    },
+    "RefreshTokenRepository": {
+      "package": "com.hardware.erp.auth.repository",
+      "kind": "interface"
+    },
+    "RoleRepository": {
+      "package": "com.hardware.erp.auth.repository",
+      "kind": "interface"
+    },
+    "UserRepository": {
+      "package": "com.hardware.erp.auth.repository",
+      "kind": "interface"
+    },
+    "AuditService": {
+      "package": "com.hardware.erp.auth.service",
+      "kind": "interface"
+    },
+    "AuthService": {
+      "package": "com.hardware.erp.auth.service",
+      "kind": "interface"
+    },
+    "MailService": {
+      "package": "com.hardware.erp.auth.service",
+      "kind": "interface"
+    },
+    "RoleService": {
+      "package": "com.hardware.erp.auth.service",
+      "kind": "interface"
+    },
+    "UserService": {
+      "package": "com.hardware.erp.auth.service",
+      "kind": "interface"
+    },
+    "AuditServiceImpl": {
+      "package": "com.hardware.erp.auth.service.impl",
+      "kind": "class"
+    },
+    "AuthServiceImpl": {
+      "package": "com.hardware.erp.auth.service.impl",
+      "kind": "class"
+    },
+    "LoggingMailService": {
+      "package": "com.hardware.erp.auth.service.impl",
+      "kind": "class"
+    },
+    "RoleServiceImpl": {
+      "package": "com.hardware.erp.auth.service.impl",
+      "kind": "class"
+    },
+    "TokenCleanupJob": {
+      "package": "com.hardware.erp.auth.service.impl",
+      "kind": "class"
+    },
+    "UserServiceImpl": {
+      "package": "com.hardware.erp.auth.service.impl",
+      "kind": "class"
+    },
+    "AuthException": {
+      "package": "com.hardware.erp.common.exception",
+      "kind": "class"
+    },
+    "BusinessException": {
+      "package": "com.hardware.erp.common.exception",
+      "kind": "class"
+    },
+    "DuplicateResourceException": {
+      "package": "com.hardware.erp.common.exception",
+      "kind": "class"
+    },
+    "ErrorResponse": {
+      "package": "com.hardware.erp.common.exception",
+      "kind": "class"
+    },
+    "GlobalExceptionHandler": {
+      "package": "com.hardware.erp.common.exception",
+      "kind": "class"
+    },
+    "ResourceNotFoundException": {
+      "package": "com.hardware.erp.common.exception",
+      "kind": "class"
+    },
+    "AsyncConfig": {
+      "package": "com.hardware.erp.config",
+      "kind": "class"
+    },
+    "DataInitializer": {
+      "package": "com.hardware.erp.config",
+      "kind": "class"
+    },
+    "JpaAuditingConfig": {
+      "package": "com.hardware.erp.config",
+      "kind": "class"
+    },
+    "OpenApiConfig": {
+      "package": "com.hardware.erp.config",
+      "kind": "class"
+    },
+    "AppUserDetails": {
+      "package": "com.hardware.erp.security",
+      "kind": "class"
+    },
+    "AppUserDetailsService": {
+      "package": "com.hardware.erp.security",
+      "kind": "class"
+    },
+    "JwtAuthEntryPoint": {
+      "package": "com.hardware.erp.security",
+      "kind": "class"
+    },
+    "JwtAuthenticationFilter": {
+      "package": "com.hardware.erp.security",
+      "kind": "class"
+    },
+    "JwtProperties": {
+      "package": "com.hardware.erp.security",
+      "kind": "class"
+    },
+    "JwtService": {
+      "package": "com.hardware.erp.security",
+      "kind": "class"
+    },
+    "RestAccessDeniedHandler": {
+      "package": "com.hardware.erp.security",
+      "kind": "class"
+    },
+    "SecurityConfig": {
+      "package": "com.hardware.erp.security",
+      "kind": "class"
+    },
+    "SecurityUtils": {
+      "package": "com.hardware.erp.security",
+      "kind": "class"
+    }
+  },
+  "enums": {
+    "UserStatus": [
+      "ACTIVE",
+      "INACTIVE",
+      "SUSPENDED"
+    ],
+    "RoleCode": [
+      "OWNER",
+      "MANAGER",
+      "ACCOUNTANT",
+      "STAFF"
+    ]
+  },
+  "permissions": [
+    "AUDIT_VIEW",
+    "CUSTOMER_MANAGE",
+    "CUSTOMER_VIEW",
+    "INVENTORY_ADJUST",
+    "INVENTORY_VIEW",
+    "INVOICE_CANCEL",
+    "INVOICE_CREATE",
+    "INVOICE_DISCOUNT_OVERRIDE",
+    "INVOICE_VIEW",
+    "PAYMENT_MANAGE",
+    "PAYMENT_VIEW",
+    "PRODUCT_MANAGE",
+    "PRODUCT_VIEW",
+    "PRODUCT_VIEW_COST",
+    "PURCHASE_MANAGE",
+    "PURCHASE_VIEW",
+    "QUOTATION_MANAGE",
+    "QUOTATION_VIEW",
+    "REPORT_FINANCIAL",
+    "REPORT_VIEW",
+    "ROLE_MANAGE",
+    "ROLE_VIEW",
+    "SUPPLIER_MANAGE",
+    "SUPPLIER_VIEW",
+    "USER_MANAGE",
+    "USER_VIEW"
+  ]
+}

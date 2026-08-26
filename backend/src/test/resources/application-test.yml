@@ -1,0 +1,66 @@
+# Integration tests run against real PostgreSQL via Testcontainers (CR-014).
+# The datasource URL is supplied at runtime by @ServiceConnection, so no
+# jdbc: url appears here on purpose.
+spring:
+  jpa:
+    hibernate:
+      # Flyway builds the schema; Hibernate only proves the entities match it.
+      # This is what catches an entity/migration drift before production does.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: Asia/Kolkata
+
+  flyway:
+    enabled: true
+    # Schema AND seed, so tests exercise the same rows Swagger and Postman use.
+    locations: classpath:db/migration,classpath:db/seed
+    clean-disabled: false
+
+  mail:
+    username: ""
+
+app:
+  jwt:
+    secret: dGVzdC1zZWNyZXQta2V5LWZvci11bml0LXRlc3RzLTMyYnl0ZXMh
+    issuer: hardware-erp
+    access-token-minutes: 15
+    refresh-token-days: 7
+
+  security:
+    refresh-token-transport: JSON   # simpler to assert on than a Set-Cookie header
+    cookie-name: erp_refresh_token
+    cookie-secure: false
+    allowed-origins: http://localhost:5173
+
+  rate-limit:
+    # Off by default. RateLimitIT switches it on with @TestPropertySource so
+    # every other test is not throttled by its neighbours.
+    enabled: false
+    login-per-ip-per-minute: 5
+    login-per-identifier-per-minute: 3
+    forgot-password-per-ip-per-hour: 3
+    forgot-password-per-identifier-per-hour: 3
+    reset-password-per-ip-per-hour: 5
+    refresh-per-ip-per-minute: 10
+
+  password-reset:
+    token-validity-minutes: 30
+    reset-url-base: http://localhost:5173/reset-password
+
+  bootstrap:
+    enabled: false
+
+  cleanup:
+    cron: "0 0 2 * * *"
+    expired-token-grace-days: 7
+    audit-retention-days: 0
+
+logging:
+  level:
+    com.hardware.erp: WARN
+    org.testcontainers: WARN
+    org.springframework.security: WARN

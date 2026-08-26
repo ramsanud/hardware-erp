@@ -1,0 +1,58 @@
+# =====================================================================
+# Secrets - never commit. See .env.example for the template.
+# =====================================================================
+.env
+*.env
+.env.local
+.env.*.local
+!.env.example
+!frontend/.env.example
+
+# Per-developer Spring overrides. application-local.yml is committed as a
+# template; anything with a real secret in it must use this name instead.
+application-local-secret.yml
+application-*-secret.yml
+
+# Keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+id_rsa*
+
+# =====================================================================
+# Build output
+# =====================================================================
+backend/target/
+target/
+frontend/node_modules/
+node_modules/
+frontend/dist/
+dist/
+*.tsbuildinfo
+
+# =====================================================================
+# Local data - never belongs in the repository
+# =====================================================================
+# scripts/backup-db.sh output: contains real customer data
+backups/
+
+# =====================================================================
+# IDE / OS
+# =====================================================================
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.iml
+Thumbs.db
+.DS_Store
+
+# =====================================================================
+# Logs and JVM crash dumps
+# =====================================================================
+*.log
+hs_err_pid*.log
+replay_pid*.log

@@ -1,0 +1,7 @@
+target
+.mvn
+*.log
+backend_start.log
+.env
+.idea
+.vscode

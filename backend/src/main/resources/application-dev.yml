@@ -1,0 +1,36 @@
+# Local development. Never used in production.
+spring:
+  flyway:
+    # Schema AND seed data. The seed folder is absent from the prod profile.
+    locations: classpath:db/migration,classpath:db/seed
+    # Seed files are numbered from V900 so they always sort after real schema
+    # migrations on a fresh database. But a dev database keeps getting migrated
+    # incrementally rather than recreated - so once V900/V901 have applied, the
+    # next real schema migration (V4, V5, ...) has a lower version number than
+    # what is already applied, and Flyway treats it as out of order. Only a
+    # concern in dev, where seed data always outranks real migrations by
+    # version number; never a concern in prod, which never loads db/seed.
+    out-of-order: true
+  jpa:
+    show-sql: false
+
+app:
+  security:
+    # Local dev runs over plain http, so a Secure cookie would never be sent.
+    cookie-secure: false
+  bootstrap:
+    # Not needed: V900 seeds an owner account already.
+    enabled: false
+  mail:
+    # Prints the reset link to the console when SMTP is not configured.
+    log-links-when-unconfigured: true
+  rate-limit:
+    # Relaxed so manual Swagger and Postman testing is not throttled.
+    login-per-ip-per-minute: 100
+    login-per-identifier-per-minute: 50
+    forgot-password-per-ip-per-hour: 50
+    forgot-password-per-identifier-per-hour: 50
+
+logging:
+  level:
+    com.hardware.erp: DEBUG

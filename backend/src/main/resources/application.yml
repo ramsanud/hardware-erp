@@ -1,0 +1,205 @@
+spring:
+  application:
+    name: hardware-erp
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  # Defaults match docker-compose.yml, so a fresh clone runs with nothing
+  # exported. They are throwaway local-container values, NOT credentials -
+  # every deployed environment must set DB_USER/DB_PASSWORD from the
+  # environment. This block previously carried a real developer login as
+  # its default and also pointed at a database name and port the running
+  # container had not used since 2026-08-23.
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:hardware_erp}?reWriteBatchedInserts=true
+    username: ${DB_USER:hardware_erp}
+    password: ${DB_PASSWORD:hardware_erp}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      pool-name: erp-pool
+
+  # The largest single-file upload this app accepts is a Supplier Bill
+  # Import document (20MB, DocumentUploadValidation.MAX_BYTES /
+  # purchase_document's own CHECK constraint) - this is the ceiling every
+  # smaller upload (profile photo/logo/signature, 2MB via ImageValidation)
+  # also lives under. 21MB gives headroom for multipart framing overhead,
+  # not a second place the real limit lives.
+  servlet:
+    multipart:
+      max-file-size: 21MB
+      max-request-size: 21MB
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema. NEVER 'update'.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: Asia/Kolkata
+          batch_size: 50
+          # PostgreSQL needs this or Hibernate probes the driver for LOB
+          # support on every boot and logs a warning.
+          lob:
+            non_contextual_creation: true
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    # Overridden per profile. Production gets schema only - see CR-009.
+    locations: classpath:db/migration
+
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USER:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /api
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:Y2hhbmdlLW1lLWluLXByb2R1Y3Rpb24tMzJieXRlcy1taW5pbXVtIQ==}
+    issuer: hardware-erp
+    access-token-minutes: 15
+    refresh-token-days: 7
+
+  security:
+    refresh-token-transport: ${REFRESH_TOKEN_TRANSPORT:COOKIE}
+    cookie-name: erp_refresh_token
+    cookie-secure: ${COOKIE_SECURE:true}
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
+
+  # Cloudflare Turnstile on the sign-in page. Off by default and treated as
+  # off whenever either key is blank, so an install that never configures it
+  # behaves exactly as before - a CAPTCHA that hard-fails on missing keys
+  # would lock everyone out of a working system, which is worse than the
+  # automated sign-in attempts it exists to stop. Get both keys free at
+  # dash.cloudflare.com -> Turnstile.
+  captcha:
+    enabled: ${CAPTCHA_ENABLED:false}
+    site-key: ${CAPTCHA_SITE_KEY:}
+    secret-key: ${CAPTCHA_SECRET_KEY:}
+
+  rate-limit:
+    enabled: true
+    login-per-ip-per-minute: 10
+    login-per-identifier-per-minute: 5
+    forgot-password-per-ip-per-hour: 3
+    forgot-password-per-identifier-per-hour: 3
+    reset-password-per-ip-per-hour: 10
+    refresh-per-ip-per-minute: 30
+    register-per-ip-per-hour: 5
+
+  password-reset:
+    token-validity-minutes: 30
+    reset-url-base: ${RESET_URL:http://localhost:5173/reset-password}
+
+  bootstrap:
+    # Must be set deliberately. Production never creates an account silently.
+    enabled: ${APP_BOOTSTRAP_ENABLED:false}
+    mobile-no: ${APP_BOOTSTRAP_MOBILE:}
+    email: ${APP_BOOTSTRAP_EMAIL:}
+    password: ${APP_BOOTSTRAP_PASSWORD:}
+    full-name: ${APP_BOOTSTRAP_NAME:Shop Owner}
+
+  mail:
+    log-links-when-unconfigured: false
+
+  # SMS/WhatsApp notifications (CR-027). No real provider account exists yet,
+  # so SmsWhatsAppNotificationProvider always logs instead of sending -
+  # nothing reads these today. They exist so wiring in a real provider
+  # (e.g. an SMS gateway or the WhatsApp Business API) later is a matter of
+  # setting env vars and adding one NotificationProvider bean, not a design
+  # change. Left blank/commented: never set to a real key by default.
+  notifications:
+    sms:
+      provider: ${SMS_PROVIDER:}
+      # api-key: ${SMS_API_KEY:}
+    whatsapp:
+      provider: ${WHATSAPP_PROVIDER:}
+      # api-key: ${WHATSAPP_API_KEY:}
+
+  # AI assistant (CR-027, Max tier only). No key configured by default -
+  # AiChatService checks ChatCompletionClient.isConfigured() and returns a
+  # clear "not set up yet" reply instead of attempting a call that would 401.
+  ai:
+    # Which ChatCompletionClient bean is active - each implementation is
+    # @ConditionalOnProperty on this, so exactly one is ever constructed.
+    # "gemini" is the default: Google AI Studio has a genuinely free tier
+    # (no card required), unlike Anthropic/OpenAI's key-only APIs.
+    provider: ${APP_AI_PROVIDER:gemini}
+    anthropic-api-key: ${ANTHROPIC_API_KEY:}
+    anthropic-model: ${APP_AI_ANTHROPIC_MODEL:claude-sonnet-5}
+    gemini-api-key: ${GEMINI_API_KEY:}
+    gemini-model: ${APP_AI_GEMINI_MODEL:gemini-2.0-flash}
+
+  # "Contact admin" support request (CR-028). Blank by default - NotificationServiceImpl.contactAdmin
+  # logs the request either way, but only actually emails someone once this is set.
+  support:
+    admin-email: ${SUPPORT_ADMIN_EMAIL:}
+
+  cleanup:
+    cron: "0 0 2 * * *"
+    expired-token-grace-days: 7
+    # 0 = never delete audit records. Set deliberately or not at all.
+    audit-retention-days: 0
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: method
+    persist-authorization: true
+  api-docs:
+    path: /v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+  health:
+    # An unreachable or misconfigured SMTP server does NOT mean this
+    # application is down, but Boot folds the mail indicator into the
+    # aggregate status, which turned /actuator/health into 503 whenever the
+    # credentials were wrong. Hosting platforms use that endpoint as the
+    # liveness probe - Render restarts a container that answers non-2xx - so
+    # a bad mail password would have restart-looped a deploy with nothing in
+    # the logs pointing at mail. Mail failures surface through
+    # NotificationStatus (SENT / LOGGED_ONLY / FAILED) and the test-email
+    # endpoint instead, which is where they are actionable.
+    mail:
+      enabled: false
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{requestId:-}] %logger{36} - %msg%n"
+  level:
+    com.hardware.erp: INFO
+    org.springframework.security: INFO

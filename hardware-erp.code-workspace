@@ -1,0 +1,13 @@
+{
+  "// note": "Open THIS file, not the folder. It gives Java and TypeScript separate roots so each language server indexes only what it needs.",
+  "folders": [
+    { "name": "backend (Java)", "path": "backend" },
+    { "name": "frontend (React)", "path": "frontend" },
+    { "name": "docs & registries", "path": "." }
+  ],
+  "settings": {
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "typescript.tsdk": "frontend/node_modules/typescript/lib",
+    "files.exclude": { "**/target": true, "**/node_modules": true, "**/dist": true }
+  }
+}
