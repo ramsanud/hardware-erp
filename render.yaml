@@ -1,0 +1,113 @@
+# Render Blueprint - free tier.
+#
+# Import this from the Render dashboard (New -> Blueprint) after connecting
+# the repository. Everything marked sync:false must be filled in by hand in
+# the Render dashboard; nothing secret is committed here.
+#
+# FREE TIER REALITY, stated plainly:
+#   - A free web service sleeps after 15 minutes with no inbound request,
+#     and a cold Spring Boot start is 30-60s. The keep-alive ping described
+#     in docs/DEPLOYMENT.md is what stops a client demo hitting that.
+#   - Free instance hours are 750/month for the whole account. One service
+#     kept awake around the clock is ~730h, so this budget supports exactly
+#     ONE always-on free service. A second one will exhaust the quota.
+#   - Free services have no persistent disk. Nothing may be written to the
+#     filesystem and expected to survive a redeploy - this app stores
+#     uploads as bytea in PostgreSQL, so that already holds.
+
+services:
+  - type: web
+    name: hardware-erp-api
+    runtime: docker
+    plan: free
+    region: singapore          # closest free region to India; oregon/frankfurt also free
+    branch: main
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+
+    # Render probes this to decide the deploy succeeded. application-prod.yml
+    # exposes health and nothing else, and SecurityConfig leaves exactly this
+    # path public - so no credential is needed and no configuration leaks.
+    healthCheckPath: /api/actuator/health
+
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+
+      # ---- database (Supabase) -------------------------------------------
+      # Use the SESSION pooler, not the transaction pooler. Transaction-mode
+      # pooling breaks server-side prepared statements and per-session state,
+      # and DocumentSequenceService relies on SELECT ... FOR UPDATE held for
+      # the caller's transaction (CR-041). The session pooler is also the
+      # IPv4-reachable option, which Render needs.
+      - key: DB_HOST
+        sync: false            # xxxxxx.pooler.supabase.com
+      - key: DB_PORT
+        value: "5432"          # session pooler. 6543 is the transaction pooler - do not use it
+      - key: DB_NAME
+        value: postgres
+      - key: DB_USER
+        sync: false            # postgres.xxxxxx
+      - key: DB_PASSWORD
+        sync: false            # rotate this in Supabase; never commit it
+
+      # ---- auth ------------------------------------------------------------
+      # 32 bytes minimum, base64. Generate with:
+      #   openssl rand -base64 32
+      # JwtSecretGuard refuses to start on the built-in placeholder, so a
+      # missing value fails the deploy loudly instead of shipping a known key.
+      - key: JWT_SECRET
+        generateValue: true
+
+      - key: COOKIE_SECURE
+        value: "true"
+
+      # The frontend is served same-origin through Vercel's /api rewrite, so
+      # the browser never makes a cross-site request and CORS is not involved.
+      # This stays set only for direct API access (Postman, curl, a probe).
+      - key: CORS_ORIGINS
+        sync: false            # https://xxxxxx.vercel.app
+
+      # Password-reset links are emailed, so they must point at the FRONTEND
+      # origin, never at this service.
+      - key: RESET_URL
+        sync: false            # https://xxxxxx.vercel.app/reset-password
+
+      # ---- first owner account --------------------------------------------
+      # Creates the first OWNER on first boot only. Turn APP_BOOTSTRAP_ENABLED
+      # back to false and redeploy once you have signed in and changed the
+      # password - there is no self-registration endpoint by design (CR-008).
+      - key: APP_BOOTSTRAP_ENABLED
+        value: "true"
+      - key: APP_BOOTSTRAP_MOBILE
+        sync: false            # 10 digits
+      - key: APP_BOOTSTRAP_EMAIL
+        sync: false
+      - key: APP_BOOTSTRAP_PASSWORD
+        sync: false            # change it immediately after first sign-in
+      - key: APP_BOOTSTRAP_NAME
+        sync: false
+
+      # ---- optional --------------------------------------------------------
+      # Email is off unless MAIL_USER/MAIL_PASSWORD are set. Password reset
+      # then logs the link instead of sending it, which is fine for a demo.
+      - key: MAIL_HOST
+        value: smtp.gmail.com
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_USER
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false            # Gmail app password, not the account password
+
+      # Free Postgres tiers cap connections tightly and this app is one
+      # instance - 20 (the application-prod.yml default) is more than the
+      # free pooler will grant.
+      - key: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE
+        value: "5"
+
+      # Free instances are memory-capped at 512MB. Without this the JVM sizes
+      # its heap against the host's total memory, not the container's, and
+      # gets OOM-killed mid-request.
+      - key: JAVA_TOOL_OPTIONS
+        value: "-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -Xss512k"
