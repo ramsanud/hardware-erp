@@ -271,6 +271,17 @@ class AuthServiceImplTest {
             when(refreshTokenRepository.findByTokenHash(anyString()))
                     .thenReturn(Optional.of(alreadyRotated));
 
+            // BUG-AUTH-009's fix made the theft path re-read the user through
+            // findById, because stored.getUser() is a lazy proxy that
+            // revokeAllForUser's clearAutomatically detaches. This test was
+            // never updated, so findById returned Mockito's default empty
+            // Optional and the method threw INVALID_REFRESH_TOKEN from that
+            // orElseThrow - before it could revoke anything. The assertions
+            // below were therefore reporting a broken reuse response as a
+            // stubbing gap. See BUG-AUTH-014.
+            when(userRepository.findById(10L)).thenReturn(Optional.of(user));
+            when(userRepository.saveAndFlush(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
             assertThatThrownBy(() -> authService.refresh(raw))
                     .isInstanceOf(AuthException.class)
                     .hasFieldOrPropertyWithValue("code", "TOKEN_REUSE");
