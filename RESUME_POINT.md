@@ -1,12 +1,12 @@
 # RESUME POINT
 
-**Updated:** 2026-08-26 (CR-041: per-tenant document number allocator, replacing the MAX+1 race in ten call sites. Prerequisite for the CR-042/043/044 device + offline + push work. Two environment blockers fixed along the way: Testcontainers could not reach Docker Engine 29, and PermissionCodeConsistencyTest had been failing since the Labour module shipped.)
+**Updated:** 2026-08-26 (CR-045: Version 1 Git and environment foundation. The repository had no commits at all; it now has a branch strategy, four environment profiles, environment- and permission-gated developer inspection, CI, and the `v1.0.0` tag. Two pre-existing test failures were found by running the suite end to end and fixed: BUG-AUTH-014 and BUG-SEC-003.)
 
 ---
 
 ## Next file to work on
 
-**CR-042, increment 2 — thermal print rendering.** Start with
+**CR-042, increment 2 — thermal print rendering.** Unchanged by CR-045. Start with
 `backend/src/main/java/com/hardware/erp/device/escpos/EscPosBuilder.java`
 and the raster receipt renderer. The plan, decisions and phase breakdown live
 in the "Shop Counter Architecture" document produced 2026-08-26.
@@ -19,6 +19,80 @@ Approved decisions from that plan, do not re-litigate them:
   idempotency → PWA offline reads → offline writes → push.
 - Offline write scope → invoice, payment, **quotation and customer drafts**,
   all gated behind a new `OFFLINE_TRANSACT` permission.
+
+Do that work on a branch: `git switch develop && git switch -c feature/thermal-printing`.
+`main` and `develop` both exist now, and feature work no longer happens on either.
+
+---
+
+## CR-045: Version 1 Git and environment foundation (DONE 2026-08-26)
+
+The repository had **never been committed**. 856 files, no history, no remote.
+
+### What exists now
+
+- `main` (tagged `v1.0.0`) and `develop`, plus the
+  `feature/*` `bugfix/*` `hotfix/*` convention. No `production`/`testing`
+  branches — environments are Spring profiles, not branches.
+- Four profiles: `local` (new), `dev`, `test` (new, the QA deployment), `prod`.
+  Each file states what that environment may disclose.
+- `.github/workflows/ci.yml`: backend `mvn clean verify`, frontend
+  typecheck + build + a source-map assertion, and a secret scan.
+- `.gitattributes` normalizing line endings for this mixed
+  PowerShell/Git Bash checkout.
+
+### Developer inspection (`/v1/dev/inspection/*`)
+
+Two independent gates, both server-side, both required: the environment
+(`app.developer-inspection.enabled`) AND the `DEVELOPER_INSPECT` permission
+(V30), which **no default role holds, OWNER included**.
+
+The OWNER exclusion needed changes in **two** places, because roles acquire
+grants two ways — V30 omits the usual OWNER grant, and
+`TenantRegistrationServiceImpl` filters the `DEVELOPER` module out of the
+"OWNER gets everything from the live permission table" grant. Miss the second
+and every newly registered shop's owner gets a diagnostics console.
+
+Production is closed twice: a literal `false` in `application-prod.yml` with no
+env-var behind it, plus a code-level override that returns false under the
+`prod` profile whatever the property says.
+
+**Explicitly rejected**: blocking F12 / right-click / Ctrl+Shift+I / DevTools
+detection. Theatre, not security. Do not add it later.
+
+### One credential fix, made before the first commit
+
+`application.yml` shipped a real developer database login as its
+`spring.datasource` default, pointing at a database name and port the live
+container had not used since 2026-08-23. Fixed **before** the initial commit so
+it is absent from history, not merely from HEAD.
+
+### Two pre-existing failures, both fixed
+
+Both reproduced identically at the baseline commit — neither was caused by
+CR-045.
+
+1. **BUG-AUTH-014** — `AuthServiceImplTest$Refresh.reuseDetection` had been red
+   since BUG-AUTH-009 added a `userRepository.findById` re-read that the test
+   never stubbed. Refresh-token reuse detection therefore had no working test.
+2. **BUG-SEC-003** — `RateLimitFilter` keyed on `getServletPath()`, which
+   MockMvc leaves empty, so **every** integration test passed straight through
+   the rate limiter. Production throttling worked; its evidence did not exist.
+   Now keyed on the new `SecurityUtils.requestPath()`. The same fragility in
+   `JwtAuthenticationFilter.shouldNotFilter` was fixed in the same commit as
+   the same root cause.
+
+Both were coverage holes, not production holes — which is why they survived. A
+test that has been red for a while stops being read as a signal, which is the
+argument for the CI job.
+
+### Left alone deliberately
+
+`backend/src/test/java/com/hardware/erp/auth/controller/TempRateLimitDiagTest.java`
+is an untracked scratch diagnostic (it prints `contextPath` / `servletPath` /
+`requestURI`) that was clearly written while investigating BUG-SEC-003. It is
+preserved on disk but **not committed**. Now that the bug is fixed it can be
+deleted; that is the owner's call, not a cleanup to do silently.
 
 ---
 

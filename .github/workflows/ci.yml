@@ -1,0 +1,158 @@
+name: CI
+
+# Runs on the two long-lived branches and on every pull request into them.
+# There is no deploy step: this project has no automated production deploy
+# today, and adding one silently would be a bigger decision than a CI file.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# A second push to the same branch cancels the first. Nobody needs the result
+# of a superseded commit, and the integration suite is the slow half.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (compile, unit + integration tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      # `verify` and not `test`: maven-failsafe-plugin runs the *IT classes,
+      # which are the ones that exercise real PostgreSQL through
+      # Testcontainers. Docker is present on ubuntu-latest, so they run for
+      # real rather than being skipped.
+      #
+      # No profile is passed. The suite pins itself to the 'test' profile via
+      # @ActiveProfiles on AbstractIntegrationTest, and its datasource comes
+      # from @ServiceConnection, so CI needs no database credentials at all -
+      # which is the point: a CI secret that does not exist cannot leak.
+      - name: Build and test
+        working-directory: backend
+        run: mvn -B --no-transfer-progress clean verify
+
+      # Uploaded on failure only. A green run's reports are noise; a red
+      # run's are the first thing anyone wants.
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: |
+            backend/target/surefire-reports/
+            backend/target/failsafe-reports/
+          retention-days: 7
+
+  frontend:
+    name: Frontend (typecheck, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # ci, not install: fails outright if package-lock.json disagrees with
+      # package.json, rather than quietly resolving to different versions
+      # than a developer has locally.
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type check
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Production build
+        working-directory: frontend
+        run: npm run build
+
+      # The policy in vite.config.ts is only worth as much as its enforcement.
+      # A source map republishes the original TypeScript to anyone with a
+      # network tab; this fails the build if one ever reappears, whether from
+      # an edit to that file or from a tool default changing under us.
+      - name: Assert the production bundle ships no source maps
+        working-directory: frontend
+        run: |
+          if find dist -name '*.map' -print -quit | grep -q .; then
+            echo "::error::Production build emitted source maps. See build.sourcemap in vite.config.ts (CR-045)."
+            find dist -name '*.map'
+            exit 1
+          fi
+          echo "No source maps in dist/ - as intended."
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: a secret removed in the most recent commit is still a
+      # leaked secret if it is reachable from an earlier one.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Deliberately pattern-based and self-contained rather than a third-party
+      # scanning action: this repository is private, and adding an action with
+      # read access to its full history is itself a supply-chain decision.
+      # Matches assigned literal values, not the ${ENV_VAR:default} references
+      # that application.yml is built out of.
+      - name: Scan the working tree for assigned secrets
+        run: |
+          set -euo pipefail
+          pattern='(API_KEY|APIKEY|SECRET|PASSWORD|PASSWD|TOKEN|PRIVATE_KEY|SERVICE_ROLE_KEY)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_/+=-]{16,}'
+          # Known-safe placeholders, each one deliberate:
+          #   the two base64 strings are the documented development and unit-test
+          #   JWT secrets, both listed in JwtSecretGuard.KNOWN_PLACEHOLDERS, and
+          #   the application refuses to start with either under the prod profile.
+          allow='Y2hhbmdlLW1lLWluLXByb2R1Y3Rpb24|dGVzdC1zZWNyZXQta2V5|b3RoZXItc2VjcmV0LWtle|change-me|yourpassword|your-password|xxxxx'
+          if grep -rIEn --exclude-dir=.git --exclude-dir=node_modules \
+               --exclude-dir=target --exclude-dir=dist "$pattern" . \
+               | grep -vE "$allow"; then
+            echo "::error::A literal secret-like value is present. Move it to an environment variable."
+            exit 1
+          fi
+          echo "No assigned secret-like literals found."
+
+      - name: Scan for provider key formats and private keys
+        run: |
+          set -euo pipefail
+          if grep -rIEn --exclude-dir=.git --exclude-dir=node_modules \
+               --exclude-dir=target --exclude-dir=dist \
+               '(sk-[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,}|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)' . ; then
+            echo "::error::A provider API key or private key is present in the working tree."
+            exit 1
+          fi
+          echo "No provider keys or private keys found."
+
+      - name: Assert no .env file is tracked
+        run: |
+          set -euo pipefail
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "::error::.env is tracked by git. It must stay ignored; commit .env.example instead."
+            exit 1
+          fi
+          tracked=$(git ls-files '*.pem' '*.key' '*.p12' '*.pfx' '*.jks' '*.keystore')
+          if [ -n "$tracked" ]; then
+            echo "::error::Key or certificate files are tracked by git:"
+            echo "$tracked"
+            exit 1
+          fi
+          echo "No .env, key or certificate files are tracked."

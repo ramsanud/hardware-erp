@@ -70,9 +70,12 @@ class PermissionCodeConsistencyTest extends AbstractIntegrationTest {
         // PROJECT (CR-029) and LABOUR (CR-036) were added to the permission
         // table by V18 and V25 but never to this list, so the assertion below
         // had been failing since the Labour module shipped.
+        // DEVELOPER (CR-045) is the one module here that is not an ERP
+        // capability - it covers developer diagnostics only, and no default
+        // role holds its permission.
         Set<String> modules = Set.of("AUTH", "CUSTOMER", "SUPPLIER", "PRODUCT",
                 "PURCHASE", "SALES", "INVENTORY", "PAYMENT", "EXPENSE",
-                "REPORT", "SETTINGS", "PROJECT", "LABOUR");
+                "REPORT", "SETTINGS", "PROJECT", "LABOUR", "DEVELOPER");
 
         assertThat(permissionRepository.findAll())
                 .allSatisfy(p -> assertThat(modules).contains(p.getModuleCode()));

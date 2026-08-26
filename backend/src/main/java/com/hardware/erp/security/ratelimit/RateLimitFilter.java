@@ -56,7 +56,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
                                     @NonNull FilterChain chain)
             throws ServletException, IOException {
 
-        String path = request.getServletPath();
+        String path = SecurityUtils.requestPath(request);
         String ip = SecurityUtils.clientIp(request);
 
         // LOGIN and FORGOT key a second bucket by the identifier field in the

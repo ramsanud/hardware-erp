@@ -49,6 +49,14 @@ export const PERMISSIONS = {
   PROJECT_MATERIAL_MANAGE: 'PROJECT_MATERIAL_MANAGE',
   LABOUR_VIEW: 'LABOUR_VIEW',
   LABOUR_MANAGE: 'LABOUR_MANAGE',
+
+  /**
+   * CR-045. The only code here that is not an ERP capability, and the only
+   * one no default role holds - OWNER included. Gates the Developer rail
+   * entry and page; the server gates the data, and additionally refuses
+   * outright in production whatever permission the caller holds.
+   */
+  DEVELOPER_INSPECT: 'DEVELOPER_INSPECT',
 } as const;
 
 export const USER_STATUS_OPTIONS = [

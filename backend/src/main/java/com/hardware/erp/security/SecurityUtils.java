@@ -54,6 +54,29 @@ public final class SecurityUtils {
     }
 
     /**
+     * The path a security rule should match on: the request URI with the
+     * servlet context path removed.
+     *
+     * Deliberately not {@code getServletPath()}. Under a real container with
+     * {@code server.servlet.context-path: /api} that returns the right thing,
+     * but MockMvc leaves it empty, so a filter keyed on it silently matches
+     * nothing in every integration test. That is how RateLimitIT could assert
+     * 429 and receive 401 while production throttled correctly - the security
+     * control worked and its test could never reach it (BUG-SEC-003).
+     *
+     * Subtracting the context path from the URI gives the same answer in both,
+     * and does not depend on how the DispatcherServlet happens to be mapped.
+     */
+    public static String requestPath(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        if (contextPath != null && !contextPath.isEmpty() && uri.startsWith(contextPath)) {
+            return uri.substring(contextPath.length());
+        }
+        return uri;
+    }
+
+    /**
      * X-Forwarded-For is honoured because the app sits behind Nginx. Only the
      * first hop is taken; the remainder is client-controllable and is discarded.
      */

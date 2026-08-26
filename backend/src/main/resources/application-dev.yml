@@ -30,6 +30,23 @@ app:
     login-per-identifier-per-minute: 50
     forgot-password-per-ip-per-hour: 50
     forgot-password-per-identifier-per-hour: 50
+  developer-inspection:
+    # Environment half of the developer-inspection gate (CR-045). The other
+    # half is the DEVELOPER_INSPECT permission, which no default role holds -
+    # including OWNER - so turning this on gives nobody access by itself.
+    enabled: ${APP_DEVELOPER_INSPECTION_ENABLED:true}
+
+# Broader than prod, but never public: SecurityConfig requires
+# DEVELOPER_INSPECT for every actuator path except /actuator/health, which
+# stays open because the hosting platform uses it as a liveness probe.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env,loggers,mappings
+  endpoint:
+    health:
+      show-details: when-authorized
 
 logging:
   level:

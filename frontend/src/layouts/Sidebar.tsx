@@ -3,12 +3,13 @@ import { NavLink } from 'react-router-dom';
 import {
   Boxes, CalendarCheck, ChevronDown, ClipboardList, Coins, FileClock, FileText, HardHat, KeyRound, Landmark,
   LayoutDashboard, Layers, Package, PackageSearch, Settings,
-  ShieldCheck, ShoppingBag, ShoppingCart, Tags, Ticket, TrendingUp, Truck,
+  ShieldCheck, ShoppingBag, ShoppingCart, Tags, TerminalSquare, Ticket, TrendingUp, Truck,
   UserCheck, UserCircle, Users, Wallet, Wrench,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { AUTH_ROUTES, PERMISSIONS } from '@/modules/auth/constants';
+import { DEVELOPER_ROUTES } from '@/modules/developer/constants';
 import { brandService } from '@/modules/settings/services/brandService';
 import { useAuthenticatedImage } from '@/shared/hooks/useAuthenticatedImage';
 import { APP_NAME } from '@/shared/constants';
@@ -110,6 +111,18 @@ const NAV_SECTIONS: NavSection[] = [
       { to: AUTH_ROUTES.permissions, label: 'Permissions', icon: KeyRound, permission: PERMISSIONS.ROLE_VIEW, available: true },
       { to: AUTH_ROUTES.auditLog, label: 'Security log', icon: FileClock, permission: PERMISSIONS.AUDIT_VIEW, available: true },
       { to: '/settings/shop', label: 'Shop settings', icon: Settings, permission: PERMISSIONS.SETTINGS_VIEW, available: true },
+    ],
+  },
+  {
+    // Its own section rather than an entry under Administration, because
+    // administering a shop and debugging the software are different jobs -
+    // the same distinction that keeps DEVELOPER_INSPECT off the OWNER role
+    // (CR-045). In production nobody holds the permission and the server
+    // refuses regardless, so this section renders for nobody there.
+    title: 'Developer',
+    icon: TerminalSquare,
+    items: [
+      { to: DEVELOPER_ROUTES.inspection, label: 'Inspection', icon: TerminalSquare, permission: PERMISSIONS.DEVELOPER_INSPECT, available: true },
     ],
   },
 ];
