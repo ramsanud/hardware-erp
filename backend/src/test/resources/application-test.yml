@@ -54,6 +54,14 @@ app:
   bootstrap:
     enabled: false
 
+  developer-inspection:
+    # On, so the suite exercises the environment-permits path: the interesting
+    # assertion is that the seeded OWNER is still refused /v1/dev/inspection
+    # because no default role holds DEVELOPER_INSPECT (CR-045). The
+    # environment-forbids path is covered by DeveloperInspectionServiceTest,
+    # which does not need a Spring context.
+    enabled: true
+
   cleanup:
     cron: "0 0 2 * * *"
     expired-token-grace-days: 7

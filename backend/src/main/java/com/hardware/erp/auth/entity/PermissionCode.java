@@ -81,4 +81,22 @@ public final class PermissionCode {
     // LABOUR
     public static final String LABOUR_VIEW   = "LABOUR_VIEW";
     public static final String LABOUR_MANAGE = "LABOUR_MANAGE";
+
+    /**
+     * DEVELOPER (CR-045) - the only permission in the catalogue that is not an
+     * ERP capability, and the only one no default role holds.
+     *
+     * OWNER is excluded deliberately, and the exclusion is enforced in two
+     * places because there are two ways a role gets its grants:
+     * V30__developer_inspection_permission.sql skips it for the roles that
+     * already exist, and TenantRegistrationServiceImpl filters the DEVELOPER
+     * module out of the "OWNER gets everything" grant given to every shop
+     * registered afterwards. Running a hardware shop and debugging the
+     * software that runs it are different jobs; granting this by default
+     * would put a diagnostics console one stolen owner password away.
+     *
+     * Holding it is still not sufficient - the environment must also permit
+     * inspection. See DeveloperInspectionService.
+     */
+    public static final String DEVELOPER_INSPECT = "DEVELOPER_INSPECT";
 }

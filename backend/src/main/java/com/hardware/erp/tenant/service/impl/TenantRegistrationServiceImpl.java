@@ -58,6 +58,13 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
     private static final Map<String, String> ROLE_DESCRIPTIONS = new LinkedHashMap<>();
 
     /**
+     * permission.module_code for permissions that are developer tooling rather
+     * than an ERP capability. Excluded from OWNER's otherwise-everything grant
+     * below - see CR-045 and V30__developer_inspection_permission.sql.
+     */
+    static final String DEVELOPER_MODULE = "DEVELOPER";
+
+    /**
      * Package-private, not private, so RoleGrantDriftTest can assert every
      * permission code is deliberately either granted or withheld here. This
      * map is a second source of truth for the default grants (the migrations
@@ -146,10 +153,20 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 .subscriptionTier(request.subscriptionTier() != null ? request.subscriptionTier() : SubscriptionTier.FREE)
                 .build());
 
-        Set<String> allPermissionCodes = permissionRepository.findAllByOrderByModuleCodeAscDisplayOrderAsc()
-                .stream().map(Permission::getCode).collect(Collectors.toCollection(LinkedHashSet::new));
+        // "OWNER gets every permission that exists" - except the DEVELOPER
+        // module, which is not an ERP capability (CR-045). Without this
+        // filter, adding DEVELOPER_INSPECT to the catalogue would silently
+        // hand a diagnostics console to the owner of every shop registered
+        // afterwards, which is the "admin = developer" conflation CR-045
+        // exists to prevent. V30 makes the same exclusion for the roles that
+        // already existed; DeveloperInspectionModuleGrantTest asserts both.
+        Set<String> ownerPermissionCodes = permissionRepository.findAllByOrderByModuleCodeAscDisplayOrderAsc()
+                .stream()
+                .filter(permission -> !DEVELOPER_MODULE.equals(permission.getModuleCode()))
+                .map(Permission::getCode)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
 
-        Role ownerRole = createRole(tenant, "OWNER", allPermissionCodes);
+        Role ownerRole = createRole(tenant, "OWNER", ownerPermissionCodes);
         createRole(tenant, "MANAGER", ROLE_PERMISSIONS.get("MANAGER"));
         createRole(tenant, "ACCOUNTANT", ROLE_PERMISSIONS.get("ACCOUNTANT"));
         createRole(tenant, "STAFF", ROLE_PERMISSIONS.get("STAFF"));

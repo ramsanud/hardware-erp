@@ -44,7 +44,12 @@ class RoleGrantDriftTest {
             PermissionCode.INVOICE_CANCEL,
             PermissionCode.SUPPLIER_VIEW_BANK_ACCOUNT,
             PermissionCode.REPORT_FINANCIAL,
-            PermissionCode.SETTINGS_MANAGE);
+            PermissionCode.SETTINGS_MANAGE,
+            // Developer diagnostics are not an ERP capability (CR-045). No
+            // default role holds this - OWNER included, which is why
+            // TenantRegistrationServiceImpl filters the DEVELOPER module out
+            // of its otherwise-everything OWNER grant.
+            PermissionCode.DEVELOPER_INSPECT);
 
     private static final Set<String> WITHHELD_FROM_ACCOUNTANT = Set.of(
             PermissionCode.USER_VIEW,
@@ -66,7 +71,9 @@ class RoleGrantDriftTest {
             PermissionCode.SUPPLIER_VIEW_BANK_ACCOUNT,
             PermissionCode.COUPON_MANAGE,
             PermissionCode.SETTINGS_VIEW,
-            PermissionCode.SETTINGS_MANAGE);
+            PermissionCode.SETTINGS_MANAGE,
+            // See WITHHELD_FROM_MANAGER - developer diagnostics, CR-045.
+            PermissionCode.DEVELOPER_INSPECT);
 
     private static final Set<String> WITHHELD_FROM_STAFF = Set.of(
             PermissionCode.USER_VIEW,
@@ -100,7 +107,9 @@ class RoleGrantDriftTest {
             // A worker's daily rate is cost-like data - same reasoning as
             // PRODUCT_VIEW_COST above.
             PermissionCode.LABOUR_VIEW,
-            PermissionCode.LABOUR_MANAGE);
+            PermissionCode.LABOUR_MANAGE,
+            // See WITHHELD_FROM_MANAGER - developer diagnostics, CR-045.
+            PermissionCode.DEVELOPER_INSPECT);
 
     /** Every constant declared in PermissionCode, read reflectively so a new one is picked up automatically. */
     private static Set<String> allPermissionCodes() {
