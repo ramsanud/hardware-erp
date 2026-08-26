@@ -642,3 +642,31 @@ unaffected; the `V9xx` seed never runs there. Caught by
 
 No new permission codes - allocation is internal infrastructure, never an
 endpoint.
+
+---
+
+## CR-045 — `DEVELOPER_INSPECT` permission (V30)
+
+`V30__developer_inspection_permission.sql` inserts exactly one row into
+`permission`:
+
+| permission_code | module_code | display_order |
+|---|---|---|
+| `DEVELOPER_INSPECT` | `DEVELOPER` | 10 |
+
+No table, column or constraint changes.
+
+`DEVELOPER` is the first `module_code` that is not an ERP capability, so
+`PermissionCodeConsistencyTest.everyPermissionHasAModule` gained it.
+
+**The migration ends without an OWNER grant, unlike every other module
+migration.** That is the point of it, not an omission: running a hardware shop
+and debugging the software that runs it are different jobs. The matching
+exclusion for shops registered *after* this migration lives in
+`TenantRegistrationServiceImpl`, which assigns OWNER from the live permission
+table and therefore has to filter the `DEVELOPER` module out explicitly.
+`DeveloperInspectionAccessIT.noDefaultRoleHoldsIt` asserts both halves — if it
+ever goes red, "admin = developer" has crept back in.
+
+To grant it, an owner assigns it to a role on the Roles screen, in the
+environment where it is wanted. It still does nothing in production.

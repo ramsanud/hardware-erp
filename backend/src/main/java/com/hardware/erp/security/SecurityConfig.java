@@ -1,5 +1,7 @@
 package com.hardware.erp.security;
 
+import com.hardware.erp.auth.entity.PermissionCode;
+import com.hardware.erp.developer.DeveloperInspectionService;
 import com.hardware.erp.security.ratelimit.RateLimitFilter;
 import com.hardware.erp.security.ratelimit.RateLimitService;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ public class SecurityConfig {
     private final JwtAuthEntryPoint authEntryPoint;
     private final RestAccessDeniedHandler accessDeniedHandler;
     private final SecurityProperties securityProperties;
+    private final DeveloperInspectionService developerInspectionService;
 
     /**
      * Strength 12: roughly 250 ms per hash on modest hardware. Deliberately
@@ -89,7 +92,8 @@ public class SecurityConfig {
                             + "form-action 'self'; object-src 'none'"))
                     .permissionsPolicyHeader(pp -> pp.policy(
                             "camera=(), microphone=(), geolocation=(), payment=()")))
-            .authorizeHttpRequests(auth -> auth
+            .authorizeHttpRequests(auth -> {
+                auth
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .requestMatchers(
                             "/v1/auth/login",
@@ -101,10 +105,44 @@ public class SecurityConfig {
                             "/v1/auth/reset-password",
                             "/v1/tenants/register",
                             "/v1/tenants/register/slug-available").permitAll()
+                    // /actuator/health is the hosting platform's liveness probe
+                    // and must answer before anyone signs in. The API browser is
+                    // public only where it is served at all - application-prod.yml
+                    // disables springdoc outright, so in production these two
+                    // patterns match nothing.
                     .requestMatchers(
                             "/swagger-ui/**", "/swagger-ui.html",
-                            "/v3/api-docs/**", "/actuator/health").permitAll()
-                    .anyRequest().authenticated())
+                            "/v3/api-docs/**", "/actuator/health").permitAll();
+
+                // Developer diagnostics: the ENVIRONMENT half of the CR-045
+                // gate, decided here rather than inside each endpoint so that
+                // a future /v1/dev or /v1/debug controller added by someone
+                // who has not read CR-045 is still covered by default.
+                //
+                // Evaluated once at startup, which is correct: both inputs -
+                // the active profiles and app.developer-inspection.enabled -
+                // are fixed for the life of the process.
+                if (developerInspectionService.environmentAllows()) {
+                    // Permission is the other half, enforced per endpoint by
+                    // @PreAuthorize. Authentication is all that is required
+                    // here so that /v1/dev/inspection/status can report WHICH
+                    // gate closed.
+                    auth.requestMatchers("/v1/dev/**", "/v1/debug/**").authenticated();
+                    // Actuator beyond health is developer tooling too. env,
+                    // configprops and beans in particular would disclose the
+                    // datasource password and the JWT secret.
+                    auth.requestMatchers("/actuator/**")
+                            .hasAuthority(PermissionCode.DEVELOPER_INSPECT);
+                } else {
+                    // Production, and any environment that has not opted in.
+                    // No permission grant and no annotation mistake can open
+                    // these, because nothing reaches a controller at all.
+                    auth.requestMatchers("/v1/dev/**", "/v1/debug/**").denyAll();
+                    auth.requestMatchers("/actuator/**").denyAll();
+                }
+
+                auth.anyRequest().authenticated();
+            })
             // Rate limit first: stop credential stuffing before it reaches
             // BCrypt, where 250ms per attempt becomes a DoS lever.
             .addFilterBefore(rateLimitFilter(), UsernamePasswordAuthenticationFilter.class)

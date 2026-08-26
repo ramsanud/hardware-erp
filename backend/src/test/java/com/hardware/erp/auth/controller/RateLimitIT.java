@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.TestPropertySource;
 
+import static org.hamcrest.Matchers.endsWith;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -95,7 +96,15 @@ class RateLimitIT extends AbstractIntegrationTest {
                         .content(json(new LoginRequest("9000000001", "Wrong@1234"))))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.timestamp").exists())
-                .andExpect(jsonPath("$.path").value("/api/v1/auth/login"))
+                // ErrorResponse.path is the full request URI, so under a real
+                // container with context-path /api it reads /api/v1/auth/login.
+                // MockMvc applies no context path, so it reads /v1/auth/login
+                // here. Asserting the suffix is true in both, rather than
+                // encoding one environment's answer as the expected value -
+                // this assertion had never actually executed before BUG-SEC-003
+                // was fixed, because the request was refused with 401 several
+                // lines earlier.
+                .andExpect(jsonPath("$.path").value(endsWith("/v1/auth/login")))
                 .andExpect(jsonPath("$.message").value(
                         "Too many requests. Please wait before trying again."));
     }

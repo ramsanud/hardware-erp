@@ -188,3 +188,84 @@ fixture.
 - CR-018: supplier bank account number encryption at rest — **applied
   2026-08-23**, see CR-018 in CHANGE_REQUEST_REGISTRY.md's "As built" note.
 - HTTPS termination is a deployment concern; HSTS is meaningless over plain HTTP.
+
+---
+
+## CR-045 — environment separation and developer inspection
+
+### The rule
+
+> Developer inspection is available only to authorized developers, in
+> non-production environments.
+
+Not: "prevent users from opening Chrome DevTools." That distinction drives
+everything below.
+
+### Two gates, both server-side, both required
+
+| | Question it answers | Mechanism |
+|---|---|---|
+| Environment | "Is this a place where debugging happens?" | `app.developer-inspection.enabled` |
+| Person | "Is this human a developer?" | `DEVELOPER_INSPECT` permission |
+
+Neither is sufficient alone. A developer signing into production gets nothing.
+A shop owner on a dev box gets nothing, because OWNER does not hold
+`DEVELOPER_INSPECT`.
+
+**Production is closed twice.** `application-prod.yml` sets a literal `false`
+with no `${...}` placeholder, so there is no environment variable that opens
+it; and `DeveloperInspectionService.environmentAllows()` returns false whenever
+the `prod` profile is active, whatever the property says. The second lock is
+there because the first is one line in a file someone will edit — the same
+reasoning behind `JwtSecretGuard`.
+
+**Role is not environment.** ADMIN in production is ordinary ERP
+administration. DEVELOPER in dev/test is diagnostics. The two are never the
+same grant, which is why `DEVELOPER_INSPECT` is withheld from OWNER in both
+places roles get their permissions (V30, and
+`TenantRegistrationServiceImpl.DEVELOPER_MODULE`).
+
+### Deliberately not implemented
+
+No F12 interception, right-click blocking, Ctrl+Shift+I handler, DevTools
+detection loop, or console clearing. Each is bypassed in seconds, none protects
+anything, and together they make the application feel broken to honest users.
+Anyone proposing them later should read this paragraph first.
+
+Frontend permission checks — `PermissionGate`, `RequirePermission`, the sidebar
+filter — remain what they have always been: a way to avoid showing a page the
+server would refuse. They are never the control.
+
+### Production information disclosure
+
+| Surface | Production |
+|---|---|
+| Swagger UI / OpenAPI JSON | disabled (`springdoc.*.enabled: false`) |
+| Actuator | `health` only, `show-details: never`; `env`/`beans`/`configprops`/`loggers`/`mappings`/`heapdump`/`threaddump` all unexposed |
+| `/v1/dev/**`, `/v1/debug/**` | `denyAll` in the filter chain |
+| Error bodies | code, message, path, request id, timestamp. Never a stack trace, SQL text, file path or class name — already true before CR-045, restated in `application-prod.yml` where a reader looks for it |
+| Whitelabel error page | off |
+| Frontend source maps | not emitted; asserted by CI |
+| Logs | root `WARN`, application `INFO`. Never passwords, tokens or API keys |
+
+### Secrets
+
+`application.yml` carried a real developer database login as its
+`spring.datasource` default. Removed **before the repository's first commit**,
+so it is absent from history rather than merely from `HEAD`.
+
+CI fails the build on a tracked `.env`, a tracked key or certificate, a
+provider API key format (`sk-`, `AIza`, `ghp_`, `github_pat_`, `xox*-`), a PEM
+private key block, or an assigned secret-like literal. The two base64 JWT
+placeholders in `application.yml` and the test sources are allow-listed by
+value; both are already listed in `JwtSecretGuard.KNOWN_PLACEHOLDERS` and the
+application refuses to start with either under the `prod` profile.
+
+### Rate limiting had no test coverage (BUG-SEC-003)
+
+`RateLimitFilter` selected its bucket with `getServletPath()`, which a real
+container fills in but MockMvc leaves empty — so every integration test passed
+straight through the filter and four of `RateLimitIT`'s five assertions failed.
+Production throttling worked; its evidence did not exist. Now keyed on
+`SecurityUtils.requestPath()`, which is identical in both. A security control
+no test can reach is indistinguishable from one that is switched off.

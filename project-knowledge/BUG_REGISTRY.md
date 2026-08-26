@@ -47,6 +47,8 @@ generating new code; never reintroduce a listed bug.
 | BUG-PUR-004 | Purchase Import / Security | CRITICAL | Fixed |
 | BUG-INV-002 | Invoice / Backend | MEDIUM | Fixed (CR-036) |
 | BUG-EXP-001 | Expense / Backend / Database | MEDIUM | Fixed (CR-036) |
+| BUG-AUTH-014 | Authentication / Testing | MEDIUM | Fixed (CR-045) |
+| BUG-SEC-003 | Security / Rate limiting / Testing | HIGH | Fixed (CR-045) |
 | BUG-FE-007 | Product + Expense / Frontend | MEDIUM | Fixed (CR-036) |
 | BUG-LAB-001 | Labour / Database | HIGH | Fixed (CR-036) |
 | BUG-LAB-002 | Labour / Frontend | HIGH | Fixed (CR-037) |
@@ -1510,3 +1512,130 @@ not "is every optional integration configured". Folding a third-party
 dependency into it hands that third party the power to kill your
 deployment. Check what an aggregate health endpoint actually aggregates
 before pointing a platform's restart policy at it.
+
+---
+
+## BUG-AUTH-014 — refresh-token reuse detection was untested and reported as a failure
+
+**Module:** Authentication / Testing
+**Severity:** MEDIUM (test-only; production code was correct throughout)
+**Layer:** BACKEND ONLY — `AuthServiceImplTest`, no production file touched
+**Status:** Fixed (CR-045)
+**Found:** 2026-08-26, running `mvn clean verify` for the first time against the
+Version 1 baseline. `AuthServiceImplTest$Refresh.reuseDetection` failed, and had
+been failing at the baseline commit too — it was not introduced by CR-045.
+
+### Symptom
+
+```
+Expecting com.hardware.erp.common.exception.AuthException: Invalid refresh token
+to have a property "code" with value "TOKEN_REUSE" but value was "INVALID_REFRESH_TOKEN"
+```
+
+298 tests, 1 failure. `mvn clean verify` could not go green.
+
+### Root cause
+
+The test, not the application. BUG-AUTH-009's fix made the theft path in
+`AuthServiceImpl.refresh` re-read the user through
+`userRepository.findById(userId)`, because `stored.getUser()` is a lazy proxy
+that `revokeAllForUser`'s `@Modifying(clearAutomatically = true)` detaches.
+
+`AuthServiceImplTest` was never updated. `findById` was unstubbed, so Mockito
+returned an empty `Optional`, the `orElseThrow` on that line threw
+`INVALID_REFRESH_TOKEN`, and the method returned before revoking anything.
+
+The production behaviour was correct the whole time. What the failure actually
+meant was that reuse detection — revoke every session and bump `token_version`
+when a rotated refresh token is replayed — had **no working test coverage**
+since BUG-AUTH-009, which for a stolen-token response is the coverage that
+matters most.
+
+### Fix
+
+Stub `userRepository.findById(10L)` and `userRepository.saveAndFlush(...)` in
+`reuseDetection`, with a comment naming BUG-AUTH-009 so the coupling is visible
+to whoever changes that path next.
+
+### Regression test
+
+`AuthServiceImplTest$Refresh.reuseDetection` itself — now genuinely exercising
+the path it always claimed to. It asserts the `TOKEN_REUSE` code, that
+`revokeAllForUser` is called with `REUSE_DETECTED`, and that `tokenVersion` is
+bumped to 1.
+
+### Lesson
+
+A test that fails for a stubbing reason looks identical to a test that fails for
+a behaviour reason, and both get read as "known broken". This one had gone
+unnoticed because the suite had never been run end to end. `mvn clean verify`
+belongs in CI, which CR-045 adds.
+
+---
+
+## BUG-SEC-003 — rate limiting was untestable, so four of its five tests failed
+
+**Module:** Security / Rate limiting / Testing
+**Severity:** HIGH (no production impact found; the security control worked, but
+had no effective test coverage and the suite could not go green)
+**Layer:** BACKEND ONLY
+**Status:** Fixed (CR-045)
+**Found:** 2026-08-26, running the full suite for the Version 1 baseline.
+`RateLimitIT` failed 4 of 5. Reproduced identically at the baseline commit, so
+it was not introduced by CR-045. A leftover scratch file
+(`TempRateLimitDiagTest.java`, printing `contextPath` / `servletPath` /
+`requestURI`) shows this had already been under investigation.
+
+### Symptom
+
+```
+RateLimitIT.loginIsRateLimitedPerIp      Status expected:<429> but was:<401>
+RateLimitIT.limitAppliesToValidLogins    Status expected:<429> but was:<200>
+RateLimitIT.forgotPasswordIsRateLimited  Status expected:<429> but was:<200>
+RateLimitIT.rateLimitBodyShape           Status expected:<429> but was:<401>
+```
+
+### Root cause
+
+`RateLimitFilter` selected its bucket with `request.getServletPath()`.
+
+Under a real servlet container with `server.servlet.context-path: /api` that
+returns `/v1/auth/login` and the filter matches, so **production throttling
+worked correctly**. MockMvc applies no context path and leaves `servletPath`
+empty, so every request fell to the `default` branch and passed through
+unthrottled. The tests were asserting against a filter they could never reach.
+
+The consequence is not a production hole but a coverage hole: brute-force and
+credential-stuffing protection — the control that keeps 250 ms of BCrypt from
+becoming a denial-of-service lever — had **no working test** at all, and the
+four red tests read as "known broken" rather than as a signal.
+
+`JwtAuthenticationFilter.shouldNotFilter` had the same `getServletPath()`
+fragility. It caused no failure (the filter simply runs and finds no token on
+public paths) but was fixed in the same commit as the same root cause.
+
+### Fix
+
+`SecurityUtils.requestPath(request)` — the request URI with the context path
+subtracted. Gives the same answer under MockMvc and under a real container, and
+does not depend on how the DispatcherServlet is mapped. Both filters now use it.
+
+`RateLimitIT.rateLimitBodyShape` also asserted `$.path` equalled
+`/api/v1/auth/login`. That assertion had never executed, because the request was
+refused with 401 several lines earlier. `ErrorResponse.path` is the full request
+URI, which legitimately differs between MockMvc and a real container, so it now
+asserts the suffix — true in both.
+
+### Regression test
+
+`RateLimitIT`, all five tests, now genuinely exercising the filter: exact
+attempt counts before 429, the limit applying to valid credentials as well as
+wrong ones, the `Retry-After` header, the error envelope shape, and that
+unrelated endpoints are not throttled by the auth buckets.
+
+### Lesson
+
+A security control that no test can reach is indistinguishable from one that is
+switched off. When a filter keys on a request attribute, prefer one whose value
+is the same in tests as in production — otherwise the test suite quietly stops
+being evidence.

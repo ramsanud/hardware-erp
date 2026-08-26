@@ -268,17 +268,57 @@ false picture.
   Invoke the tool directly — `node ./node_modules/typescript/bin/tsc -b --force`
   — or run `npm run` scripts from PowerShell.
 
-### Known open defect
+### Known open defects
 
-`InvoiceServiceImpl.nextInvoiceNumber()` allocates via
-`findHighestGeneratedCodeNumber(tenantId) + 1` — a read-then-write with no lock
-and no unique constraint, so concurrent creation can produce duplicate invoice
-numbers. The same shape may exist in the quotation, purchase and expense code
-generators. Scheduled for repair under CR-041.
+None outstanding. The document-number race previously listed here was fixed by
+**CR-041** (`document_sequence`, V29, `SELECT … FOR UPDATE`).
+
+The full suite is green as of 2026-08-26: 298 unit tests and 100 Testcontainers
+integration tests, `mvn clean verify`, exit 0. Two failures found while running
+it end to end for the first time were fixed under CR-045 — **BUG-AUTH-014**
+(refresh-token reuse detection had no working test) and **BUG-SEC-003**
+(`RateLimitFilter` keyed on `getServletPath()`, which MockMvc leaves empty, so
+rate limiting was never exercised by any test). Both were coverage holes, not
+production holes.
 
 Module order (completed, kept for history): Auth → Supplier → Customer →
 Category → Brand → Product → Product Variant → Purchase → Inventory →
 Quotation → Invoice → Payment.
+
+---
+
+## Git workflow (CR-045, 2026-08-26)
+
+The repository had **no commits at all** until 2026-08-26. It now has:
+
+```text
+main                    production-ready; tagged releases (v1.0.0 onward)
+  └── develop           integration
+        ├── feature/*
+        ├── bugfix/*
+        └── hotfix/*    from main, merged back into BOTH main and develop
+```
+
+**Never commit feature work directly to `main` or `develop`.** Branch from
+`develop`, merge back with `--no-ff`.
+
+Runtime environments are **Spring profiles** — `local`, `dev`, `test`, `prod` —
+never branches. There is deliberately no `production` or `testing` branch: a
+branch named after an environment invites merging *to deploy*, which is how a
+repository acquires three diverging mainlines.
+
+Commits follow Conventional Commits (`feat:` `fix:` `refactor:` `docs:` `test:`
+`chore:` `security:`). One concern per commit; the body says **why**, and names
+the previous behaviour when a security boundary or default changes.
+
+Tag a release only after `mvn clean verify`, `npm run typecheck` and
+`npm run build` have all passed on the exact commit being tagged. Never create
+a tag on unverified work — hard rule 10 applies to releases too.
+
+Developer diagnostics live behind two independent server-side gates (the
+environment *and* the `DEVELOPER_INSPECT` permission, which no default role
+holds). Never weaken that to a frontend check, and never add DevTools blocking —
+see the "Explicitly rejected" note in CR-045.
 
 ---
 

@@ -365,3 +365,45 @@ convenience constructor so existing callers keep compiling — the same pattern
 | Enabled, token missing | 400 `CAPTCHA_FAILED` |
 | Enabled, token rejected by Cloudflare | 400 `CAPTCHA_FAILED` — correct credentials still do **not** sign in |
 | Enabled, Cloudflare unreachable | 503 `CAPTCHA_UNAVAILABLE` — fails closed, but not reported as the user's mistake |
+
+---
+
+## CR-045 — Developer inspection
+
+Not part of the ERP. Nothing here reads or writes shop data.
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/v1/dev/inspection/status` | authenticated | Reports both gates separately (`environmentAllows`, `permissionHeld`, `available`) plus the active profile **names**. Deliberately not permission-gated, so a developer can tell "wrong environment" from "permission not granted"; a bare 403 conflates them. |
+| GET | `/v1/dev/inspection/runtime` | `DEVELOPER_INSPECT` | Build version, active profiles, Java/OS, CPU count, heap, uptime, server clock and zone. A **fixed list of named fields** — never a system-property or environment dump, because that is where `DB_PASSWORD`, `JWT_SECRET` and `APP_ENCRYPTION_KEY` would surface. |
+| GET | `/v1/dev/inspection/request-echo` | `DEVELOPER_INSPECT` | The request as the server received it: method, path, request id, client IP, resolved user and tenant, and headers. `Authorization`, `Cookie`, `Set-Cookie`, `Proxy-Authorization`, `X-API-Key` and `X-Auth-Token` are **removed, not masked** — a masked value still confirms presence and length. |
+
+**Both gates apply to every row above**, including `status`:
+
+1. The environment must permit inspection. `SecurityConfig` denies the whole
+   `/v1/dev/**` and `/v1/debug/**` trees otherwise, so a future controller
+   added under those paths is covered without its author knowing about CR-045.
+2. `DEVELOPER_INSPECT` — held by no default role, OWNER included.
+
+Where inspection is off, the diagnostics endpoints answer **404, not 403**. A
+403 would confirm the route exists and is worth attacking.
+
+### Actuator
+
+| Path | Access |
+|---|---|
+| `/actuator/health` | public — the hosting platform's liveness probe |
+| `/actuator/**` (everything else) | `DEVELOPER_INSPECT`, and only where the environment permits inspection; `denyAll` otherwise |
+
+Exposure is also narrowed per profile: `prod` publishes `health` only; `test`
+adds `info`, `metrics`, `loggers`; `dev` adds `env` and `mappings`; `local`
+exposes everything. `env`, `configprops` and `beans` are never reachable in
+production.
+
+### Production surface
+
+`springdoc.api-docs.enabled` and `springdoc.swagger-ui.enabled` are **false**
+under the `prod` profile. `/swagger-ui/**` and `/v3/api-docs/**` keep their
+`permitAll` matcher, which in production matches nothing because no handler is
+registered. A complete map of every endpoint, parameter and DTO is useful to an
+attacker and to nobody running a hardware shop.
