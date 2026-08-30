@@ -54,12 +54,9 @@ export function priceDraftLine(item: InvoiceLineDraft): {
   gross: number; discount: number; net: number;
 } {
   const gross = item.sellingPriceRupees * item.quantity;
-  let discount = 0;
-  if (item.discountType === 'PERCENTAGE') {
-    discount = (gross * (item.discountPercent || 0)) / 100;
-  } else if (item.discountType === 'AMOUNT') {
-    discount = item.discountAmountRupees || 0;
-  }
+  // CR-050: percentage only.
+  const discountPct = item.discountType === 'PERCENTAGE' ? (item.discountPercent || 0) : 0;
+  let discount = (gross * discountPct) / 100;
   // Clamp only for DISPLAY. The backend rejects an over-large discount
   // outright rather than clamping, and that rejection is what the owner must
   // see - this just stops the preview flashing a negative total mid-typing.

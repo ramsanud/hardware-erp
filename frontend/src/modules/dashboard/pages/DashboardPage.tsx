@@ -10,6 +10,7 @@ import {
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { PermissionGate } from '@/routes/RequirePermission';
+import { SalesTrendChart } from '../components/SalesTrendChart';
 import { PERMISSIONS } from '@/modules/auth/constants';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { useDesignStyle } from '@/theme/DesignStyleProvider';
@@ -201,6 +202,15 @@ export function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* Full width: a trend needs horizontal room to be readable, and it is
+          the one thing on this page that answers 'how is the shop doing'
+          rather than 'what is the number right now'. REPORT_VIEW gates it -
+          the same permission the analytics endpoints require, so the card is
+          never shown to someone whose request would 403. */}
+      <PermissionGate permission={PERMISSIONS.REPORT_VIEW}>
+        <SalesTrendChart />
+      </PermissionGate>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <PermissionGate permission={PERMISSIONS.INVOICE_VIEW}>

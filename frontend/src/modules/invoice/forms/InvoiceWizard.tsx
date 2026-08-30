@@ -222,24 +222,22 @@ export function InvoiceWizard({
       item.productId === productId ? { ...item, quantity } : item));
   };
 
-  const setDiscountType = (productId: number, discountType: LineDiscountType) => {
-    setItemsError(null);
-    // Switching type clears the OTHER type's value, so a leftover 10% cannot
-    // silently apply after the owner switched to a rupee discount.
-    setItems((current) => current.map((item) => (
-      item.productId === productId
-        ? { ...item, discountType, discountPercent: 0, discountAmountRupees: 0 }
-        : item)));
-  };
-
+  /**
+   * CR-050: discount is a percentage, full stop. Typing a value turns the
+   * line's discount on; clearing it back to zero turns it off. There is no
+   * type to choose any more, so there is no way to leave a line in a state
+   * the API will reject.
+   */
   const setDiscountValue = (productId: number, value: number) => {
     setItemsError(null);
-    setItems((current) => current.map((item) => {
-      if (item.productId !== productId) return item;
-      return item.discountType === 'PERCENTAGE'
-        ? { ...item, discountPercent: value }
-        : { ...item, discountAmountRupees: value };
-    }));
+    setItems((current) => current.map((item) => (
+      item.productId === productId
+        ? {
+          ...item,
+          discountPercent: value,
+          discountType: value > 0 ? 'PERCENTAGE' : 'NONE',
+        }
+        : item)));
   };
 
   const removeItem = (productId: number) => {
@@ -284,11 +282,9 @@ export function InvoiceWizard({
           productId: item.productId,
           quantity: item.quantity,
           discountType: item.discountType,
-          // Only the field the chosen type actually uses is sent; the other
-          // stays null so a stale value can never be interpreted server-side.
+          // CR-050: percentage only. Null when the line carries no discount,
+          // so a stale value can never be interpreted server-side.
           discountPercent: item.discountType === 'PERCENTAGE' ? item.discountPercent : null,
-          discountAmountPaise: item.discountType === 'AMOUNT'
-            ? Math.round(item.discountAmountRupees * 100) : null,
         })),
         // PUT /v1/invoices/{id} takes neither of these. Sent as null while
         // editing so the payload matches what the server will actually act on.
@@ -432,37 +428,24 @@ export function InvoiceWizard({
                           />
                         </td>
                         <td className="px-3 py-2">
-                          <div className="flex items-center gap-1">
-                            <div className="flex shrink-0 overflow-hidden rounded-md border" role="group"
-                                 aria-label={`Discount type for ${item.productName}`}>
-                              {(['AMOUNT', 'PERCENTAGE'] as const).map((type) => (
-                                <button
-                                  key={type}
-                                  type="button"
-                                  aria-pressed={item.discountType === type}
-                                  onClick={() => setDiscountType(
-                                    item.productId, item.discountType === type ? 'NONE' : type)}
-                                  className={cn(
-                                    'h-8 w-8 text-sm font-medium transition-colors',
-                                    item.discountType === type
-                                      ? 'bg-primary text-primary-foreground'
-                                      : 'text-muted-foreground hover:text-foreground',
-                                  )}
-                                >
-                                  {type === 'AMOUNT' ? '₹' : '%'}
-                                </button>
-                              ))}
-                            </div>
+                          {/* A single percentage field with a trailing %, rather
+                              than a type toggle - CR-050 removed the rupee
+                              option, so a toggle with one choice is just a
+                              control that cannot be used. */}
+                          <div className="relative">
                             <NumberInput
                               min={0}
-                              max={item.discountType === 'PERCENTAGE' ? 100 : undefined}
-                              disabled={item.discountType === 'NONE'}
-                              value={item.discountType === 'PERCENTAGE'
-                                ? item.discountPercent : item.discountAmountRupees}
+                              max={100}
+                              value={item.discountPercent}
                               onChange={(value) => setDiscountValue(item.productId, value)}
-                              className="h-8"
-                              aria-label={`Discount for ${item.productName}`}
+                              className="h-8 pr-7 text-right"
+                              aria-label={`Discount percentage for ${item.productName}`}
                             />
+                            <span aria-hidden
+                                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2
+                                             text-sm text-muted-foreground">
+                              %
+                            </span>
                           </div>
                         </td>
                         <td className="px-3 py-2 text-right tabular">

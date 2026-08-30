@@ -6,7 +6,12 @@ export type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'BANK_TRANSFER' | 'OTHER';
  * CR-047. Mirrors com.hardware.erp.common.util.LineDiscount.Type exactly -
  * the backend is the authority for every figure derived from it.
  */
-export type LineDiscountType = 'NONE' | 'PERCENTAGE' | 'AMOUNT';
+/**
+ * CR-050 retired the fixed-amount discount. Mirrors LineDiscount.Type on the
+ * backend, where the constant no longer exists - keeping 'AMOUNT' here would
+ * let the UI offer an option the API now rejects.
+ */
+export type LineDiscountType = 'NONE' | 'PERCENTAGE';
 
 export interface InvoiceItemRequest {
   productId: number;

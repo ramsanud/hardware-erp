@@ -209,6 +209,26 @@
    * glass at the edges rather than a flat band pasted on top - but nothing
    * legible survives 16px of blur under a 97% wash.
    */
+  /*
+   * Floating panels that sit directly ON page content with nothing behind
+   * them - the global search results, dropdown menus, popovers.
+   *
+   * These cannot use .surface-panel. On the glass design styles
+   * --surface-bg-opacity is 0.5-0.55, and a half-transparent dropdown lets
+   * the dashboard read straight through the results underneath it
+   * (BUG-FE-018) - the same defect BUG-FE-012 fixed for the dialog sticky
+   * bar, in a different place.
+   *
+   * A Card may stay translucent: it sits IN the page rather than over it,
+   * and the effect is the point there.
+   */
+  .surface-overlay {
+    background-color: hsl(var(--popover) / calc(var(--surface-bg-opacity) * 0.04 + 0.96));
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    box-shadow: var(--surface-shadow);
+    border-color: hsl(var(--border) / var(--surface-border-opacity));
+  }
   .surface-sticky-bar {
     background-color: hsl(var(--card) / calc(var(--surface-bg-opacity) * 0.06 + 0.94));
     -webkit-backdrop-filter: blur(16px);
