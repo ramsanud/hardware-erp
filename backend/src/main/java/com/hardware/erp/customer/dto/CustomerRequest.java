@@ -21,15 +21,15 @@ public record CustomerRequest(
         @NotBlank @Pattern(regexp = "^[6-9][0-9]{9}$", message = "Enter a valid 10-digit mobile number")
         String mobileNo,
         @Email @Size(max = 255) String email,
-        @Pattern(regexp = "^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$",
+        @Pattern(regexp = "^$|^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$",
                 message = "Enter a valid 15-character GSTIN")
         String gstNo,
         @Size(max = 255) String addressLine1,
         @Size(max = 255) String addressLine2,
         @Size(max = 100) String city,
-        @Pattern(regexp = "^[0-9]{2}$", message = "State code is the 2-digit GST state code")
+        @Pattern(regexp = "^$|^[0-9]{2}$", message = "State code is the 2-digit GST state code")
         String stateCode,
-        @Pattern(regexp = "^[0-9]{6}$", message = "Enter a valid 6-digit pincode")
+        @Pattern(regexp = "^$|^[0-9]{6}$", message = "Enter a valid 6-digit pincode")
         String pincode,
         @PositiveOrZero Long creditLimitPaise,
         @NotNull(message = "Status is required")
