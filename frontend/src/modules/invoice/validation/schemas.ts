@@ -29,6 +29,17 @@ export const invoiceWizardSchema = customerStepSchema.merge(paymentStepSchema);
 export type InvoiceWizardValues = z.infer<typeof invoiceWizardSchema>;
 
 export interface InvoiceLineDraft {
+  /**
+   * Stable per-LINE identity (BUG-FE-021).
+   *
+   * productId cannot serve as the key: the same product may legitimately
+   * appear on two lines - different quantities, different discounts, a
+   * split delivery - and keying edits on productId then made every
+   * operation hit both lines at once. Editing one line's labour changed
+   * both; deleting one deleted both; and React saw duplicate keys, which
+   * corrupts reconciliation independently of any of that.
+   */
+  lineId: string;
   productId: number;
   productCode: string;
   productName: string;

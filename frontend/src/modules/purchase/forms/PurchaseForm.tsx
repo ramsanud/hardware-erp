@@ -22,6 +22,10 @@ import { PAYMENT_METHOD_OPTIONS } from '../constants';
 import type { PurchaseRequest } from '../types';
 
 interface LineDraft {
+  /** Stable per-LINE identity (BUG-FE-021) - a purchase bill may list the
+   *  same product twice at different rates, and productId cannot tell them
+   *  apart. */
+  lineId: string;
   productId: number;
   productName: string;
   unit: string;
@@ -64,18 +68,20 @@ export function PurchaseForm({ onSubmit, onCancel }: PurchaseFormProps) {
   const addProduct = (product: ProductSummaryResponse) => {
     if (items.some((item) => item.productId === product.id)) return;
     setItems((current) => [...current, {
+      lineId: typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID() : `line-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       productId: product.id, productName: product.productName, unit: product.unit,
       quantity: 1, unitPriceRupees: 0, gstRatePercent: Number(product.gstRatePercent) || 0,
     }]);
     setItemsError(null);
   };
 
-  const updateItem = (productId: number, patch: Partial<LineDraft>) => {
-    setItems((current) => current.map((item) => (item.productId === productId ? { ...item, ...patch } : item)));
+  const updateItem = (lineId: string, patch: Partial<LineDraft>) => {
+    setItems((current) => current.map((item) => (item.lineId === lineId ? { ...item, ...patch } : item)));
   };
 
-  const removeItem = (productId: number) => {
-    setItems((current) => current.filter((item) => item.productId !== productId));
+  const removeItem = (lineId: string) => {
+    setItems((current) => current.filter((item) => item.lineId !== lineId));
   };
 
   const subtotalPaise = items.reduce((sum, item) => {
@@ -159,19 +165,19 @@ export function PurchaseForm({ onSubmit, onCancel }: PurchaseFormProps) {
               </TableHeader>
               <TableBody>
                 {items.map((item) => (
-                  <TableRow key={item.productId}>
+                  <TableRow key={item.lineId}>
                     <TableCell className="font-medium">{item.productName} <span className="text-xs text-muted-foreground">({item.unit})</span></TableCell>
                     <TableCell>
-                      <NumberInput value={item.quantity} onChange={(value) => updateItem(item.productId, { quantity: value })} />
+                      <NumberInput value={item.quantity} onChange={(value) => updateItem(item.lineId, { quantity: value })} />
                     </TableCell>
                     <TableCell>
-                      <NumberInput value={item.unitPriceRupees} onChange={(value) => updateItem(item.productId, { unitPriceRupees: value })} />
+                      <NumberInput value={item.unitPriceRupees} onChange={(value) => updateItem(item.lineId, { unitPriceRupees: value })} />
                     </TableCell>
                     <TableCell>
-                      <NumberInput value={item.gstRatePercent} onChange={(value) => updateItem(item.productId, { gstRatePercent: value })} />
+                      <NumberInput value={item.gstRatePercent} onChange={(value) => updateItem(item.lineId, { gstRatePercent: value })} />
                     </TableCell>
                     <TableCell>
-                      <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(item.productId)}>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(item.lineId)}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </TableCell>

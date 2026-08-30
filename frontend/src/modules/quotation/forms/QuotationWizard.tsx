@@ -77,6 +77,7 @@ export function QuotationWizard({
           if (result.status === 'fulfilled' && result.value.product.status === 'ACTIVE') {
             const { product, quantity } = result.value;
             loaded.push({
+              lineId: nextLineId(),
               productId: product.id, productCode: product.productCode, productName: product.productName,
               unit: product.unit, sellingPriceRupees: Number(product.sellingPriceDisplay.replace(/,/g, '')), quantity,
             });
@@ -122,9 +123,16 @@ export function QuotationWizard({
     return { subtotal, gst, total: subtotal + gst };
   }, [items]);
 
+  /** See InvoiceWizard.nextLineId - a line needs identity independent of its product. */
+  const nextLineId = () => (
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `line-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
   const addItem = (product: ProductSummaryResponse) => {
     setItemsError(null);
     setItems((current) => [...current, {
+      lineId: nextLineId(),
       productId: product.id,
       productCode: product.productCode,
       productName: product.productName,
@@ -134,13 +142,13 @@ export function QuotationWizard({
     }]);
   };
 
-  const updateQuantity = (productId: number, quantity: number) => {
+  const updateQuantity = (lineId: string, quantity: number) => {
     setItems((current) => current.map((item) =>
-      item.productId === productId ? { ...item, quantity } : item));
+      item.lineId === lineId ? { ...item, quantity } : item));
   };
 
-  const removeItem = (productId: number) => {
-    setItems((current) => current.filter((item) => item.productId !== productId));
+  const removeItem = (lineId: string) => {
+    setItems((current) => current.filter((item) => item.lineId !== lineId));
   };
 
   const goNext = async () => {
@@ -285,7 +293,7 @@ export function QuotationWizard({
                   </thead>
                   <tbody className="divide-y">
                     {items.map((item) => (
-                      <tr key={item.productId}>
+                      <tr key={item.lineId}>
                         <td className="px-3 py-2">
                           <span className="block font-medium">{item.productName}</span>
                           <span className="block text-xs text-muted-foreground">{item.productCode}</span>
@@ -294,7 +302,7 @@ export function QuotationWizard({
                         <td className="px-3 py-2">
                           <NumberInput
                             min={0.0001} value={item.quantity}
-                            onChange={(value) => updateQuantity(item.productId, value)}
+                            onChange={(value) => updateQuantity(item.lineId, value)}
                             className="h-8"
                             aria-label={`Quantity for ${item.productName}`}
                           />
@@ -304,7 +312,7 @@ export function QuotationWizard({
                         </td>
                         <td className="px-3 py-2 text-right">
                           <button
-                            type="button" onClick={() => removeItem(item.productId)}
+                            type="button" onClick={() => removeItem(item.lineId)}
                             className="rounded-sm p-1 text-muted-foreground hover:text-destructive"
                             aria-label={`Remove ${item.productName}`}
                           >
@@ -352,7 +360,7 @@ export function QuotationWizard({
               <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Items ({items.length})</p>
               <ul className="divide-y rounded-md border text-sm">
                 {items.map((item) => (
-                  <li key={item.productId} className="flex justify-between px-3 py-2">
+                  <li key={item.lineId} className="flex justify-between px-3 py-2">
                     <span>{item.productName} × {item.quantity}</span>
                     <span className="tabular">₹{rupees(item.sellingPriceRupees * item.quantity)}</span>
                   </li>

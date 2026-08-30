@@ -24,6 +24,12 @@ export const quotationWizardSchema = quotationCustomerStepSchema.merge(quotation
 export type QuotationWizardValues = z.infer<typeof quotationWizardSchema>;
 
 export interface QuotationLineDraft {
+  /**
+   * Stable per-LINE identity (BUG-FE-021) - see InvoiceLineDraft.lineId. The
+   * same product may legitimately appear twice, and keying edits on productId
+   * made every operation hit both lines.
+   */
+  lineId: string;
   productId: number;
   productCode: string;
   productName: string;

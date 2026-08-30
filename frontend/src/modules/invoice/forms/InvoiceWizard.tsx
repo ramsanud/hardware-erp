@@ -126,6 +126,7 @@ export function InvoiceWizard({
               productId: product.id, productCode: product.productCode, productName: product.productName,
               unit: product.unit, sellingPriceRupees: Number(product.sellingPriceDisplay.replace(/,/g, '')), quantity,
               discountType: line.discountType ?? 'NONE',
+              lineId: nextLineId(),
               discountPercent: line.discountPercent ?? 0,
               labourPercent: line.labourPercent ?? 0,
               discountAmountRupees: line.discountAmountRupees ?? 0,
@@ -220,9 +221,19 @@ export function InvoiceWizard({
     return { check: creditCheck, projectedPaise };
   }, [creditCheck, totals.total, initialPayment]);
 
+  /**
+   * crypto.randomUUID is available in every browser this app supports and in
+   * jsdom; the counter fallback keeps a line identifiable if it ever is not.
+   */
+  const nextLineId = () => (
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `line-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
   const addItem = (product: ProductSummaryResponse) => {
     setItemsError(null);
     setItems((current) => [...current, {
+      lineId: nextLineId(),
       productId: product.id,
       productCode: product.productCode,
       productName: product.productName,
@@ -236,9 +247,9 @@ export function InvoiceWizard({
     }]);
   };
 
-  const updateQuantity = (productId: number, quantity: number) => {
+  const updateQuantity = (lineId: string, quantity: number) => {
     setItems((current) => current.map((item) =>
-      item.productId === productId ? { ...item, quantity } : item));
+      item.lineId === lineId ? { ...item, quantity } : item));
   };
 
   /**
@@ -247,16 +258,16 @@ export function InvoiceWizard({
    * type to choose any more, so there is no way to leave a line in a state
    * the API will reject.
    */
-  const setLabourValue = (productId: number, value: number) => {
+  const setLabourValue = (lineId: string, value: number) => {
     setItemsError(null);
     setItems((current) => current.map((item) => (
-      item.productId === productId ? { ...item, labourPercent: value } : item)));
+      item.lineId === lineId ? { ...item, labourPercent: value } : item)));
   };
 
-  const setDiscountValue = (productId: number, value: number) => {
+  const setDiscountValue = (lineId: string, value: number) => {
     setItemsError(null);
     setItems((current) => current.map((item) => (
-      item.productId === productId
+      item.lineId === lineId
         ? {
           ...item,
           discountPercent: value,
@@ -265,8 +276,8 @@ export function InvoiceWizard({
         : item)));
   };
 
-  const removeItem = (productId: number) => {
-    setItems((current) => current.filter((item) => item.productId !== productId));
+  const removeItem = (lineId: string) => {
+    setItems((current) => current.filter((item) => item.lineId !== lineId));
   };
 
   const goNext = async () => {
@@ -447,7 +458,7 @@ export function InvoiceWizard({
                   </thead>
                   <tbody className="divide-y">
                     {items.map((item) => (
-                      <tr key={item.productId}>
+                      <tr key={item.lineId}>
                         <td className="px-3 py-2">
                           <span className="block font-medium">{item.productName}</span>
                           <span className="block text-xs text-muted-foreground">{item.productCode}</span>
@@ -456,7 +467,7 @@ export function InvoiceWizard({
                         <td className="px-3 py-2">
                           <NumberInput
                             min={0.0001} value={item.quantity}
-                            onChange={(value) => updateQuantity(item.productId, value)}
+                            onChange={(value) => updateQuantity(item.lineId, value)}
                             className="h-8"
                             aria-label={`Quantity for ${item.productName}`}
                           />
@@ -471,7 +482,7 @@ export function InvoiceWizard({
                               min={0}
                               max={100}
                               value={item.discountPercent}
-                              onChange={(value) => setDiscountValue(item.productId, value)}
+                              onChange={(value) => setDiscountValue(item.lineId, value)}
                               className="h-8 pr-7 text-right"
                               aria-label={`Discount percentage for ${item.productName}`}
                             />
@@ -489,7 +500,7 @@ export function InvoiceWizard({
                                 min={0}
                                 max={100}
                                 value={item.labourPercent}
-                                onChange={(value) => setLabourValue(item.productId, value)}
+                                onChange={(value) => setLabourValue(item.lineId, value)}
                                 className="h-8 pr-7 text-right"
                                 aria-label={`Internal labour percentage for ${item.productName}`}
                               />
@@ -511,7 +522,7 @@ export function InvoiceWizard({
                         </td>
                         <td className="px-3 py-2 text-right">
                           <button
-                            type="button" onClick={() => removeItem(item.productId)}
+                            type="button" onClick={() => removeItem(item.lineId)}
                             className="rounded-sm p-1 text-muted-foreground hover:text-destructive"
                             aria-label={`Remove ${item.productName}`}
                           >
@@ -739,7 +750,7 @@ export function InvoiceWizard({
               <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Items ({items.length})</p>
               <ul className="divide-y rounded-md border text-sm">
                 {items.map((item) => (
-                  <li key={item.productId} className="flex justify-between px-3 py-2">
+                  <li key={item.lineId} className="flex justify-between px-3 py-2">
                     <span>{item.productName} × {item.quantity}</span>
                     <span className="tabular">₹{rupees(item.sellingPriceRupees * item.quantity)}</span>
                   </li>
