@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
+import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
+import { PERMISSIONS } from '@/modules/auth/constants';
+import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { supplierService } from '@/modules/supplier/services/supplierService';
+import { SupplierQuickAddDialog } from '@/modules/supplier/forms/SupplierQuickAddDialog';
 import type { SupplierSummaryResponse } from '@/modules/supplier/types';
 
 interface SupplierPickerProps {
@@ -14,7 +18,13 @@ export function SupplierPicker({ onPick }: SupplierPickerProps) {
   const [results, setResults] = useState<SupplierSummaryResponse[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [addingSupplier, setAddingSupplier] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // A frontend gate only - POST /v1/suppliers is @PreAuthorize'd on the same
+  // permission, so hiding the button is a courtesy, not the control.
+  const { hasPermission } = useAuth();
+  const canAddSupplier = hasPermission(PERMISSIONS.SUPPLIER_MANAGE);
 
   useEffect(() => {
     const term = query.trim();
@@ -61,7 +71,21 @@ export function SupplierPicker({ onPick }: SupplierPickerProps) {
             {loading ? (
               <p className="px-3 py-3 text-sm text-muted-foreground">Searching…</p>
             ) : results.length === 0 ? (
-              <p className="px-3 py-3 text-sm text-muted-foreground">No matching suppliers.</p>
+              // "No matching suppliers" used to be a dead end mid-purchase
+              // (BUG-FE-022): the owner had to abandon the form, go and create
+              // the supplier, and start again. Same inline-add contract as the
+              // product picker and the work-type select.
+              <div className="px-3 py-3 text-sm text-muted-foreground">
+                <p>No matching suppliers.</p>
+                {canAddSupplier ? (
+                  <Button type="button" variant="ghost" size="sm"
+                          className="mt-1 h-auto px-0 py-1 text-primary hover:bg-transparent hover:underline"
+                          onClick={() => { setOpen(false); setAddingSupplier(true); }}>
+                    <Plus className="h-3.5 w-3.5" />
+                    Add &quot;{query.trim()}&quot; as a new supplier
+                  </Button>
+                ) : null}
+              </div>
             ) : (
               results.map((supplier) => (
                 <button
@@ -80,6 +104,20 @@ export function SupplierPicker({ onPick }: SupplierPickerProps) {
           </div>
         </div>
       ) : null}
+
+      <SupplierQuickAddDialog
+        open={addingSupplier}
+        onOpenChange={setAddingSupplier}
+        initialName={query.trim()}
+        onCreated={(supplier) => {
+          // Select it straight away - the owner asked for this supplier by
+          // name, so making them search for it again would be busywork.
+          onPick(supplier);
+          setQuery('');
+          setResults([]);
+          setOpen(false);
+        }}
+      />
     </div>
   );
 }
