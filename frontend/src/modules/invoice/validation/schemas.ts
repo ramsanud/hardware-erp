@@ -43,6 +43,12 @@ export interface InvoiceLineDraft {
   discountType: LineDiscountType;
   discountPercent: number;
   discountAmountRupees: number;
+  /**
+   * CR-050 internal labour margin, as a percentage of the DISCOUNTED value.
+   * Owner-only: it raises the rate the customer is charged but never appears
+   * as its own line on a customer document.
+   */
+  labourPercent: number;
 }
 
 /**
@@ -51,7 +57,7 @@ export interface InvoiceLineDraft {
  * document agree: discount off gross first, GST on the remainder.
  */
 export function priceDraftLine(item: InvoiceLineDraft): {
-  gross: number; discount: number; net: number;
+  gross: number; discount: number; labour: number; net: number; effectiveUnit: number;
 } {
   const gross = item.sellingPriceRupees * item.quantity;
   // CR-050: percentage only.
@@ -61,5 +67,20 @@ export function priceDraftLine(item: InvoiceLineDraft): {
   // outright rather than clamping, and that rejection is what the owner must
   // see - this just stops the preview flashing a negative total mid-typing.
   discount = Math.min(Math.max(discount, 0), gross);
-  return { gross, discount, net: gross - discount };
+
+  // CR-050 order: labour is a percentage of the value AFTER discount, never
+  // of the gross. Taking it off the gross would quietly hand back part of
+  // the discount, and the preview would then disagree with the saved
+  // document. Mirrors LineDiscount.price on the backend exactly.
+  const afterDiscount = gross - discount;
+  const labour = (afterDiscount * Math.min(Math.max(item.labourPercent || 0, 0), 100)) / 100;
+  const net = afterDiscount + labour;
+
+  return {
+    gross,
+    discount,
+    labour,
+    net,
+    effectiveUnit: item.quantity > 0 ? net / item.quantity : 0,
+  };
 }

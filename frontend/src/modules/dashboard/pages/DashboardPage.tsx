@@ -130,7 +130,7 @@ export function DashboardPage() {
                 <p className="text-sm text-muted-foreground">Total sales</p>
                 <p className="figure mt-1 text-2xl">₹{sales.totalSalesDisplay}</p>
               </div>
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                 <TrendingUp className="h-5 w-5" aria-hidden />
               </span>
             </CardContent>
@@ -139,25 +139,51 @@ export function DashboardPage() {
         const todayChange = sales.yesterdaySalesPaise > 0
           ? ((sales.todaySalesPaise - sales.yesterdaySalesPaise) / sales.yesterdaySalesPaise) * 100
           : null;
+        const todayDelta = todayChange !== null ? (
+          <p className={`mt-1 flex items-center gap-1 text-xs ${todayChange >= 0 ? 'text-success' : 'text-destructive'}`}>
+            {todayChange >= 0 ? <ArrowUp className="h-3 w-3" aria-hidden /> : <ArrowDown className="h-3 w-3" aria-hidden />}
+            {Math.abs(todayChange).toFixed(1)}% vs yesterday
+          </p>
+        ) : null;
+        const todayIcon = (
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <IndianRupee className="h-5 w-5" aria-hidden />
+          </span>
+        );
+        /*
+         * Two genuinely different layouts rather than one structure bent into
+         * both (BUG-FE-020). The old markup nested a "label + icon" ROW inside
+         * the flat variant's own row, so the icon shrank up against the label
+         * instead of sitting right like Total sales and Outstanding do -
+         * "Today's sales (₹)        ₹8,877.91". It only ever looked right in
+         * the bento column, which is what it was written for.
+         */
         const todayCard = (
           <Card key="today" className={entranceClass}>
-            <CardContent className={isBento ? 'flex h-full flex-col justify-center gap-2 p-6' : 'flex h-full items-center justify-between p-5'}>
-              <div className="flex items-center justify-between">
-                <p className={isBento ? 'text-sm text-muted-foreground' : 'text-sm text-muted-foreground'}>Today&apos;s sales</p>
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <IndianRupee className="h-5 w-5" aria-hidden />
-                </span>
-              </div>
-              <div>
-                <p className={isBento ? 'figure text-4xl' : 'figure mt-1 text-2xl'}>₹{sales.todaySalesDisplay}</p>
-                {todayChange !== null ? (
-                  <p className={`mt-1 flex items-center gap-1 text-xs ${todayChange >= 0 ? 'text-success' : 'text-destructive'}`}>
-                    {todayChange >= 0 ? <ArrowUp className="h-3 w-3" aria-hidden /> : <ArrowDown className="h-3 w-3" aria-hidden />}
-                    {Math.abs(todayChange).toFixed(1)}% vs yesterday
-                  </p>
-                ) : null}
-              </div>
-            </CardContent>
+            {isBento ? (
+              <CardContent className="flex h-full flex-col justify-center gap-2 p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">Today&apos;s sales</p>
+                  {todayIcon}
+                </div>
+                <div>
+                  <p className="figure text-4xl">₹{sales.todaySalesDisplay}</p>
+                  {todayDelta}
+                </div>
+              </CardContent>
+            ) : (
+              // Identical shape to totalCard and outstandingCard: text block
+              // left, icon hard right. min-w-0 so a long figure truncates
+              // rather than pushing the icon off the card.
+              <CardContent className="flex h-full items-center justify-between gap-3 p-5">
+                <div className="min-w-0">
+                  <p className="text-sm text-muted-foreground">Today&apos;s sales</p>
+                  <p className="figure mt-1 text-2xl">₹{sales.todaySalesDisplay}</p>
+                  {todayDelta}
+                </div>
+                {todayIcon}
+              </CardContent>
+            )}
           </Card>
         );
         const outstandingCard = (
@@ -167,7 +193,7 @@ export function DashboardPage() {
                 <p className="text-sm text-muted-foreground">Outstanding customer balance</p>
                 <p className="figure mt-1 text-2xl">₹{sales.outstandingCustomerBalanceDisplay}</p>
               </div>
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-warning/10 text-warning">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/10 text-warning">
                 <AlertTriangle className="h-5 w-5" aria-hidden />
               </span>
             </CardContent>
