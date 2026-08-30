@@ -27,6 +27,7 @@ public class InvoiceMapper {
                 invoice.getCoupon() != null ? invoice.getCoupon().getCode() : null,
                 invoice.getDiscountPaise() != null && invoice.getDiscountPaise() > 0
                         ? rupees(invoice.getDiscountPaise()) : null,
+                productDiscount(invoice),
                 rupees(invoice.getPaidPaise()),
                 rupees(invoice.getBalancePaise()),
                 invoice.getStatus(),
@@ -57,6 +58,18 @@ public class InvoiceMapper {
                 invoice.getStatus());
     }
 
+    /**
+     * Derived, not stored: the invoice already persists each line's own
+     * discount, and a second stored total is one more thing that can disagree
+     * with the lines it is meant to summarise.
+     */
+    private String productDiscount(Invoice invoice) {
+        long total = invoice.getItems().stream()
+                .mapToLong(item -> item.getDiscountAmountPaise() == null ? 0L : item.getDiscountAmountPaise())
+                .sum();
+        return total > 0 ? rupees(total) : null;
+    }
+
     public InvoiceItemResponse toResponse(InvoiceItem item) {
         return new InvoiceItemResponse(
                 item.getId(),
@@ -68,7 +81,13 @@ public class InvoiceMapper {
                 item.getGstRatePercent().toPlainString(),
                 rupees(item.getLineSubtotalPaise()),
                 rupees(item.getLineGstPaise()),
-                rupees(item.getLineTotalPaise()));
+                rupees(item.getLineTotalPaise()),
+                item.getDiscountType(),
+                item.getDiscountPercent().toPlainString(),
+                rupees(item.getDiscountAmountPaise()),
+                // Gross is derived, not stored: subtotal is already net of the
+                // discount, so adding it back is the one honest source.
+                rupees(item.getLineSubtotalPaise() + item.getDiscountAmountPaise()));
     }
 
     public PaymentResponse toResponse(Payment payment) {

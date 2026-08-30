@@ -17,7 +17,14 @@ public record InvoiceResponse(
         String gstAmountDisplay,
         String totalDisplay,
         String couponCode,
+        /** Invoice-level (coupon) discount. Null when no coupon was used. */
         String discountDisplay,
+        /**
+         * CR-047: the sum of the per-line manual discounts, kept SEPARATE from
+         * discountDisplay above so the summary can show them on their own rows
+         * and neither is double counted. Null when every line is undiscounted.
+         */
+        String productDiscountDisplay,
         String paidDisplay,
         String balanceDisplay,
         InvoiceStatus status,

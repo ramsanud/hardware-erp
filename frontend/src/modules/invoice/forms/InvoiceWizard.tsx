@@ -22,8 +22,11 @@ import type { TenantBankAccountResponse } from '@/modules/settings/types';
 import { ProductPicker } from '../components/ProductPicker';
 import { CreditLimitWarning } from '../components/CreditLimitWarning';
 import { PAYMENT_METHOD_OPTIONS } from '../constants';
-import { invoiceWizardSchema, type InvoiceLineDraft, type InvoiceWizardValues } from '../validation/schemas';
-import type { InvoiceRequest } from '../types';
+import {
+  invoiceWizardSchema, priceDraftLine,
+  type InvoiceLineDraft, type InvoiceWizardValues,
+} from '../validation/schemas';
+import type { InvoiceRequest, LineDiscountType } from '../types';
 
 const STEPS = ['Customer', 'Items', 'Payment', 'Review'] as const;
 
@@ -45,6 +48,10 @@ export interface InvoiceWizardInitialCustomer {
 export interface InvoiceWizardInitialItem {
   productId: number;
   quantity: number;
+  /** CR-047 - carried through a repeat/edit so a negotiated discount is not silently dropped. */
+  discountType?: LineDiscountType;
+  discountPercent?: number;
+  discountAmountRupees?: number;
 }
 
 interface InvoiceWizardProps {
@@ -94,17 +101,20 @@ export function InvoiceWizard({
   useEffect(() => {
     if (!initialItems || initialItems.length === 0) return;
     let cancelled = false;
-    Promise.allSettled(initialItems.map((line) => productService.get(line.productId).then((product) => ({ product, quantity: line.quantity }))))
+    Promise.allSettled(initialItems.map((line) => productService.get(line.productId).then((product) => ({ product, quantity: line.quantity, line }))))
       .then((results) => {
         if (cancelled) return;
         const loaded: InvoiceLineDraft[] = [];
         let skipped = 0;
         for (const result of results) {
           if (result.status === 'fulfilled' && result.value.product.status === 'ACTIVE') {
-            const { product, quantity } = result.value;
+            const { product, quantity, line } = result.value;
             loaded.push({
               productId: product.id, productCode: product.productCode, productName: product.productName,
               unit: product.unit, sellingPriceRupees: Number(product.sellingPriceDisplay.replace(/,/g, '')), quantity,
+              discountType: line.discountType ?? 'NONE',
+              discountPercent: line.discountPercent ?? 0,
+              discountAmountRupees: line.discountAmountRupees ?? 0,
             });
           } else {
             skipped += 1;
@@ -163,14 +173,20 @@ export function InvoiceWizard({
   const totals = useMemo(() => {
     let subtotal = 0;
     let gst = 0;
+    let productDiscount = 0;
     for (const item of items) {
-      const lineSubtotal = item.sellingPriceRupees * item.quantity;
+      // CR-047: discount comes off before GST, matching LineDiscount on the
+      // server. Doing it the other way here would show the owner a total the
+      // invoice then contradicts.
+      const { discount, net } = priceDraftLine(item);
+      productDiscount += discount;
+      const lineSubtotal = net;
       subtotal += lineSubtotal;
       // Estimate only, for display while editing - the server computes the
       // authoritative GST per line from the product's own rate at save time.
       gst += lineSubtotal * 0.18;
     }
-    return { subtotal, gst, total: subtotal + gst };
+    return { subtotal, gst, productDiscount, total: subtotal + gst };
   }, [items]);
 
   const initialPayment = Number(values.initialPaymentRupees) || 0;
@@ -195,12 +211,35 @@ export function InvoiceWizard({
       unit: product.unit,
       sellingPriceRupees: Number(product.sellingPriceDisplay.replace(/,/g, '')),
       quantity: 1,
+      discountType: 'NONE',
+      discountPercent: 0,
+      discountAmountRupees: 0,
     }]);
   };
 
   const updateQuantity = (productId: number, quantity: number) => {
     setItems((current) => current.map((item) =>
       item.productId === productId ? { ...item, quantity } : item));
+  };
+
+  const setDiscountType = (productId: number, discountType: LineDiscountType) => {
+    setItemsError(null);
+    // Switching type clears the OTHER type's value, so a leftover 10% cannot
+    // silently apply after the owner switched to a rupee discount.
+    setItems((current) => current.map((item) => (
+      item.productId === productId
+        ? { ...item, discountType, discountPercent: 0, discountAmountRupees: 0 }
+        : item)));
+  };
+
+  const setDiscountValue = (productId: number, value: number) => {
+    setItemsError(null);
+    setItems((current) => current.map((item) => {
+      if (item.productId !== productId) return item;
+      return item.discountType === 'PERCENTAGE'
+        ? { ...item, discountPercent: value }
+        : { ...item, discountAmountRupees: value };
+    }));
   };
 
   const removeItem = (productId: number) => {
@@ -241,7 +280,16 @@ export function InvoiceWizard({
         customerEmail: formValues.customerEmail || null,
         customerGstNo: formValues.customerGstNo || null,
         customerStateCode: formValues.customerStateCode || null,
-        items: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+                items: items.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          discountType: item.discountType,
+          // Only the field the chosen type actually uses is sent; the other
+          // stays null so a stale value can never be interpreted server-side.
+          discountPercent: item.discountType === 'PERCENTAGE' ? item.discountPercent : null,
+          discountAmountPaise: item.discountType === 'AMOUNT'
+            ? Math.round(item.discountAmountRupees * 100) : null,
+        })),
         // PUT /v1/invoices/{id} takes neither of these. Sent as null while
         // editing so the payload matches what the server will actually act on.
         initialPaymentPaise: editing ? null : rupeesToPaise(formValues.initialPaymentRupees),
@@ -362,6 +410,7 @@ export function InvoiceWizard({
                       <th className="px-3 py-2 font-medium">Product</th>
                       <th className="px-3 py-2 font-medium">Price</th>
                       <th className="w-28 px-3 py-2 font-medium">Qty</th>
+                      <th className="w-44 px-3 py-2 font-medium">Discount</th>
                       <th className="px-3 py-2 text-right font-medium">Line total</th>
                       <th className="w-10 px-3 py-2" />
                     </tr>
@@ -382,8 +431,47 @@ export function InvoiceWizard({
                             aria-label={`Quantity for ${item.productName}`}
                           />
                         </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-1">
+                            <div className="flex shrink-0 overflow-hidden rounded-md border" role="group"
+                                 aria-label={`Discount type for ${item.productName}`}>
+                              {(['AMOUNT', 'PERCENTAGE'] as const).map((type) => (
+                                <button
+                                  key={type}
+                                  type="button"
+                                  aria-pressed={item.discountType === type}
+                                  onClick={() => setDiscountType(
+                                    item.productId, item.discountType === type ? 'NONE' : type)}
+                                  className={cn(
+                                    'h-8 w-8 text-sm font-medium transition-colors',
+                                    item.discountType === type
+                                      ? 'bg-primary text-primary-foreground'
+                                      : 'text-muted-foreground hover:text-foreground',
+                                  )}
+                                >
+                                  {type === 'AMOUNT' ? '₹' : '%'}
+                                </button>
+                              ))}
+                            </div>
+                            <NumberInput
+                              min={0}
+                              max={item.discountType === 'PERCENTAGE' ? 100 : undefined}
+                              disabled={item.discountType === 'NONE'}
+                              value={item.discountType === 'PERCENTAGE'
+                                ? item.discountPercent : item.discountAmountRupees}
+                              onChange={(value) => setDiscountValue(item.productId, value)}
+                              className="h-8"
+                              aria-label={`Discount for ${item.productName}`}
+                            />
+                          </div>
+                        </td>
                         <td className="px-3 py-2 text-right tabular">
-                          ₹{rupees(item.sellingPriceRupees * item.quantity)}
+                          {priceDraftLine(item).discount > 0 ? (
+                            <span className="mr-1 text-xs text-muted-foreground line-through">
+                              ₹{rupees(priceDraftLine(item).gross)}
+                            </span>
+                          ) : null}
+                          ₹{rupees(priceDraftLine(item).net)}
                         </td>
                         <td className="px-3 py-2 text-right">
                           <button
@@ -403,7 +491,13 @@ export function InvoiceWizard({
 
             {items.length > 0 ? (
               <div className="ml-auto max-w-xs space-y-1 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="tabular">₹{rupees(totals.subtotal)}</span></div>
+                {totals.productDiscount > 0 ? (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Product discounts</span>
+                    <span className="tabular text-destructive">-₹{rupees(totals.productDiscount)}</span>
+                  </div>
+                ) : null}
+                <div className="flex justify-between"><span className="text-muted-foreground">{totals.productDiscount > 0 ? 'Taxable amount' : 'Subtotal'}</span><span className="tabular">₹{rupees(totals.subtotal)}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">GST (est.)</span><span className="tabular">₹{rupees(totals.gst)}</span></div>
                 <div className="flex justify-between font-semibold"><span>Total (est.)</span><span className="tabular">₹{rupees(totals.total)}</span></div>
               </div>

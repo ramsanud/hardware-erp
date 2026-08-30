@@ -2,6 +2,7 @@ package com.hardware.erp.invoice.service.impl;
 
 import com.hardware.erp.common.sequence.DocumentSequenceService;
 import com.hardware.erp.common.sequence.DocumentType;
+import com.hardware.erp.common.util.LineDiscount;
 import com.hardware.erp.common.activity.ActivityLogService;
 import com.hardware.erp.common.dto.PageResponse;
 import com.hardware.erp.common.exception.BusinessException;
@@ -483,11 +484,16 @@ public class InvoiceServiceImpl implements InvoiceService {
         long unitPricePaise = product.getSellingPricePaise();
         BigDecimal gstRate = product.getGstRatePercent();
 
-        long lineSubtotal = BigDecimal.valueOf(unitPricePaise)
-                .multiply(quantity).setScale(0, RoundingMode.HALF_UP).longValueExact();
-        long lineGst = BigDecimal.valueOf(lineSubtotal)
-                .multiply(gstRate).divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
-                .longValueExact();
+        // CR-047: one shared calculator for invoice and quotation lines, so
+        // the two cannot drift and a converted quotation prices identically.
+        // It also validates the discount - a fixed amount over the line gross
+        // is rejected here, not clamped.
+        LineDiscount.Type discountType =
+                request.discountType() == null ? LineDiscount.Type.NONE : request.discountType();
+        LineDiscount.Priced priced = LineDiscount.price(
+                quantity, unitPricePaise, gstRate,
+                discountType, request.discountPercent(), request.discountAmountPaise(),
+                product.getProductName());
 
         return InvoiceItem.builder()
                 .product(product)
@@ -496,9 +502,14 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .unit(product.getUnit())
                 .unitPricePaise(unitPricePaise)
                 .gstRatePercent(gstRate)
-                .lineSubtotalPaise(lineSubtotal)
-                .lineGstPaise(lineGst)
-                .lineTotalPaise(lineSubtotal + lineGst)
+                .discountType(discountType)
+                .discountPercent(discountType == LineDiscount.Type.PERCENTAGE
+                        && request.discountPercent() != null
+                        ? request.discountPercent() : BigDecimal.ZERO)
+                .discountAmountPaise(priced.discountAmountPaise())
+                .lineSubtotalPaise(priced.netPaise())
+                .lineGstPaise(priced.gstPaise())
+                .lineTotalPaise(priced.totalPaise())
                 .build();
     }
 

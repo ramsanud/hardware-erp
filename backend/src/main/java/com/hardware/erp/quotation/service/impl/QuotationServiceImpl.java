@@ -2,6 +2,7 @@ package com.hardware.erp.quotation.service.impl;
 
 import com.hardware.erp.common.sequence.DocumentSequenceService;
 import com.hardware.erp.common.sequence.DocumentType;
+import com.hardware.erp.common.util.LineDiscount;
 import com.hardware.erp.common.activity.ActivityLogService;
 import com.hardware.erp.common.dto.PageResponse;
 import com.hardware.erp.common.exception.BusinessException;
@@ -239,7 +240,14 @@ public class QuotationServiceImpl implements QuotationService {
 
         Customer customer = quotation.getCustomer();
         var items = quotation.getItems().stream()
-                .map(item -> new InvoiceItemRequest(item.getProduct().getId(), item.getQuantity()))
+                .map(item -> new InvoiceItemRequest(
+                        item.getProduct().getId(), item.getQuantity(),
+                        // CR-047: carry the owner's INTENT, not a frozen rupee
+                        // figure. A 10% line stays 10%, so if the master price
+                        // moved between quote and conversion the invoice
+                        // discounts the price actually being charged.
+                        item.getDiscountType(), item.getDiscountPercent(),
+                        item.getDiscountAmountPaise()))
                 .toList();
 
         InvoiceRequest invoiceRequest = new InvoiceRequest(
@@ -282,11 +290,14 @@ public class QuotationServiceImpl implements QuotationService {
         long unitPricePaise = product.getSellingPricePaise();
         BigDecimal gstRate = product.getGstRatePercent();
 
-        long lineSubtotal = BigDecimal.valueOf(unitPricePaise)
-                .multiply(quantity).setScale(0, RoundingMode.HALF_UP).longValueExact();
-        long lineGst = BigDecimal.valueOf(lineSubtotal)
-                .multiply(gstRate).divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
-                .longValueExact();
+        // CR-047 - see InvoiceServiceImpl.buildLine; the same calculator, on
+        // purpose, so a quotation and the invoice it becomes agree to the paise.
+        LineDiscount.Type discountType =
+                request.discountType() == null ? LineDiscount.Type.NONE : request.discountType();
+        LineDiscount.Priced priced = LineDiscount.price(
+                quantity, unitPricePaise, gstRate,
+                discountType, request.discountPercent(), request.discountAmountPaise(),
+                product.getProductName());
 
         return QuotationItem.builder()
                 .product(product)
@@ -295,9 +306,14 @@ public class QuotationServiceImpl implements QuotationService {
                 .unit(product.getUnit())
                 .unitPricePaise(unitPricePaise)
                 .gstRatePercent(gstRate)
-                .lineSubtotalPaise(lineSubtotal)
-                .lineGstPaise(lineGst)
-                .lineTotalPaise(lineSubtotal + lineGst)
+                .discountType(discountType)
+                .discountPercent(discountType == LineDiscount.Type.PERCENTAGE
+                        && request.discountPercent() != null
+                        ? request.discountPercent() : BigDecimal.ZERO)
+                .discountAmountPaise(priced.discountAmountPaise())
+                .lineSubtotalPaise(priced.netPaise())
+                .lineGstPaise(priced.gstPaise())
+                .lineTotalPaise(priced.totalPaise())
                 .build();
     }
 

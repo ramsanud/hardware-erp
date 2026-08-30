@@ -2,9 +2,21 @@ export type InvoiceStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | 'CANCELLED';
 
 export type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'BANK_TRANSFER' | 'OTHER';
 
+/**
+ * CR-047. Mirrors com.hardware.erp.common.util.LineDiscount.Type exactly -
+ * the backend is the authority for every figure derived from it.
+ */
+export type LineDiscountType = 'NONE' | 'PERCENTAGE' | 'AMOUNT';
+
 export interface InvoiceItemRequest {
   productId: number;
   quantity: number;
+  /** Omitted entirely by older callers; the backend reads a missing type as NONE. */
+  discountType?: LineDiscountType;
+  /** Only sent for PERCENTAGE. 0-100. */
+  discountPercent?: number | null;
+  /** Only sent for AMOUNT. Paise, never rupees - matches the backend's money rule. */
+  discountAmountPaise?: number | null;
 }
 
 export interface InvoiceRequest {
@@ -36,6 +48,11 @@ export interface InvoiceItemResponse {
   lineSubtotalDisplay: string;
   lineGstDisplay: string;
   lineTotalDisplay: string;
+  discountType: LineDiscountType;
+  discountPercent: string;
+  discountDisplay: string;
+  /** Before discount. lineSubtotalDisplay is already net of it. */
+  lineGrossDisplay: string;
 }
 
 export interface PaymentResponse {

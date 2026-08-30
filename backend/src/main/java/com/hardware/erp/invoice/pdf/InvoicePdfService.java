@@ -91,6 +91,11 @@ public class InvoicePdfService {
                     .append(textCell(escape(item.getUnit())))
                     .append(cell(item.getQuantity().stripTrailingZeros().toPlainString()))
                     .append(cell(IndianCurrencyFormat.rupees(item.getUnitPricePaise())))
+                    // CR-047. Taxable Value below is already NET of this
+                    // discount, so this column is disclosure only - it never
+                    // enters the arithmetic and so cannot make the printed
+                    // total disagree with the stored one.
+                    .append(cell(discountLabel(item)))
                     .append(cell(IndianCurrencyFormat.rupees(item.getLineSubtotalPaise())))
                     .append(cell(lineCgst > 0 ? IndianCurrencyFormat.rupees(lineCgst) : "-"))
                     .append(cell(lineSgst > 0 ? IndianCurrencyFormat.rupees(lineSgst) : "-"))
@@ -139,7 +144,7 @@ public class InvoicePdfService {
             + "  <table class=\"items\">\n"
             + "    <thead><tr>\n"
             + "      <th>#</th><th>Item Description</th><th>HSN/SAC</th><th>UQC</th><th class=\"num\">Qty</th>\n"
-            + "      <th class=\"num\">Rate</th><th class=\"num\">Taxable Value</th>\n"
+            + "      <th class=\"num\">Rate</th><th class=\"num\">Disc.</th><th class=\"num\">Taxable Value</th>\n"
             + "      <th class=\"num\">CGST</th><th class=\"num\">SGST</th><th class=\"num\">IGST</th><th class=\"num\">Total</th>\n"
             + "    </tr></thead>\n"
             + "    <tbody>" + rows + "</tbody>\n"
@@ -436,6 +441,22 @@ public class InvoicePdfService {
 
     private static String orNotSet(String value) {
         return (value == null || value.isBlank()) ? "Not set" : value;
+    }
+
+    /**
+     * A percentage line prints as "10%" because that is what was agreed; a
+     * fixed line prints the rupee figure. An undiscounted line prints a dash
+     * rather than "0.00", so the eye skips it (CR-047).
+     */
+    private static String discountLabel(com.hardware.erp.invoice.entity.InvoiceItem item) {
+        Long amount = item.getDiscountAmountPaise();
+        if (amount == null || amount == 0L) {
+            return "-";
+        }
+        if (item.getDiscountType() == com.hardware.erp.common.util.LineDiscount.Type.PERCENTAGE) {
+            return item.getDiscountPercent().stripTrailingZeros().toPlainString() + "%";
+        }
+        return IndianCurrencyFormat.rupees(amount);
     }
 
     private static String cell(String value) {

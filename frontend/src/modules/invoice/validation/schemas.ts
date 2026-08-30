@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { LineDiscountType } from '../types';
 
 /** Step 1 - who the buyer is. */
 export const customerStepSchema = z.object({
@@ -34,4 +35,34 @@ export interface InvoiceLineDraft {
   unit: string;
   sellingPriceRupees: number;
   quantity: number;
+  /**
+   * CR-047. Held in RUPEES here because that is what the owner types; the
+   * wizard converts to paise on submit. Every figure shown while editing is
+   * an estimate - the backend recomputes and is authoritative.
+   */
+  discountType: LineDiscountType;
+  discountPercent: number;
+  discountAmountRupees: number;
+}
+
+/**
+ * Gross, discount and net for one draft line, in rupees. Mirrors the order
+ * the backend's LineDiscount applies them, so the preview and the saved
+ * document agree: discount off gross first, GST on the remainder.
+ */
+export function priceDraftLine(item: InvoiceLineDraft): {
+  gross: number; discount: number; net: number;
+} {
+  const gross = item.sellingPriceRupees * item.quantity;
+  let discount = 0;
+  if (item.discountType === 'PERCENTAGE') {
+    discount = (gross * (item.discountPercent || 0)) / 100;
+  } else if (item.discountType === 'AMOUNT') {
+    discount = item.discountAmountRupees || 0;
+  }
+  // Clamp only for DISPLAY. The backend rejects an over-large discount
+  // outright rather than clamping, and that rejection is what the owner must
+  // see - this just stops the preview flashing a negative total mid-typing.
+  discount = Math.min(Math.max(discount, 0), gross);
+  return { gross, discount, net: gross - discount };
 }

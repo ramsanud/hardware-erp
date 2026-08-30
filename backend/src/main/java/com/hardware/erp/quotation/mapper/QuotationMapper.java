@@ -59,7 +59,11 @@ public class QuotationMapper {
                 item.getGstRatePercent().toPlainString(),
                 rupees(item.getLineSubtotalPaise()),
                 rupees(item.getLineGstPaise()),
-                rupees(item.getLineTotalPaise()));
+                rupees(item.getLineTotalPaise()),
+                item.getDiscountType(),
+                item.getDiscountPercent().toPlainString(),
+                rupees(item.getDiscountAmountPaise()),
+                rupees(item.getLineSubtotalPaise() + item.getDiscountAmountPaise()));
     }
 
     private String rupees(Long paise) {
