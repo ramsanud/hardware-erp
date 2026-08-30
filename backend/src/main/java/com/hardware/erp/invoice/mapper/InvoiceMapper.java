@@ -87,7 +87,7 @@ public class InvoiceMapper {
                 rupees(item.getDiscountAmountPaise()),
                 // Gross is derived, not stored: subtotal is already net of the
                 // discount, so adding it back is the one honest source.
-                rupees(item.getLineSubtotalPaise() + item.getDiscountAmountPaise()));
+                rupees(lineGross(item)));
     }
 
     public PaymentResponse toResponse(Payment payment) {
@@ -113,6 +113,26 @@ public class InvoiceMapper {
                 payment.getPaymentMethod(),
                 payment.getPaymentDate(),
                 payment.getNotes());
+    }
+
+    /**
+     * Line gross: quantity x unit price, computed from source (BUG-FE-017).
+     *
+     * It used to be reconstructed as lineSubtotalPaise + discountAmountPaise,
+     * which is only right while the LINE discount is the sole thing that has
+     * touched the subtotal. It is not: applyCoupon allocates a coupon across
+     * lines by reducing lineSubtotalPaise, and CR-049 does the same with the
+     * quotation-level discount. After either, the reconstruction returns the
+     * discount alone - a 3 x ₹320 line showed a gross of ₹100.
+     *
+     * unit price and quantity are both snapshotted on the line and are never
+     * rewritten, so they are the one honest source.
+     */
+    private static long lineGross(com.hardware.erp.invoice.entity.InvoiceItem item) {
+        return java.math.BigDecimal.valueOf(item.getUnitPricePaise())
+                .multiply(item.getQuantity())
+                .setScale(0, java.math.RoundingMode.HALF_UP)
+                .longValueExact();
     }
 
     private String rupees(Long paise) {

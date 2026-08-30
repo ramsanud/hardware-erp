@@ -242,8 +242,9 @@ export function QuotationDetailPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
-                  <TableHead>Qty</TableHead>
-                  <TableHead>Price</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Price</TableHead>
+                  <TableHead className="text-right">Discount</TableHead>
                   <TableHead className="text-right">Line total</TableHead>
                 </TableRow>
               </TableHeader>
@@ -251,9 +252,30 @@ export function QuotationDetailPage() {
                 {quotation.items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.productName}</TableCell>
-                    <TableCell className="tabular">{item.quantity}</TableCell>
-                    <TableCell className="tabular">₹{item.unitPriceDisplay}</TableCell>
-                    <TableCell className="tabular text-right">₹{item.lineTotalDisplay}</TableCell>
+                    <TableCell className="tabular text-right">{item.quantity}</TableCell>
+                    <TableCell className="tabular text-right">₹{item.unitPriceDisplay}</TableCell>
+                    <TableCell className="tabular text-right">
+                      {item.discountType === 'NONE' ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <span className="text-destructive">
+                          {item.discountType === 'PERCENTAGE'
+                            ? `${Number(item.discountPercent)}%`
+                            : `₹${item.discountDisplay}`}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="tabular text-right">
+                      {/* Struck-through gross beside the net, so the customer can
+                          see what the discount was taken off - the whole point of
+                          a quotation they will compare against another shop. */}
+                      {item.discountType !== 'NONE' ? (
+                        <span className="mr-1.5 text-xs text-muted-foreground line-through">
+                          ₹{item.lineGrossDisplay}
+                        </span>
+                      ) : null}
+                      ₹{item.lineTotalDisplay}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -265,9 +287,54 @@ export function QuotationDetailPage() {
           <Card>
             <CardHeader><CardTitle className="text-base">Summary</CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="tabular">₹{quotation.subtotalDisplay}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">GST</span><span className="tabular">₹{quotation.gstAmountDisplay}</span></div>
-              <div className="flex justify-between font-semibold"><span>Total</span><span className="tabular">₹{quotation.totalDisplay}</span></div>
+              {/*
+                CR-049 ladder. Before this the card showed only Subtotal / GST /
+                Total, so a quotation discounted to zero rendered three ₹0.00
+                rows and read as broken data rather than as a 100% discount.
+                Each discount row appears only when that discount is non-null.
+              */}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="tabular">₹{quotation.grossSubtotalDisplay}</span>
+              </div>
+              {quotation.productDiscountDisplay ? (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Product discounts</span>
+                  <span className="tabular text-destructive">-₹{quotation.productDiscountDisplay}</span>
+                </div>
+              ) : null}
+              {quotation.quotationDiscountDisplay ? (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">After product discounts</span>
+                    <span className="tabular">₹{quotation.afterProductDiscountDisplay}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      Quotation discount
+                      {quotation.quotationDiscountType === 'PERCENTAGE'
+                        ? ` (${Number(quotation.quotationDiscountPercent)}%)` : ''}
+                    </span>
+                    <span className="tabular text-destructive">-₹{quotation.quotationDiscountDisplay}</span>
+                  </div>
+                </>
+              ) : null}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Taxable amount</span>
+                <span className="tabular">₹{quotation.subtotalDisplay}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">GST</span>
+                <span className="tabular">₹{quotation.gstAmountDisplay}</span>
+              </div>
+              <div className="flex justify-between border-t pt-2 text-base font-semibold">
+                <span>Total</span><span className="tabular">₹{quotation.totalDisplay}</span>
+              </div>
+              {quotation.totalSavingsDisplay ? (
+                <div className="rounded-md bg-primary/10 px-2.5 py-1.5 text-center text-xs font-medium text-primary">
+                  You save ₹{quotation.totalSavingsDisplay}
+                </div>
+              ) : null}
               <div className="flex items-center justify-between pt-1">
                 <span className="text-muted-foreground">Status</span>
                 <QuotationStatusBadge status={quotation.status} expired={quotation.expired} />
