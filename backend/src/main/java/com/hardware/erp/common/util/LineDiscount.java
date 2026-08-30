@@ -7,52 +7,70 @@ import java.math.RoundingMode;
 
 /**
  * The single authority for how one quotation or invoice line is priced
- * (CR-047).
+ * (CR-047, CR-049, CR-050).
  *
- * Before this class the same arithmetic was written out twice - once in
- * InvoiceServiceImpl.buildLine and once in QuotationServiceImpl.buildLine -
+ * Both InvoiceServiceImpl.buildLine and QuotationServiceImpl.buildLine call
+ * {@link #price}. Before it existed the arithmetic was written out twice,
  * which is exactly the shape that lets a quotation and the invoice it
- * converts into disagree by a rupee. Both now call {@link #price}.
+ * converts into disagree by a rupee.
  *
- * Money is BIGINT paise throughout, never double: the project's rule. The one
- * BigDecimal step is the percentage and GST arithmetic, which is done at
- * BigDecimal precision and rounded to whole paise exactly once, HALF_UP -
- * matching the rounding the coupon path and the pre-existing line maths
- * already used, so no existing total shifts.
+ * ORDER OF OPERATIONS (CR-050, agreed with the owner):
  *
- * Order of operations is fixed and deliberate:
+ *     gross          quantity x unit price
+ *     - discount     a PERCENTAGE of gross
+ *     = afterDiscount
+ *     + labour       a percentage of the DISCOUNTED value, not of gross
+ *     = net          <- line_subtotal_paise, the taxable amount
+ *     + GST          charged on net
+ *     = total
  *
- *     gross     = quantity x unit price
- *     discount  = percentage of gross, or the entered amount
- *     net       = gross - discount          <- this is line_subtotal_paise
- *     gst       = net x gst rate            <- GST is charged on the
- *     total     = net + gst                    DISCOUNTED value, not gross
+ * DISCOUNT IS PERCENTAGE-ONLY (CR-050). The fixed-amount option that
+ * CR-047 shipped was retired; V33 converted every stored AMOUNT row to the
+ * equivalent percentage without moving any money.
  *
- * A coupon, if one is applied afterwards, reduces the same net figure again
- * through InvoiceServiceImpl.applyCoupon. Manual discount first, coupon
- * second; neither is counted twice because the coupon reads the already-net
- * line_subtotal_paise rather than recomputing from the unit price.
+ * THE DISCOUNT BASE IS THE SELLING PRICE, not MRP. Every product in the
+ * catalogue has an MRP above its selling price, so discounting from MRP
+ * would re-price the whole catalogue upward. MRP is carried on the line for
+ * display and comparison only.
+ *
+ * LABOUR IS INTERNAL. It is an owner-side margin folded into the rate, never
+ * a separate line on a customer document. The rate the customer sees is the
+ * rate actually charged - see PricedLine.effectiveUnitPricePaise - so the
+ * document stays arithmetically honest even though the split is not shown.
+ *
+ * Money is BIGINT paise throughout, never double. Percentage arithmetic is
+ * done at BigDecimal precision and rounded to whole paise exactly once,
+ * HALF_UP, matching the rounding the rest of the codebase already uses.
  */
 public final class LineDiscount {
 
     private LineDiscount() {
     }
 
-    /** Mirrors the discount_type CHECK constraint in V31. */
+    /**
+     * Mirrors the discount_type CHECK constraint. AMOUNT was removed in V33;
+     * the constant is gone so a fixed-amount discount cannot be reintroduced
+     * by accident.
+     */
     public enum Type {
-        NONE, PERCENTAGE, AMOUNT
+        NONE, PERCENTAGE
     }
 
     /**
-     * @param discountAmountPaise the authoritative money figure for both
-     *                            discount types - what gets stored and what
-     *                            every total is built from
-     * @param netPaise            the taxable amount, stored as line_subtotal_paise
+     * @param discountAmountPaise      money off, computed from the percentage
+     * @param labourAmountPaise        internal margin added back on; owner-only
+     * @param netPaise                 the taxable amount, stored as line_subtotal_paise
+     * @param effectiveUnitPricePaise  net / quantity - the rate the customer is
+     *                                 actually charged, and the only rate a
+     *                                 customer-facing document may print
      */
     public record Priced(
             long grossPaise,
             long discountAmountPaise,
+            long afterDiscountPaise,
+            long labourAmountPaise,
             long netPaise,
+            long effectiveUnitPricePaise,
             long gstPaise,
             long totalPaise
     ) {}
@@ -61,9 +79,9 @@ public final class LineDiscount {
 
     /**
      * Validates and prices one line. Throws {@link BusinessException} rather
-     * than returning a flag: an invalid discount must never be silently
-     * clamped into a valid one, because the owner would then see a total they
-     * did not agree to.
+     * than clamping: an invalid discount must never be silently turned into a
+     * valid one, because the owner would then see a total they did not agree
+     * to.
      *
      * @param productLabel used only in error messages, so the owner is told
      *                     which of ten lines is wrong
@@ -73,7 +91,7 @@ public final class LineDiscount {
                                BigDecimal gstRatePercent,
                                Type discountType,
                                BigDecimal discountPercent,
-                               Long discountAmountPaise,
+                               BigDecimal labourPercent,
                                String productLabel) {
 
         if (quantity == null || quantity.signum() <= 0) {
@@ -89,52 +107,53 @@ public final class LineDiscount {
                 .longValueExact();
 
         Type type = discountType == null ? Type.NONE : discountType;
-        long discount = switch (type) {
-            case NONE -> 0L;
-            case PERCENTAGE -> percentageDiscount(gross, discountPercent, productLabel);
-            case AMOUNT -> fixedDiscount(discountAmountPaise, productLabel);
-        };
+        long discount = type == Type.PERCENTAGE
+                ? percentageOf(gross, discountPercent, productLabel, "Discount")
+                : 0L;
 
-        // The cap is checked for both types. A percentage can only reach the
-        // gross at exactly 100%, but an AMOUNT is free-typed and is the case
-        // that would otherwise drive the line negative.
-        if (discount > gross) {
+        // A percentage can only reach the gross at exactly 100%, so this can
+        // never go negative - but it is asserted rather than assumed, because
+        // a future change to the base is exactly how that would break.
+        long afterDiscount = gross - discount;
+        if (afterDiscount < 0) {
             throw new BusinessException(
                     "Discount on '" + productLabel + "' cannot be more than the line amount");
         }
 
-        long net = gross - discount;
+        // Labour is taken off the DISCOUNTED value, not the gross. Taking it
+        // off the gross would quietly hand back part of the discount.
+        long labour = percentageOf(afterDiscount, labourPercent, productLabel, "Labour");
+
+        long net = afterDiscount + labour;
+
+        // The rate the customer is charged. Derived from the net rather than
+        // stored, so it can never disagree with the line total.
+        long effectiveUnitPrice = BigDecimal.valueOf(net)
+                .divide(quantity, 0, RoundingMode.HALF_UP)
+                .longValueExact();
+
         long gst = BigDecimal.valueOf(net)
                 .multiply(gstRatePercent == null ? BigDecimal.ZERO : gstRatePercent)
                 .divide(HUNDRED, 0, RoundingMode.HALF_UP)
                 .longValueExact();
 
-        return new Priced(gross, discount, net, gst, net + gst);
+        return new Priced(gross, discount, afterDiscount, labour, net,
+                effectiveUnitPrice, gst, net + gst);
     }
 
-    private static long percentageDiscount(long gross, BigDecimal percent, String productLabel) {
-        if (percent == null) {
+    private static long percentageOf(long base, BigDecimal percent, String productLabel, String what) {
+        if (percent == null || percent.signum() == 0) {
             return 0L;
         }
         if (percent.signum() < 0) {
-            throw new BusinessException("Discount on '" + productLabel + "' cannot be negative");
+            throw new BusinessException(what + " on '" + productLabel + "' cannot be negative");
         }
         if (percent.compareTo(HUNDRED) > 0) {
-            throw new BusinessException("Discount on '" + productLabel + "' cannot be more than 100%");
+            throw new BusinessException(what + " on '" + productLabel + "' cannot be more than 100%");
         }
-        return BigDecimal.valueOf(gross)
+        return BigDecimal.valueOf(base)
                 .multiply(percent)
                 .divide(HUNDRED, 0, RoundingMode.HALF_UP)
                 .longValueExact();
-    }
-
-    private static long fixedDiscount(Long amountPaise, String productLabel) {
-        if (amountPaise == null) {
-            return 0L;
-        }
-        if (amountPaise < 0) {
-            throw new BusinessException("Discount on '" + productLabel + "' cannot be negative");
-        }
-        return amountPaise;
     }
 }

@@ -28,10 +28,16 @@ public record QuotationItemRequest(
         @DecimalMax(value = "100.00", message = "Discount cannot be more than 100%")
         BigDecimal discountPercent,
 
-        @PositiveOrZero(message = "Discount amount cannot be negative")
-        Long discountAmountPaise
+        /**
+         * CR-050 internal labour margin, percentage of the discounted value.
+         * Owner-only: it changes the rate but never appears as its own line on
+         * a customer document.
+         */
+        @PositiveOrZero(message = "Labour percentage cannot be negative")
+        @DecimalMax(value = "100.00", message = "Labour cannot be more than 100%")
+        BigDecimal labourPercent
 ) {
     public QuotationItemRequest(Long productId, BigDecimal quantity) {
-        this(productId, quantity, LineDiscount.Type.NONE, BigDecimal.ZERO, 0L);
+        this(productId, quantity, LineDiscount.Type.NONE, BigDecimal.ZERO, BigDecimal.ZERO);
     }
 }

@@ -72,6 +72,19 @@ public class InvoiceItem {
     @Builder.Default
     private Long discountAmountPaise = 0L;
 
+
+    /**
+     * CR-050 internal labour margin. Folded into the rate, never shown to the
+     * customer as its own line. labourAmountPaise is the authoritative money.
+     */
+    @Column(name = "labour_percent", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal labourPercent = BigDecimal.ZERO;
+
+    @Column(name = "labour_amount_paise", nullable = false)
+    @Builder.Default
+    private Long labourAmountPaise = 0L;
+
     @Column(name = "line_subtotal_paise", nullable = false)
     private Long lineSubtotalPaise;
 

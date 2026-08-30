@@ -32,8 +32,5 @@ public record QuotationRequest(
         @PositiveOrZero(message = "Discount percentage cannot be negative")
         @DecimalMax(value = "100.00", message = "Discount cannot be more than 100%")
         BigDecimal quotationDiscountPercent,
-
-        @PositiveOrZero(message = "Discount amount cannot be negative")
-        Long quotationDiscountAmountPaise,
         @Size(max = 500) String remarks
 ) {}

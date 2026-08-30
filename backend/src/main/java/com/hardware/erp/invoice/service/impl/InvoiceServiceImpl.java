@@ -492,7 +492,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 request.discountType() == null ? LineDiscount.Type.NONE : request.discountType();
         LineDiscount.Priced priced = LineDiscount.price(
                 quantity, unitPricePaise, gstRate,
-                discountType, request.discountPercent(), request.discountAmountPaise(),
+                discountType, request.discountPercent(), request.labourPercent(),
                 product.getProductName());
 
         return InvoiceItem.builder()
@@ -507,6 +507,9 @@ public class InvoiceServiceImpl implements InvoiceService {
                         && request.discountPercent() != null
                         ? request.discountPercent() : BigDecimal.ZERO)
                 .discountAmountPaise(priced.discountAmountPaise())
+                .labourPercent(request.labourPercent() == null
+                        ? BigDecimal.ZERO : request.labourPercent())
+                .labourAmountPaise(priced.labourAmountPaise())
                 .lineSubtotalPaise(priced.netPaise())
                 .lineGstPaise(priced.gstPaise())
                 .lineTotalPaise(priced.totalPaise())

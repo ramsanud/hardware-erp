@@ -346,18 +346,48 @@ public class QuotationServiceImpl implements QuotationService {
             return new InvoiceItemRequest(
                     item.getProduct().getId(), item.getQuantity(),
                     item.getDiscountType(), item.getDiscountPercent(),
-                    item.getDiscountAmountPaise());
+                    item.getLabourPercent());
         }
 
         long gross = BigDecimal.valueOf(item.getUnitPricePaise())
                 .multiply(item.getQuantity())
                 .setScale(0, RoundingMode.HALF_UP)
                 .longValueExact();
-        long combined = gross - item.getLineSubtotalPaise();
+        if (gross <= 0) {
+            return new InvoiceItemRequest(
+                    item.getProduct().getId(), item.getQuantity(),
+                    LineDiscount.Type.NONE, BigDecimal.ZERO, item.getLabourPercent());
+        }
+
+        // Solve for the discount percentage that reproduces this line's agreed
+        // net, given the SAME labour percentage:
+        //
+        //     net = gross x (1 - d) x (1 + l)
+        //  =>   d = 1 - net / (gross x (1 + l))
+        //
+        // CR-050 retired fixed-amount discounts, so the folded quotation-level
+        // discount has to be expressed as a percentage. Carrying labour through
+        // unchanged keeps the owner's internal margin intact rather than
+        // dissolving it into the discount.
+        BigDecimal labour = item.getLabourPercent() == null
+                ? BigDecimal.ZERO : item.getLabourPercent();
+        BigDecimal labourFactor = BigDecimal.ONE.add(
+                labour.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP));
+
+        BigDecimal effectiveDiscount = BigDecimal.ONE
+                .subtract(BigDecimal.valueOf(item.getLineSubtotalPaise())
+                        .divide(BigDecimal.valueOf(gross).multiply(labourFactor), 6, RoundingMode.HALF_UP))
+                .multiply(BigDecimal.valueOf(100))
+                .setScale(2, RoundingMode.HALF_UP);
+
+        if (effectiveDiscount.signum() < 0) effectiveDiscount = BigDecimal.ZERO;
+        if (effectiveDiscount.compareTo(BigDecimal.valueOf(100)) > 0) {
+            effectiveDiscount = BigDecimal.valueOf(100);
+        }
 
         return new InvoiceItemRequest(
                 item.getProduct().getId(), item.getQuantity(),
-                LineDiscount.Type.AMOUNT, BigDecimal.ZERO, Math.max(combined, 0L));
+                LineDiscount.Type.PERCENTAGE, effectiveDiscount, labour);
     }
 
     private void applyQuotationDiscount(Quotation quotation, QuotationRequest request) {
@@ -373,7 +403,7 @@ public class QuotationServiceImpl implements QuotationService {
         LineDiscount.Priced priced = LineDiscount.price(
                 java.math.BigDecimal.ONE, base, java.math.BigDecimal.ZERO,
                 type, request.quotationDiscountPercent(),
-                request.quotationDiscountAmountPaise(), "this quotation");
+                java.math.BigDecimal.ZERO, "this quotation");
 
         long discount = priced.discountAmountPaise();
 
@@ -442,7 +472,7 @@ public class QuotationServiceImpl implements QuotationService {
                 request.discountType() == null ? LineDiscount.Type.NONE : request.discountType();
         LineDiscount.Priced priced = LineDiscount.price(
                 quantity, unitPricePaise, gstRate,
-                discountType, request.discountPercent(), request.discountAmountPaise(),
+                discountType, request.discountPercent(), request.labourPercent(),
                 product.getProductName());
 
         return QuotationItem.builder()
@@ -457,6 +487,9 @@ public class QuotationServiceImpl implements QuotationService {
                         && request.discountPercent() != null
                         ? request.discountPercent() : BigDecimal.ZERO)
                 .discountAmountPaise(priced.discountAmountPaise())
+                .labourPercent(request.labourPercent() == null
+                        ? BigDecimal.ZERO : request.labourPercent())
+                .labourAmountPaise(priced.labourAmountPaise())
                 .lineSubtotalPaise(priced.netPaise())
                 .lineGstPaise(priced.gstPaise())
                 .lineTotalPaise(priced.totalPaise())

@@ -113,8 +113,8 @@ class QuotationServiceImplTest {
     private QuotationRequest request(LocalDate validUntil) {
         return new QuotationRequest("Ramesh Traders", "9876500001", null, null, null,
                 validUntil, List.of(new QuotationItemRequest(2L, new BigDecimal("2"))), null,
-                // CR-049: no quotation-level discount in this fixture.
-                null, null, null);
+                // CR-049/CR-050: no quotation-level discount in this fixture.
+                null, null);
     }
 
     // 2 x 150.00 = 300.00 subtotal, 18% GST = 54.00, total = 354.00 (35400 paise)
