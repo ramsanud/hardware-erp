@@ -110,6 +110,7 @@ export function ProfilePage() {
           </CardHeader>
           <CardContent>
             <ImageUpload
+              focus="face"
               src={avatarSrc}
               alt={user.fullName}
               fallback={<span className="text-lg font-semibold text-muted-foreground">{initials(user.fullName)}</span>}

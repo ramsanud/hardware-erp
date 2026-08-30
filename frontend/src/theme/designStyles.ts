@@ -206,3 +206,61 @@ export const CORNER_RADIUS_REM: Record<CornerStyle, string> = {
   sharp: '0rem', compact: '0.25rem', standard: '0.5rem', rounded: '0.75rem', soft: '1.1rem',
 };
 export const MOTION_DURATION_MS: Record<Motion, number> = { reduced: 0, standard: 150, expressive: 260 };
+
+// ---------------------------------------------------------------------------
+// Reading comfort (CR-046). Two axes the shop owner controls directly, kept
+// on the same appearance record as the design style rather than in a second
+// store, so one save writes one object.
+// ---------------------------------------------------------------------------
+
+export type FontScale = 'compact' | 'standard' | 'large' | 'xlarge';
+
+/**
+ * Applied as the root font-size. Everything in the UI is sized in rem, so
+ * moving this one value scales the whole interface proportionally instead of
+ * only the body copy - which is what a shop owner reading a counter screen at
+ * arm's length actually needs.
+ */
+export const FONT_SCALE_PX: Record<FontScale, string> = {
+  compact: '15px', standard: '16px', large: '17.5px', xlarge: '19px',
+};
+
+export type FontFamilyId = 'system' | 'indic' | 'serif' | 'mono';
+
+/**
+ * Font stacks only - no webfont is downloaded, so this costs nothing at load
+ * and works offline.
+ *
+ * `indic` exists because this ERP is used in Tamil Nadu and a shop types
+ * customer and product names in Tamil, Hindi or Malayalam. The default UI
+ * stack has no Indic coverage on some systems and those names render as
+ * tofu boxes. Nirmala UI ships with Windows and covers Devanagari, Tamil,
+ * Telugu, Kannada, Malayalam, Gujarati, Bengali, Odia, Gurmukhi; Noto Sans
+ * is the Android/Linux equivalent. This makes Indic text READABLE - it is
+ * not translation of the interface, which is a separate piece of work.
+ */
+export const FONT_FAMILY_STACK: Record<FontFamilyId, string> = {
+  system:
+    'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  indic:
+    '"Segoe UI", "Nirmala UI", "Noto Sans", "Noto Sans Tamil", "Noto Sans Devanagari", '
+    + '"Noto Sans Malayalam", "Noto Sans Telugu", "Noto Sans Kannada", Roboto, ui-sans-serif, system-ui, sans-serif',
+  serif:
+    'ui-serif, Georgia, Cambria, "Times New Roman", "Noto Serif", serif',
+  mono:
+    'ui-monospace, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", Menlo, Consolas, monospace',
+};
+
+export const FONT_SCALE_OPTIONS: { value: FontScale; label: string }[] = [
+  { value: 'compact', label: 'Compact' },
+  { value: 'standard', label: 'Standard' },
+  { value: 'large', label: 'Large' },
+  { value: 'xlarge', label: 'Extra large' },
+];
+
+export const FONT_FAMILY_OPTIONS: { value: FontFamilyId; label: string; hint: string }[] = [
+  { value: 'system', label: 'System', hint: 'Matches your device' },
+  { value: 'indic', label: 'Indian languages', hint: 'Tamil, Hindi, Malayalam and more' },
+  { value: 'serif', label: 'Serif', hint: 'Traditional, print-like' },
+  { value: 'mono', label: 'Monospace', hint: 'Fixed width' },
+];

@@ -131,6 +131,13 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+    /* CR-046: set by DesignStyleProvider from the user's font choice. The
+       fallback is the stack Tailwind's font-sans would have used, so the app
+       renders identically before the provider's first effect runs and if the
+       property is ever missing. */
+    font-family: var(--app-font-family,
+      ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+      'Helvetica Neue', Arial, sans-serif);
     font-feature-settings: 'rlig' 1, 'calt' 1;
     /* Respects the notch on phones without assuming a fixed viewport. */
     padding-left: env(safe-area-inset-left);

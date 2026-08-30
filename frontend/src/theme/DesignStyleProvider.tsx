@@ -7,8 +7,10 @@ import { readScoped, writeScoped } from './themeScope';
 import { useThemeScope } from './useThemeScope';
 import {
   CORNER_RADIUS_REM, DEFAULT_DESIGN_STYLE_ID, DESIGN_STYLES, ELEVATION_SHADOW_SCALE,
+  FONT_FAMILY_STACK, FONT_SCALE_PX,
   INTENSITY_BLUR_SCALE, MOTION_DURATION_MS, findDesignStyle, scaleShadowAlpha,
-  type CornerStyle, type DesignStyleId, type Elevation, type Intensity, type Motion,
+  type CornerStyle, type DesignStyleId, type Elevation, type FontFamilyId,
+  type FontScale, type Intensity, type Motion,
 } from './designStyles';
 
 const STORAGE_KEY = 'hardware-erp-appearance';
@@ -19,6 +21,8 @@ interface AppearanceSettings {
   corner: CornerStyle;
   elevation: Elevation;
   motion: Motion;
+  fontScale: FontScale;
+  fontFamily: FontFamilyId;
 }
 
 const DEFAULTS: AppearanceSettings = {
@@ -27,6 +31,8 @@ const DEFAULTS: AppearanceSettings = {
   corner: 'standard',
   elevation: 'standard',
   motion: 'standard',
+  fontScale: 'standard',
+  fontFamily: 'system',
 };
 
 interface DesignStyleContextValue extends AppearanceSettings {
@@ -36,6 +42,8 @@ interface DesignStyleContextValue extends AppearanceSettings {
   setCorner: (v: CornerStyle) => void;
   setElevation: (v: Elevation) => void;
   setMotion: (v: Motion) => void;
+  setFontScale: (v: FontScale) => void;
+  setFontFamily: (v: FontFamilyId) => void;
   /** True when the OS-level "reduce motion" preference is forcing Motion=Reduced regardless of the stored choice. */
   motionForcedByOs: boolean;
 }
@@ -104,10 +112,18 @@ export function DesignStyleProvider({ children }: { children: ReactNode }) {
     root.style.setProperty('--radius', CORNER_RADIUS_REM[settings.corner]);
     root.style.setProperty('--motion-duration', `${MOTION_DURATION_MS[effectiveMotion]}ms`);
 
+    // Root font-size, not a body override: the whole UI is sized in rem, so
+    // this scales spacing and controls with the text rather than leaving
+    // large type crammed into unchanged boxes.
+    root.style.fontSize = FONT_SCALE_PX[settings.fontScale];
+    root.style.setProperty('--app-font-family', FONT_FAMILY_STACK[settings.fontFamily]);
+
     root.dataset.designStyle = style.id;
     root.dataset.intensity = settings.intensity;
     root.dataset.elevation = settings.elevation;
     root.dataset.motion = effectiveMotion;
+    root.dataset.fontScale = settings.fontScale;
+    root.dataset.fontFamily = settings.fontFamily;
   }, [settings, resolvedTheme, effectiveMotion]);
 
   const patch = useCallback((partial: Partial<AppearanceSettings>) => {
@@ -123,6 +139,8 @@ export function DesignStyleProvider({ children }: { children: ReactNode }) {
   const setCorner = useCallback((v: CornerStyle) => patch({ corner: v }), [patch]);
   const setElevation = useCallback((v: Elevation) => patch({ elevation: v }), [patch]);
   const setMotion = useCallback((v: Motion) => patch({ motion: v }), [patch]);
+  const setFontScale = useCallback((v: FontScale) => patch({ fontScale: v }), [patch]);
+  const setFontFamily = useCallback((v: FontFamilyId) => patch({ fontFamily: v }), [patch]);
 
   const value = useMemo<DesignStyleContextValue>(() => ({
     ...settings,
@@ -132,6 +150,8 @@ export function DesignStyleProvider({ children }: { children: ReactNode }) {
     setCorner,
     setElevation,
     setMotion,
+    setFontScale,
+    setFontFamily,
     motionForcedByOs,
   }), [settings, setDesignStyleId, setIntensity, setCorner, setElevation, setMotion, motionForcedByOs]);
 
