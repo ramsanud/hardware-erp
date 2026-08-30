@@ -70,12 +70,23 @@ public class InvoicePdfService {
         return out.toByteArray();
     }
 
-    private String buildHtml(Invoice invoice, Tenant tenant, TenantSignature signature, TenantLogo logo, TenantUpiQr upiQr) {
+    /**
+     * Package-private so InvoicePdfServiceTest can assert on the MARKUP.
+     * Asserting only that the bytes start with %PDF- cannot catch a wrong tax
+     * label or a missing rate, which is exactly the class of defect that
+     * reaches a customer.
+     */
+    String buildHtml(Invoice invoice, Tenant tenant, TenantSignature signature, TenantLogo logo, TenantUpiQr upiQr) {
         Customer customer = invoice.getCustomer();
         boolean interState = isInterState(tenant, customer);
 
         StringBuilder rows = new StringBuilder();
         int serial = 1;
+        // Rate-wise tax accumulator. A GST invoice must break tax down BY RATE,
+        // not as one lump - a shop selling 18% fittings alongside 5% hardware
+        // owes two different figures, and "GST ₹1,234" does not tell the buyer
+        // or the auditor which is which.
+        java.util.Map<java.math.BigDecimal, long[]> taxByRate = new java.util.TreeMap<>();
         for (InvoiceItem item : invoice.getItems()) {
             String hsn = item.getProduct() != null && item.getProduct().getHsnCode() != null
                     ? item.getProduct().getHsnCode() : "-";
@@ -83,6 +94,14 @@ public class InvoicePdfService {
             long lineCgst = interState ? 0 : lineGst / 2;
             long lineSgst = interState ? 0 : lineGst - lineCgst;
             long lineIgst = interState ? lineGst : 0;
+
+            java.math.BigDecimal rate = item.getGstRatePercent() == null
+                    ? java.math.BigDecimal.ZERO : item.getGstRatePercent();
+            taxByRate.computeIfAbsent(rate, r -> new long[3]);
+            long[] bucket = taxByRate.get(rate);
+            bucket[0] += lineCgst;
+            bucket[1] += lineSgst;
+            bucket[2] += lineIgst;
 
             rows.append("<tr>")
                     .append(textCell(String.valueOf(serial++)))
@@ -97,9 +116,12 @@ public class InvoicePdfService {
                     // total disagree with the stored one.
                     .append(cell(discountLabel(item)))
                     .append(cell(IndianCurrencyFormat.rupees(item.getLineSubtotalPaise())))
-                    .append(cell(lineCgst > 0 ? IndianCurrencyFormat.rupees(lineCgst) : "-"))
-                    .append(cell(lineSgst > 0 ? IndianCurrencyFormat.rupees(lineSgst) : "-"))
-                    .append(cell(lineIgst > 0 ? IndianCurrencyFormat.rupees(lineIgst) : "-"))
+                    // Rate AND amount in each tax column. The rate alone does
+                    // not tell the buyer what they paid; the amount alone does
+                    // not let them check it. A tax invoice needs both.
+                    .append(taxCell(lineCgst, interState ? null : halfRate(rate)))
+                    .append(taxCell(lineSgst, interState ? null : halfRate(rate)))
+                    .append(taxCell(lineIgst, interState ? rate : null))
                     .append(cell(IndianCurrencyFormat.rupees(item.getLineTotalPaise())))
                     .append("</tr>");
         }
@@ -109,9 +131,38 @@ public class InvoicePdfService {
         long sgstTotal = interState ? 0 : gstTotal - cgstTotal;
         long igstTotal = interState ? gstTotal : 0;
 
-        String taxRows = interState
-                ? row("IGST", IndianCurrencyFormat.rupees(igstTotal))
-                : row("CGST", IndianCurrencyFormat.rupees(cgstTotal)) + row("SGST", IndianCurrencyFormat.rupees(sgstTotal));
+        // One row per rate per head - "CGST 9%", "CGST 2.5%" - rather than a
+        // single blended line. This is what a GST invoice is required to show,
+        // and it is what every accounting package prints.
+        StringBuilder taxRowBuilder = new StringBuilder();
+        for (var entry : taxByRate.entrySet()) {
+            java.math.BigDecimal rate = entry.getKey();
+            long[] amounts = entry.getValue();
+            if (rate.signum() == 0) continue;
+            if (interState) {
+                if (amounts[2] > 0) {
+                    taxRowBuilder.append(row("IGST " + percent(rate),
+                            IndianCurrencyFormat.rupees(amounts[2])));
+                }
+            } else {
+                if (amounts[0] > 0) {
+                    taxRowBuilder.append(row("CGST " + percent(halfRate(rate)),
+                            IndianCurrencyFormat.rupees(amounts[0])));
+                }
+                if (amounts[1] > 0) {
+                    taxRowBuilder.append(row("SGST " + percent(halfRate(rate)),
+                            IndianCurrencyFormat.rupees(amounts[1])));
+                }
+            }
+        }
+        // A zero-rated invoice still needs a tax line, or the total appears to
+        // come from nowhere.
+        String taxRows = taxRowBuilder.length() > 0
+                ? taxRowBuilder.toString()
+                : (interState
+                    ? row("IGST", IndianCurrencyFormat.rupees(igstTotal))
+                    : row("CGST", IndianCurrencyFormat.rupees(cgstTotal))
+                      + row("SGST", IndianCurrencyFormat.rupees(sgstTotal)));
 
         boolean hasShipment = anyNonBlank(invoice.getTransportMode(), invoice.getVehicleNumber(), invoice.getDeliveryAddress());
 
@@ -168,7 +219,7 @@ public class InvoicePdfService {
             + "    <div class=\"muted\" style=\"font-weight:bold; margin-bottom:3px;\">Terms and Conditions</div>\n"
             + "    <ol>\n"
             + "      <li>Customer will pay GST and delivery charges.</li>\n"
-            + "      <li>No return after 15 days.</li>\n"
+            + "      <li>Goods once sold cannot be returned or exchanged.</li>\n"
             + "    </ol>\n"
             + "    <p>Certified that the particulars given above are true and correct.</p>\n"
             + "  </div>\n"
@@ -206,6 +257,9 @@ public class InvoicePdfService {
             + "  table.items th { background: #1e3a5f; color: #fff; text-align: left; font-weight: normal; }\n"
             + "  table.items tbody tr:nth-child(even) { background: #f7f8fa; }\n"
             + "  .num { text-align: right; }\n"
+            // The rate sits above the amount in each tax cell - smaller and
+            // grey, so the money still reads first.
+            + "  .taxrate { font-size: 7pt; color: #667085; }\n"
             + "  table.totals { width: 40%; margin-left: 60%; border-collapse: collapse; margin-top: 6px; }\n"
             + "  table.totals td { padding: 3px 5px; }\n"
             + "  table.totals td.label { text-align: right; color: #555; }\n"
@@ -457,6 +511,30 @@ public class InvoicePdfService {
             return item.getDiscountPercent().stripTrailingZeros().toPlainString() + "%";
         }
         return IndianCurrencyFormat.rupees(amount);
+    }
+
+    /**
+     * A tax cell showing the rate above the amount. Null rate means this head
+     * does not apply to the invoice (CGST/SGST on an inter-state sale, or IGST
+     * on an intra-state one), which prints as a dash rather than a zero -
+     * "0.00" reads as a rate that was charged and came to nothing.
+     */
+    private static String taxCell(long amountPaise, java.math.BigDecimal rate) {
+        if (rate == null || amountPaise <= 0) {
+            return "<td class=\"num\">-</td>";
+        }
+        return "<td class=\"num\"><span class=\"taxrate\">" + percent(rate) + "</span><br/>"
+                + IndianCurrencyFormat.rupees(amountPaise) + "</td>";
+    }
+
+    /** CGST and SGST are each half the total GST rate on the line. */
+    private static java.math.BigDecimal halfRate(java.math.BigDecimal rate) {
+        return rate.divide(java.math.BigDecimal.valueOf(2), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    /** 9.00 -> "9%", 2.50 -> "2.5%" - trailing zeros on a tax rate read as noise. */
+    private static String percent(java.math.BigDecimal rate) {
+        return rate.stripTrailingZeros().toPlainString() + "%";
     }
 
     private static String cell(String value) {
