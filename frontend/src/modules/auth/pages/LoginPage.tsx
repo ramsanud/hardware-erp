@@ -39,8 +39,10 @@ export function LoginPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Sign in</CardTitle>
-        <CardDescription>Use your mobile number or email address.</CardDescription>
+        <CardTitle className="text-xl">Sign in</CardTitle>
+        <CardDescription>
+          Welcome back. Enter your credentials to continue.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {justRegistered ? (
