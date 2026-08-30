@@ -1,6 +1,7 @@
 package com.hardware.erp.quotation.entity;
 
 import com.hardware.erp.common.entity.BaseEntity;
+import com.hardware.erp.common.util.LineDiscount;
 import com.hardware.erp.customer.entity.Customer;
 import com.hardware.erp.tenant.entity.Tenant;
 import jakarta.persistence.*;
@@ -48,6 +49,26 @@ public class Quotation extends BaseEntity {
     @Column(name = "valid_until", nullable = false)
     private LocalDate validUntil;
 
+    /**
+     * CR-049. Same three-field shape as QuotationItem: type and percent record
+     * the owner's intent, discountPaise is always the authoritative money
+     * figure. discountPaise reuses the column V16 created for coupons and
+     * never populated.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "discount_type", nullable = false, length = 20)
+    @Builder.Default
+    private LineDiscount.Type discountType = LineDiscount.Type.NONE;
+
+    @Column(name = "discount_percent", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private java.math.BigDecimal discountPercent = java.math.BigDecimal.ZERO;
+
+    @Column(name = "discount_paise", nullable = false)
+    @Builder.Default
+    private Long discountPaise = 0L;
+
+    /** NET of both the line discounts and the quotation discount - the taxable amount. */
     @Column(name = "subtotal_paise", nullable = false)
     private Long subtotalPaise;
 

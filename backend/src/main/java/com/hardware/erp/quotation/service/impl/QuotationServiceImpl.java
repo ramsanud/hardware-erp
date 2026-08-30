@@ -104,8 +104,11 @@ public class QuotationServiceImpl implements QuotationService {
             gstTotal += item.getLineGstPaise();
         }
 
-        quotation.setSubtotalPaise(subtotal);
-        quotation.setGstAmountPaise(gstTotal);
+        // CR-049 - the quotation discount lands here, between the line sum and
+        // the stored totals, and rewrites both.
+        applyQuotationDiscount(quotation, request);
+        subtotal = quotation.getSubtotalPaise();
+        gstTotal = quotation.getGstAmountPaise();
         quotation.setTotalPaise(subtotal + gstTotal);
 
         Quotation saved = quotationRepository.save(quotation);
@@ -167,8 +170,11 @@ public class QuotationServiceImpl implements QuotationService {
             gstTotal += item.getLineGstPaise();
         }
 
-        quotation.setSubtotalPaise(subtotal);
-        quotation.setGstAmountPaise(gstTotal);
+        // CR-049 - the quotation discount lands here, between the line sum and
+        // the stored totals, and rewrites both.
+        applyQuotationDiscount(quotation, request);
+        subtotal = quotation.getSubtotalPaise();
+        gstTotal = quotation.getGstAmountPaise();
         quotation.setTotalPaise(subtotal + gstTotal);
 
         Quotation saved = quotationRepository.save(quotation);
@@ -240,14 +246,7 @@ public class QuotationServiceImpl implements QuotationService {
 
         Customer customer = quotation.getCustomer();
         var items = quotation.getItems().stream()
-                .map(item -> new InvoiceItemRequest(
-                        item.getProduct().getId(), item.getQuantity(),
-                        // CR-047: carry the owner's INTENT, not a frozen rupee
-                        // figure. A 10% line stays 10%, so if the master price
-                        // moved between quote and conversion the invoice
-                        // discounts the price actually being charged.
-                        item.getDiscountType(), item.getDiscountPercent(),
-                        item.getDiscountAmountPaise()))
+                .map(item -> toInvoiceLine(item, quotation))
                 .toList();
 
         InvoiceRequest invoiceRequest = new InvoiceRequest(
@@ -278,6 +277,153 @@ public class QuotationServiceImpl implements QuotationService {
     }
 
     // ---------------------------------------------------------------
+
+    /**
+     * Applies the whole-quotation discount on top of the per-line discounts
+     * (CR-049), and writes back subtotal_paise, gst_amount_paise and the
+     * per-line figures.
+     *
+     * ORDER, and why it is not negotiable:
+     *
+     *   line gross        qty x unit price
+     *   line discount     CR-047, per line
+     *   line net          summed -> subtotal after line discounts   <-- BASE
+     *   quotation disc    a % of THAT base, or a fixed amount
+     *   taxable           base - quotation discount
+     *   GST               recomputed per line on the reduced value
+     *   grand total       taxable + GST
+     *
+     * A percentage here is taken against the post-line-discount base, never
+     * the original gross. Taking both against the same gross would hand the
+     * customer more than the owner agreed to - the double-count this design
+     * exists to prevent.
+     *
+     * WHY THE DISCOUNT IS SPREAD ACROSS LINES rather than simply subtracted
+     * from the total: GST is a per-line figure and lines carry different
+     * rates (18% on tools, 28% on some fittings). Subtracting the discount
+     * from the total and re-taxing at one blended rate would produce a
+     * different, wrong GST. So the discount is allocated across lines in
+     * proportion to each line's net, and each line's GST is recomputed at its
+     * own rate - the same technique InvoiceServiceImpl.applyCoupon already
+     * uses for coupons.
+     *
+     * Rounding: allocation uses DOWN so the parts can never exceed the whole,
+     * and the remainder (at most a few paise) is added to the largest line so
+     * the line figures sum exactly to the quotation figures.
+     */
+    /**
+     * Maps one quotation line to the invoice line it becomes (CR-049).
+     *
+     * WITHOUT a quotation-level discount this carries the owner's INTENT
+     * unchanged - a 10% line stays 10%, so if the master price moved between
+     * quoting and converting, the invoice discounts the price actually being
+     * charged.
+     *
+     * WITH a quotation-level discount the two are FOLDED into a single fixed
+     * amount per line. The reason is that Invoice has no whole-invoice manual
+     * discount field of its own - its discount_paise belongs to the coupon
+     * feature - so there is nowhere to put the second discount without
+     * risking it being counted twice alongside a coupon.
+     *
+     * Folding is chosen because it is the option that cannot change the
+     * price: applyQuotationDiscount has already allocated the quotation
+     * discount across these lines, so each line's total discount is exactly
+     * (gross - current net), and reproducing that as a fixed amount
+     * reconstructs the agreed figure to the paise.
+     *
+     * The trade-off, stated rather than hidden: the invoice then shows one
+     * combined discount per line ("₹165 off") instead of "10% line + 5%
+     * quotation". The money is identical; the provenance is not. Recording
+     * both separately on the invoice needs an invoice-level manual discount
+     * of its own, which is a change to the Invoice module rather than this
+     * one.
+     */
+    private InvoiceItemRequest toInvoiceLine(QuotationItem item, Quotation quotation) {
+        boolean quotationDiscounted =
+                quotation.getDiscountPaise() != null && quotation.getDiscountPaise() > 0;
+
+        if (!quotationDiscounted) {
+            return new InvoiceItemRequest(
+                    item.getProduct().getId(), item.getQuantity(),
+                    item.getDiscountType(), item.getDiscountPercent(),
+                    item.getDiscountAmountPaise());
+        }
+
+        long gross = BigDecimal.valueOf(item.getUnitPricePaise())
+                .multiply(item.getQuantity())
+                .setScale(0, RoundingMode.HALF_UP)
+                .longValueExact();
+        long combined = gross - item.getLineSubtotalPaise();
+
+        return new InvoiceItemRequest(
+                item.getProduct().getId(), item.getQuantity(),
+                LineDiscount.Type.AMOUNT, BigDecimal.ZERO, Math.max(combined, 0L));
+    }
+
+    private void applyQuotationDiscount(Quotation quotation, QuotationRequest request) {
+        long base = quotation.getItems().stream()
+                .mapToLong(QuotationItem::getLineSubtotalPaise).sum();
+
+        LineDiscount.Type type = request.quotationDiscountType() == null
+                ? LineDiscount.Type.NONE : request.quotationDiscountType();
+
+        // Priced against a single synthetic line whose gross is the base, so
+        // the percentage/fixed/negative/over-the-total rules are the same code
+        // that validates every individual line.
+        LineDiscount.Priced priced = LineDiscount.price(
+                java.math.BigDecimal.ONE, base, java.math.BigDecimal.ZERO,
+                type, request.quotationDiscountPercent(),
+                request.quotationDiscountAmountPaise(), "this quotation");
+
+        long discount = priced.discountAmountPaise();
+
+        quotation.setDiscountType(type);
+        quotation.setDiscountPercent(
+                type == LineDiscount.Type.PERCENTAGE && request.quotationDiscountPercent() != null
+                        ? request.quotationDiscountPercent() : java.math.BigDecimal.ZERO);
+        quotation.setDiscountPaise(discount);
+
+        if (discount == 0 || base == 0) {
+            quotation.setSubtotalPaise(base);
+            quotation.setGstAmountPaise(quotation.getItems().stream()
+                    .mapToLong(QuotationItem::getLineGstPaise).sum());
+            return;
+        }
+
+        long allocated = 0L;
+        QuotationItem largest = null;
+        for (QuotationItem item : quotation.getItems()) {
+            if (largest == null
+                    || item.getLineSubtotalPaise() > largest.getLineSubtotalPaise()) {
+                largest = item;
+            }
+            long share = BigDecimal.valueOf(discount)
+                    .multiply(BigDecimal.valueOf(item.getLineSubtotalPaise()))
+                    .divide(BigDecimal.valueOf(base), 0, RoundingMode.DOWN)
+                    .longValueExact();
+            item.setLineSubtotalPaise(item.getLineSubtotalPaise() - share);
+            allocated += share;
+        }
+        if (largest != null && allocated < discount) {
+            largest.setLineSubtotalPaise(largest.getLineSubtotalPaise() - (discount - allocated));
+        }
+
+        long taxable = 0L;
+        long gst = 0L;
+        for (QuotationItem item : quotation.getItems()) {
+            long lineGst = BigDecimal.valueOf(item.getLineSubtotalPaise())
+                    .multiply(item.getGstRatePercent())
+                    .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
+                    .longValueExact();
+            item.setLineGstPaise(lineGst);
+            item.setLineTotalPaise(item.getLineSubtotalPaise() + lineGst);
+            taxable += item.getLineSubtotalPaise();
+            gst += lineGst;
+        }
+
+        quotation.setSubtotalPaise(taxable);
+        quotation.setGstAmountPaise(gst);
+    }
 
     private QuotationItem buildLine(QuotationItemRequest request, Long tenantId) {
         Product product = productRepository.findByIdAndTenantId(request.productId(), tenantId)

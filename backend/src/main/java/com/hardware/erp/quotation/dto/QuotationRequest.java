@@ -3,6 +3,9 @@ package com.hardware.erp.quotation.dto;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 
+import com.hardware.erp.common.util.LineDiscount;
+
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -18,5 +21,19 @@ public record QuotationRequest(
         String customerStateCode,
         @NotNull @Future(message = "Valid-until date must be in the future") LocalDate validUntil,
         @NotEmpty @Valid List<QuotationItemRequest> items,
+
+        /**
+         * CR-049 - the discount on the WHOLE quotation, applied after the
+         * per-line discounts. All three are nullable so an older client that
+         * never sends them is read as no quotation discount.
+         */
+        LineDiscount.Type quotationDiscountType,
+
+        @PositiveOrZero(message = "Discount percentage cannot be negative")
+        @DecimalMax(value = "100.00", message = "Discount cannot be more than 100%")
+        BigDecimal quotationDiscountPercent,
+
+        @PositiveOrZero(message = "Discount amount cannot be negative")
+        Long quotationDiscountAmountPaise,
         @Size(max = 500) String remarks
 ) {}
