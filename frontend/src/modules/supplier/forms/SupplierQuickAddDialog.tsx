@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import {
@@ -17,10 +18,11 @@ import { supplierService } from '../services/supplierService';
 import type { SupplierSummaryResponse } from '../types';
 
 /**
- * Only the two fields the API actually requires, plus the two a hardware shop
- * will reach for immediately. The full supplier record is a multi-step wizard
- * (CR-017); dragging that into a dialog mid-purchase would be the opposite of
- * a quick add. Everything else is editable later on the supplier page.
+ * Name and mobile are the only fields the API requires; GSTIN and state sit
+ * beside them because a hardware shop reaches for those immediately. The rest
+ * of the record is behind "More details", collapsed by default - a quick add
+ * should get you back to the purchase, but an owner who wants the full record
+ * should not be sent to another page to start again.
  *
  * Mirrors the Bean Validation on SupplierRequest exactly, so a value this
  * form accepts is never rejected by the server.
@@ -32,6 +34,13 @@ const quickSupplierSchema = z.object({
     .regex(/^$|^\d{2}[A-Z]{5}\d{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/, 'Enter a valid 15-character GSTIN')
     .optional().or(z.literal('')),
   stateCode: z.string().trim().optional().or(z.literal('')),
+  contactPerson: z.string().trim().max(200).optional().or(z.literal('')),
+  email: z.string().trim().email('Enter a valid email address').optional().or(z.literal('')),
+  addressLine1: z.string().trim().max(255).optional().or(z.literal('')),
+  city: z.string().trim().max(100).optional().or(z.literal('')),
+  pincode: z.string().trim().regex(/^$|^\d{6}$/, 'Enter a valid 6-digit pincode')
+    .optional().or(z.literal('')),
+  paymentTermsDays: z.coerce.number().int().min(0, 'Cannot be negative').max(365, 'Use 365 days or fewer'),
 });
 type QuickSupplierValues = z.infer<typeof quickSupplierSchema>;
 
@@ -53,17 +62,34 @@ export function SupplierQuickAddDialog({
 }: SupplierQuickAddDialogProps) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
+  /**
+   * Collapsed by default. The point of a quick add is to get back to the
+   * purchase; a shop that wants the full record still has everything here
+   * rather than being told to go elsewhere and start again.
+   */
+  const [showMore, setShowMore] = useState(false);
   const {
     register, handleSubmit, reset, setValue, watch, formState: { errors },
   } = useForm<QuickSupplierValues>({
     resolver: zodResolver(quickSupplierSchema),
-    defaultValues: { supplierName: '', mobileNo: '', gstNo: '', stateCode: '' },
+    defaultValues: {
+      supplierName: '', mobileNo: '', gstNo: '', stateCode: '',
+      contactPerson: '', email: '', addressLine1: '', city: '', pincode: '',
+      paymentTermsDays: 0,
+    },
   });
 
   // Carry across what was already typed into the search box, so the owner does
   // not retype the name they just searched for and found nothing for.
   useEffect(() => {
-    if (open) reset({ supplierName: initialName ?? '', mobileNo: '', gstNo: '', stateCode: '' });
+    if (open) {
+      reset({
+        supplierName: initialName ?? '', mobileNo: '', gstNo: '', stateCode: '',
+        contactPerson: '', email: '', addressLine1: '', city: '', pincode: '',
+        paymentTermsDays: 0,
+      });
+      setShowMore(false);
+    }
   }, [open, initialName, reset]);
 
   const stateCode = watch('stateCode');
@@ -77,11 +103,16 @@ export function SupplierQuickAddDialog({
         // null, not "" - @Pattern passes null but rejects an empty string.
         gstNo: values.gstNo || null,
         stateCode: values.stateCode || null,
+        contactPerson: values.contactPerson || null,
+        email: values.email || null,
+        addressLine1: values.addressLine1 || null,
+        city: values.city || null,
+        pincode: values.pincode || null,
         // supplierCode omitted entirely so the server generates SUP-nnnn.
-        // These two are required by the API and have no sensible prompt in a
-        // quick add: cash on delivery, no credit ceiling. Both are editable on
-        // the supplier page, which is where a credit decision belongs anyway.
-        paymentTermsDays: 0,
+        paymentTermsDays: values.paymentTermsDays ?? 0,
+        // Deliberately not offered here. A credit ceiling is a decision, not a
+        // detail, and it belongs on the supplier page rather than in a hurry
+        // at the counter.
         creditLimitPaise: 0,
         // A supplier added mid-purchase is one you are buying from right now.
         status: 'ACTIVE',
@@ -116,7 +147,7 @@ export function SupplierQuickAddDialog({
         <DialogHeader>
           <DialogTitle>Add supplier</DialogTitle>
           <DialogDescription>
-            Just enough to record the purchase. You can complete the rest on the supplier page later.
+            Name and mobile are enough to record the purchase. Add the rest now or later.
           </DialogDescription>
         </DialogHeader>
 
@@ -146,6 +177,52 @@ export function SupplierQuickAddDialog({
               </SelectContent>
             </Select>
           </FormField>
+          <div className="border-t pt-3">
+            <Button type="button" variant="ghost" size="sm"
+                    aria-expanded={showMore}
+                    className="h-auto px-0 py-1 text-primary hover:bg-transparent hover:underline"
+                    onClick={() => setShowMore((current) => !current)}>
+              {showMore ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              {showMore ? 'Fewer details' : 'More details'}
+            </Button>
+          </div>
+
+          {showMore ? (
+            <div className="space-y-4">
+              <FormField id="qa-contactPerson" label="Contact person (optional)"
+                         error={errors.contactPerson?.message}>
+                <Input id="qa-contactPerson" {...register('contactPerson')} />
+              </FormField>
+
+              <FormField id="qa-email" label="Email (optional)" error={errors.email?.message}>
+                <Input id="qa-email" type="email" {...register('email')} />
+              </FormField>
+
+              <FormField id="qa-addressLine1" label="Address (optional)"
+                         error={errors.addressLine1?.message}>
+                <Input id="qa-addressLine1" {...register('addressLine1')} />
+              </FormField>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField id="qa-city" label="City (optional)" error={errors.city?.message}>
+                  <Input id="qa-city" {...register('city')} />
+                </FormField>
+
+                <FormField id="qa-pincode" label="Pincode (optional)" error={errors.pincode?.message}>
+                  <Input id="qa-pincode" inputMode="numeric" maxLength={6} {...register('pincode')} />
+                </FormField>
+              </div>
+
+              <FormField id="qa-paymentTermsDays" label="Payment terms (days)"
+                         error={errors.paymentTermsDays?.message}>
+                <Input id="qa-paymentTermsDays" type="number" min={0} max={365}
+                       {...register('paymentTermsDays')} />
+              </FormField>
+              <p className="text-xs text-muted-foreground">
+                0 means cash on delivery. The credit limit is set on the supplier page.
+              </p>
+            </div>
+          ) : null}
         </form>
 
         <DialogFooter>

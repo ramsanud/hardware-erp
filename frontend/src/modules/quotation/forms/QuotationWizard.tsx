@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { enterAdvances } from '@/shared/hooks/useEnterAdvances';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft, ArrowRight, Check, Loader2, Trash2 } from 'lucide-react';
@@ -198,7 +199,13 @@ export function QuotationWizard({
   const rupees = (value: number) => value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <div className="flex min-h-[calc(100dvh-8.5rem)] flex-col">
+    <div
+      className="flex min-h-[calc(100dvh-8.5rem)] flex-col"
+      // Enter behaves as Next. The wizard has no <form>, so without this the
+      // key did nothing at all - see enterAdvances for what it refuses to
+      // intercept.
+      onKeyDown={enterAdvances(() => { void goNext(); })}
+    >
       <ol className="mb-6 flex items-center gap-2 text-sm">
         {STEPS.map((label, index) => (
           <li key={label} className="flex flex-1 items-center gap-2">
@@ -375,7 +382,7 @@ export function QuotationWizard({
         ) : null}
       </div>
 
-      <div className="sticky bottom-0 -mx-3 mt-6 flex items-center justify-between border-t bg-background/95 px-3 py-4 backdrop-blur sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
+      <div className="sticky bottom-0 -mx-3 mt-6 flex items-center justify-between border-t bg-background/95 px-3 py-4 pr-[4.75rem] backdrop-blur sm:-mx-5 sm:px-5 sm:pr-[4.75rem] lg:-mx-8 lg:px-8 lg:pr-[4.75rem]">
         <Button type="button" variant="outline" onClick={step === 0 ? onCancel : goBack} disabled={submitting}>
           <ArrowLeft className="h-4 w-4" />
           {step === 0 ? 'Cancel' : 'Back'}
