@@ -5,6 +5,23 @@ spring:
     # never receive test accounts.
     locations: classpath:db/migration
     clean-disabled: true
+    # BUG-DEPLOY-001. application.yml sets baseline-on-migrate: true, which is
+    # right for a long-lived local database but dangerous on a hosted one.
+    #
+    # When Flyway meets a schema that already contains objects and has no
+    # flyway_schema_history, it writes a baseline marker and treats every
+    # migration at or below baseline-version as already applied. That default
+    # is 1 - so V1 gets SKIPPED, app_user is never created, and Hibernate's
+    # ddl-auto: validate then fails building the EntityManagerFactory. The
+    # symptom is a cascade that names securityConfig -> appUserDetailsService
+    # -> userRepository and never mentions the migration that did not run.
+    #
+    # A Supabase database is not a virgin schema: it ships with extensions and
+    # supporting objects, which is exactly the condition that triggers this.
+    #
+    # 0 keeps the ability to adopt a non-empty schema while skipping nothing,
+    # because no migration is numbered at or below zero.
+    baseline-version: 0
   jpa:
     show-sql: false
   datasource:
