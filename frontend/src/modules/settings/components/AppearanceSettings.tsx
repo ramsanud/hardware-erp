@@ -10,6 +10,7 @@ import { useDesignStyle } from '@/theme/DesignStyleProvider';
 import {
   CORNER_RADIUS_REM, type CornerStyle, type Elevation, type Intensity, type Motion,
 } from '@/theme/designStyles';
+import { FONT_FAMILY_OPTIONS, FONT_SCALE_OPTIONS } from '@/theme/designStyles';
 
 const MODE_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -85,7 +86,9 @@ export function AppearanceSettings() {
   const { colorThemeId, setColorThemeId, themes } = useColorTheme();
   const {
     designStyleId, intensity, corner, elevation, motion, motionForcedByOs,
+    fontScale, fontFamily,
     styles, setDesignStyleId, setIntensity, setCorner, setElevation, setMotion,
+    setFontScale, setFontFamily,
   } = useDesignStyle();
 
   return (
@@ -206,6 +209,28 @@ export function AppearanceSettings() {
               Your system is set to reduce motion, so animations stay off regardless of this choice.
             </p>
           ) : null}
+        </div>
+      </section>
+
+      <section>
+        <h3 className="mb-1 text-sm font-semibold">Reading</h3>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Text size scales the whole interface, not just the words.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <p className="mb-2 text-sm font-medium">Text size</p>
+            <SegmentedControl ariaLabel="Text size" value={fontScale}
+                              options={FONT_SCALE_OPTIONS} onChange={setFontScale} />
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-medium">Font</p>
+            <SegmentedControl ariaLabel="Font" value={fontFamily}
+                              options={FONT_FAMILY_OPTIONS} onChange={setFontFamily} />
+            <p className="mt-1 text-xs text-muted-foreground">
+              {FONT_FAMILY_OPTIONS.find((o) => o.value === fontFamily)?.hint}
+            </p>
+          </div>
         </div>
       </section>
 

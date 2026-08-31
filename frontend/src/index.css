@@ -19,7 +19,11 @@
     --secondary: 210 40% 96%;
     --secondary-foreground: 222 47% 11%;
     --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
+    /* Was 47% lightness - roughly 4.8:1 on the light ground, which scrapes
+       past AA for body text but is genuinely hard to read at the text-xs
+       sizes this UI uses for codes, units and helper lines (BUG-FE-015).
+       38% lands near 7.5:1 and reads as deliberate grey rather than faded. */
+    --muted-foreground: 215 19% 38%;
     --accent: 210 40% 96%;
     --accent-foreground: 222 47% 11%;
     --destructive: 0 72% 45%;
@@ -127,6 +131,13 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+    /* CR-046: set by DesignStyleProvider from the user's font choice. The
+       fallback is the stack Tailwind's font-sans would have used, so the app
+       renders identically before the provider's first effect runs and if the
+       property is ever missing. */
+    font-family: var(--app-font-family,
+      ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+      'Helvetica Neue', Arial, sans-serif);
     font-feature-settings: 'rlig' 1, 'calt' 1;
     /* Respects the notch on phones without assuming a fixed viewport. */
     padding-left: env(safe-area-inset-left);
@@ -181,15 +192,47 @@
   /*
    * Sticky header/footer bar inside a scrolling DialogContent. Derived from
    * the same --card token as .surface-panel rather than a hardcoded bg-card,
-   * so the design style still reaches it (CR-034's whole point). Opacity is
-   * boosted towards solid - a bar at the panel's own 0.55 glass opacity lets
-   * the scrolling content read straight through it - and the blur keeps the
-   * glass styles from looking like a flat band was pasted on top.
+   * so the design style still reaches it (CR-034's whole point).
+   *
+   * This bar must OCCLUDE, not tint. The previous curve
+   * (--surface-bg-opacity * 0.55 + 0.45) bottomed out at 0.725 on the glass
+   * styles, and 72% is nowhere near enough - form labels and inputs scrolled
+   * visibly through the title, which read as the dialog being broken
+   * (BUG-FE-012). Legibility of the pinned title and the Save/Cancel row wins
+   * over the glass effect here, so the curve now bottoms out at 0.97:
+   *
+   *   flat styles (1.0)   -> 1.000   fully solid, unchanged
+   *   glass       (0.55)  -> 0.973
+   *   liquid-glass (0.5)  -> 0.970
+   *
+   * The blur is kept, and raised, so the remaining 3% still reads as frosted
+   * glass at the edges rather than a flat band pasted on top - but nothing
+   * legible survives 16px of blur under a 97% wash.
    */
+  /*
+   * Floating panels that sit directly ON page content with nothing behind
+   * them - the global search results, dropdown menus, popovers.
+   *
+   * These cannot use .surface-panel. On the glass design styles
+   * --surface-bg-opacity is 0.5-0.55, and a half-transparent dropdown lets
+   * the dashboard read straight through the results underneath it
+   * (BUG-FE-018) - the same defect BUG-FE-012 fixed for the dialog sticky
+   * bar, in a different place.
+   *
+   * A Card may stay translucent: it sits IN the page rather than over it,
+   * and the effect is the point there.
+   */
+  .surface-overlay {
+    background-color: hsl(var(--popover) / calc(var(--surface-bg-opacity) * 0.04 + 0.96));
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    box-shadow: var(--surface-shadow);
+    border-color: hsl(var(--border) / var(--surface-border-opacity));
+  }
   .surface-sticky-bar {
-    background-color: hsl(var(--card) / calc(var(--surface-bg-opacity) * 0.55 + 0.45));
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
+    background-color: hsl(var(--card) / calc(var(--surface-bg-opacity) * 0.06 + 0.94));
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
   }
 
   /* The same idea for Button/Input - most styles leave this at "none" (a plain flat control reads better inside a glass/liquid-glass card than a second competing effect), Neomorphism/Claymorphism/Liquid-Glass are the ones that actually set it. */

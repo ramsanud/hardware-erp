@@ -1,5 +1,7 @@
 package com.hardware.erp.invoice.dto;
 
+import com.hardware.erp.common.util.LineDiscount;
+
 import java.math.BigDecimal;
 
 public record InvoiceItemResponse(
@@ -12,5 +14,13 @@ public record InvoiceItemResponse(
         String gstRatePercent,
         String lineSubtotalDisplay,
         String lineGstDisplay,
-        String lineTotalDisplay
+        String lineTotalDisplay,
+        /** CR-047. NONE / PERCENTAGE / AMOUNT - what the owner chose. */
+        LineDiscount.Type discountType,
+        /** Only meaningful for PERCENTAGE; "0" otherwise. */
+        String discountPercent,
+        /** Authoritative money figure for both types, formatted like every other amount. */
+        String discountDisplay,
+        /** quantity x unit price, before the discount - what the PDF prints as the struck-through amount. */
+        String lineGrossDisplay
 ) {}

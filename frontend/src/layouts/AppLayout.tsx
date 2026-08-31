@@ -111,7 +111,7 @@ function AppLayoutInner() {
               <Button variant="ghost" className="gap-2 px-2">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-xs font-semibold text-primary">
                   {avatarSrc ? (
-                    <img src={avatarSrc} alt={user?.fullName ?? 'Profile photo'} className="h-full w-full object-cover" />
+                    <img src={avatarSrc} alt={user?.fullName ?? 'Profile photo'} className="h-full w-full object-cover object-[50%_28%]" />
                   ) : (
                     initials(user?.fullName)
                   )}

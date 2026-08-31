@@ -1,5 +1,7 @@
 package com.hardware.erp.quotation.dto;
 
+import com.hardware.erp.common.util.LineDiscount;
+
 import java.math.BigDecimal;
 
 public record QuotationItemResponse(
@@ -11,5 +13,10 @@ public record QuotationItemResponse(
         String gstRatePercent,
         String lineSubtotalDisplay,
         String lineGstDisplay,
-        String lineTotalDisplay
+        String lineTotalDisplay,
+        /** CR-047 - mirrors InvoiceItemResponse so the conversion UI reads one shape. */
+        LineDiscount.Type discountType,
+        String discountPercent,
+        String discountDisplay,
+        String lineGrossDisplay
 ) {}

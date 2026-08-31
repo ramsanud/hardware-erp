@@ -94,6 +94,41 @@ class InvoicePdfServiceTest {
     }
 
     @Test
+    @DisplayName("intra-state: each tax column carries the RATE as well as the amount")
+    void taxColumnsShowRateAndAmount() {
+        String html = pdfService.buildHtml(invoice(customer("29")), tenant("29"), null, null, null);
+
+        // 18% GST splits into CGST 9% + SGST 9%. Both the rate and the money
+        // must appear - the rate alone does not say what was paid, the amount
+        // alone does not let the buyer check it.
+        assertThat(html).contains("taxrate");
+        assertThat(html).contains("9%");
+        assertThat(html).contains("CGST 9%");
+        assertThat(html).contains("SGST 9%");
+        // IGST does not apply within one state and must read as a dash, not
+        // as a zero - "0.00" looks like a rate that was charged.
+        assertThat(html).doesNotContain("IGST 9%");
+    }
+
+    @Test
+    @DisplayName("inter-state: IGST carries the full rate, CGST/SGST are absent")
+    void interStateShowsIgstRate() {
+        String html = pdfService.buildHtml(invoice(customer("27")), tenant("29"), null, null, null);
+
+        assertThat(html).contains("IGST 18%");
+        assertThat(html).doesNotContain("CGST 9%");
+        assertThat(html).doesNotContain("SGST 9%");
+    }
+
+    @Test
+    @DisplayName("goods cannot be returned - the terms say so plainly")
+    void termsForbidReturns() {
+        String html = pdfService.buildHtml(invoice(customer("29")), tenant("29"), null, null, null);
+
+        assertThat(html).contains("Goods once sold cannot be returned");
+        assertThat(html).doesNotContain("No return after 15 days");
+    }
+    @Test
     @DisplayName("renders a well-formed PDF for an intra-state sale (same state code)")
     void rendersIntraStateInvoice() {
         byte[] pdf = pdfService.render(invoice(customer("29")), tenant("29"));

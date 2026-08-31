@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import { enterAdvances } from '@/shared/hooks/useEnterAdvances';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft, ArrowRight, Check, Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { NumberInput } from '@/shared/components/ui/number-input';
+import { Checkbox } from '@/shared/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/shared/components/ui/alert';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -22,8 +24,11 @@ import type { TenantBankAccountResponse } from '@/modules/settings/types';
 import { ProductPicker } from '../components/ProductPicker';
 import { CreditLimitWarning } from '../components/CreditLimitWarning';
 import { PAYMENT_METHOD_OPTIONS } from '../constants';
-import { invoiceWizardSchema, type InvoiceLineDraft, type InvoiceWizardValues } from '../validation/schemas';
-import type { InvoiceRequest } from '../types';
+import {
+  invoiceWizardSchema, priceDraftLine,
+  type InvoiceLineDraft, type InvoiceWizardValues,
+} from '../validation/schemas';
+import type { InvoiceRequest, LineDiscountType } from '../types';
 
 const STEPS = ['Customer', 'Items', 'Payment', 'Review'] as const;
 
@@ -45,6 +50,12 @@ export interface InvoiceWizardInitialCustomer {
 export interface InvoiceWizardInitialItem {
   productId: number;
   quantity: number;
+  /** CR-047 - carried through a repeat/edit so a negotiated discount is not silently dropped. */
+  discountType?: LineDiscountType;
+  discountPercent?: number;
+  /** CR-050 internal labour margin carried when reopening an invoice for edit. */
+  labourPercent?: number;
+  discountAmountRupees?: number;
 }
 
 interface InvoiceWizardProps {
@@ -67,6 +78,16 @@ export function InvoiceWizard({
 }: InvoiceWizardProps) {
   const [step, setStep] = useState(0);
   const [items, setItems] = useState<InvoiceLineDraft[]>([]);
+
+  /**
+   * CR-050 global labour default. A shop that works on a standard handling
+   * margin sets it once here and every product added afterwards inherits it,
+   * rather than typing 2% onto twelve lines. Existing lines are deliberately
+   * NOT rewritten when this changes - a line the owner has already tuned by
+   * hand must not be overwritten by a later switch flick.
+   */
+  const [labourOn, setLabourOn] = useState(false);
+  const [defaultLabourPercent, setDefaultLabourPercent] = useState(0);
   const [itemsError, setItemsError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -94,17 +115,22 @@ export function InvoiceWizard({
   useEffect(() => {
     if (!initialItems || initialItems.length === 0) return;
     let cancelled = false;
-    Promise.allSettled(initialItems.map((line) => productService.get(line.productId).then((product) => ({ product, quantity: line.quantity }))))
+    Promise.allSettled(initialItems.map((line) => productService.get(line.productId).then((product) => ({ product, quantity: line.quantity, line }))))
       .then((results) => {
         if (cancelled) return;
         const loaded: InvoiceLineDraft[] = [];
         let skipped = 0;
         for (const result of results) {
           if (result.status === 'fulfilled' && result.value.product.status === 'ACTIVE') {
-            const { product, quantity } = result.value;
+            const { product, quantity, line } = result.value;
             loaded.push({
               productId: product.id, productCode: product.productCode, productName: product.productName,
               unit: product.unit, sellingPriceRupees: Number(product.sellingPriceDisplay.replace(/,/g, '')), quantity,
+              discountType: line.discountType ?? 'NONE',
+              lineId: nextLineId(),
+              discountPercent: line.discountPercent ?? 0,
+              labourPercent: line.labourPercent ?? 0,
+              discountAmountRupees: line.discountAmountRupees ?? 0,
             });
           } else {
             skipped += 1;
@@ -163,14 +189,24 @@ export function InvoiceWizard({
   const totals = useMemo(() => {
     let subtotal = 0;
     let gst = 0;
+    let productDiscount = 0;
+    let labourTotal = 0;
     for (const item of items) {
-      const lineSubtotal = item.sellingPriceRupees * item.quantity;
+      // CR-047: discount comes off before GST, matching LineDiscount on the
+      // server. Doing it the other way here would show the owner a total the
+      // invoice then contradicts.
+      // net already includes the CR-050 labour margin, so subtotal below
+      // is the taxable amount and needs no second adjustment.
+      const { discount, labour, net } = priceDraftLine(item);
+      productDiscount += discount;
+      labourTotal += labour;
+      const lineSubtotal = net;
       subtotal += lineSubtotal;
       // Estimate only, for display while editing - the server computes the
       // authoritative GST per line from the product's own rate at save time.
       gst += lineSubtotal * 0.18;
     }
-    return { subtotal, gst, total: subtotal + gst };
+    return { subtotal, gst, productDiscount, labour: labourTotal, total: subtotal + gst };
   }, [items]);
 
   const initialPayment = Number(values.initialPaymentRupees) || 0;
@@ -186,25 +222,63 @@ export function InvoiceWizard({
     return { check: creditCheck, projectedPaise };
   }, [creditCheck, totals.total, initialPayment]);
 
+  /**
+   * crypto.randomUUID is available in every browser this app supports and in
+   * jsdom; the counter fallback keeps a line identifiable if it ever is not.
+   */
+  const nextLineId = () => (
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `line-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
   const addItem = (product: ProductSummaryResponse) => {
     setItemsError(null);
     setItems((current) => [...current, {
+      lineId: nextLineId(),
       productId: product.id,
       productCode: product.productCode,
       productName: product.productName,
       unit: product.unit,
       sellingPriceRupees: Number(product.sellingPriceDisplay.replace(/,/g, '')),
       quantity: 1,
+      discountType: 'NONE',
+      discountPercent: 0,
+      labourPercent: defaultLabourPercent,
+      discountAmountRupees: 0,
     }]);
   };
 
-  const updateQuantity = (productId: number, quantity: number) => {
+  const updateQuantity = (lineId: string, quantity: number) => {
     setItems((current) => current.map((item) =>
-      item.productId === productId ? { ...item, quantity } : item));
+      item.lineId === lineId ? { ...item, quantity } : item));
   };
 
-  const removeItem = (productId: number) => {
-    setItems((current) => current.filter((item) => item.productId !== productId));
+  /**
+   * CR-050: discount is a percentage, full stop. Typing a value turns the
+   * line's discount on; clearing it back to zero turns it off. There is no
+   * type to choose any more, so there is no way to leave a line in a state
+   * the API will reject.
+   */
+  const setLabourValue = (lineId: string, value: number) => {
+    setItemsError(null);
+    setItems((current) => current.map((item) => (
+      item.lineId === lineId ? { ...item, labourPercent: value } : item)));
+  };
+
+  const setDiscountValue = (lineId: string, value: number) => {
+    setItemsError(null);
+    setItems((current) => current.map((item) => (
+      item.lineId === lineId
+        ? {
+          ...item,
+          discountPercent: value,
+          discountType: value > 0 ? 'PERCENTAGE' : 'NONE',
+        }
+        : item)));
+  };
+
+  const removeItem = (lineId: string) => {
+    setItems((current) => current.filter((item) => item.lineId !== lineId));
   };
 
   const goNext = async () => {
@@ -241,7 +315,15 @@ export function InvoiceWizard({
         customerEmail: formValues.customerEmail || null,
         customerGstNo: formValues.customerGstNo || null,
         customerStateCode: formValues.customerStateCode || null,
-        items: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+                items: items.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          discountType: item.discountType,
+          // CR-050: percentage only. Null when the line carries no discount,
+          // so a stale value can never be interpreted server-side.
+          discountPercent: item.discountType === 'PERCENTAGE' ? item.discountPercent : null,
+          labourPercent: item.labourPercent > 0 ? item.labourPercent : null,
+        })),
         // PUT /v1/invoices/{id} takes neither of these. Sent as null while
         // editing so the payload matches what the server will actually act on.
         initialPaymentPaise: editing ? null : rupeesToPaise(formValues.initialPaymentRupees),
@@ -270,7 +352,13 @@ export function InvoiceWizard({
   const rupees = (value: number) => value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <div className="flex min-h-[calc(100dvh-8.5rem)] flex-col">
+    <div
+      className="flex min-h-[calc(100dvh-8.5rem)] flex-col"
+      // Enter behaves as Next. The wizard has no <form>, so without this the
+      // key did nothing at all - see enterAdvances for what it refuses to
+      // intercept.
+      onKeyDown={enterAdvances(() => { void goNext(); })}
+    >
       {/* Step indicator - always visible, no scroll needed to see progress. */}
       <ol className="mb-6 flex items-center gap-2 text-sm">
         {STEPS.map((label, index) => (
@@ -362,13 +450,22 @@ export function InvoiceWizard({
                       <th className="px-3 py-2 font-medium">Product</th>
                       <th className="px-3 py-2 font-medium">Price</th>
                       <th className="w-28 px-3 py-2 font-medium">Qty</th>
+                      <th className="w-28 px-3 py-2 font-medium">Discount</th>
+                      {/* Owner-only. Never printed on a customer document -
+                          the customer sees the resulting rate, not the split. */}
+                      {labourOn ? (
+                        <th className="w-28 px-3 py-2 font-medium">
+                          Labour
+                          <span className="ml-1 font-normal normal-case text-muted-foreground">(internal)</span>
+                        </th>
+                      ) : null}
                       <th className="px-3 py-2 text-right font-medium">Line total</th>
                       <th className="w-10 px-3 py-2" />
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {items.map((item) => (
-                      <tr key={item.productId}>
+                      <tr key={item.lineId}>
                         <td className="px-3 py-2">
                           <span className="block font-medium">{item.productName}</span>
                           <span className="block text-xs text-muted-foreground">{item.productCode}</span>
@@ -377,17 +474,62 @@ export function InvoiceWizard({
                         <td className="px-3 py-2">
                           <NumberInput
                             min={0.0001} value={item.quantity}
-                            onChange={(value) => updateQuantity(item.productId, value)}
+                            onChange={(value) => updateQuantity(item.lineId, value)}
                             className="h-8"
                             aria-label={`Quantity for ${item.productName}`}
                           />
                         </td>
+                        <td className="px-3 py-2">
+                          {/* A single percentage field with a trailing %, rather
+                              than a type toggle - CR-050 removed the rupee
+                              option, so a toggle with one choice is just a
+                              control that cannot be used. */}
+                          <div className="relative">
+                            <NumberInput
+                              min={0}
+                              max={100}
+                              value={item.discountPercent}
+                              onChange={(value) => setDiscountValue(item.lineId, value)}
+                              className="h-8 pr-7 text-right"
+                              aria-label={`Discount percentage for ${item.productName}`}
+                            />
+                            <span aria-hidden
+                                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2
+                                             text-sm text-muted-foreground">
+                              %
+                            </span>
+                          </div>
+                        </td>
+                        {labourOn ? (
+                          <td className="px-3 py-2">
+                            <div className="relative">
+                              <NumberInput
+                                min={0}
+                                max={100}
+                                value={item.labourPercent}
+                                onChange={(value) => setLabourValue(item.lineId, value)}
+                                className="h-8 pr-7 text-right"
+                                aria-label={`Internal labour percentage for ${item.productName}`}
+                              />
+                              <span aria-hidden
+                                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2
+                                               text-sm text-muted-foreground">
+                                %
+                              </span>
+                            </div>
+                          </td>
+                        ) : null}
                         <td className="px-3 py-2 text-right tabular">
-                          ₹{rupees(item.sellingPriceRupees * item.quantity)}
+                          {priceDraftLine(item).discount > 0 ? (
+                            <span className="mr-1 text-xs text-muted-foreground line-through">
+                              ₹{rupees(priceDraftLine(item).gross)}
+                            </span>
+                          ) : null}
+                          ₹{rupees(priceDraftLine(item).net)}
                         </td>
                         <td className="px-3 py-2 text-right">
                           <button
-                            type="button" onClick={() => removeItem(item.productId)}
+                            type="button" onClick={() => removeItem(item.lineId)}
                             className="rounded-sm p-1 text-muted-foreground hover:text-destructive"
                             aria-label={`Remove ${item.productName}`}
                           >
@@ -401,9 +543,78 @@ export function InvoiceWizard({
               </div>
             )}
 
+            {/*
+              Internal labour. Sits below the table rather than above it: it is
+              an occasional adjustment, and putting it in the primary flow
+              would suggest every quotation needs one.
+            */}
+            {items.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-3 rounded-md border border-dashed p-3">
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <Checkbox
+                    checked={labourOn}
+                    onCheckedChange={(checked) => {
+                      const on = checked === true;
+                      setLabourOn(on);
+                      if (!on) {
+                        // Turning it off clears every line, so a hidden margin
+                        // can never survive the switch being off.
+                        setDefaultLabourPercent(0);
+                        setItems((current) => current.map((i) => ({ ...i, labourPercent: 0 })));
+                      }
+                    }}
+                    aria-label="Apply an internal labour adjustment"
+                  />
+                  Internal labour adjustment
+                </label>
+
+                {labourOn ? (
+                  <>
+                    <div className="relative w-24">
+                      <NumberInput
+                        min={0}
+                        max={100}
+                        value={defaultLabourPercent}
+                        onChange={(value) => {
+                          setDefaultLabourPercent(value);
+                          // Applies to every line NOW, which is what "default
+                          // for this document" means to an owner setting it
+                          // before adding products. Individual lines can still
+                          // be overridden afterwards.
+                          setItems((current) => current.map((i) => ({ ...i, labourPercent: value })));
+                        }}
+                        className="h-8 pr-7 text-right"
+                        aria-label="Default internal labour percentage"
+                      />
+                      <span aria-hidden
+                            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2
+                                       text-sm text-muted-foreground">
+                        %
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Added to each line after its discount. Never shown on the customer&apos;s copy.
+                    </p>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+
             {items.length > 0 ? (
               <div className="ml-auto max-w-xs space-y-1 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="tabular">₹{rupees(totals.subtotal)}</span></div>
+                {totals.productDiscount > 0 ? (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Product discounts</span>
+                    <span className="tabular text-destructive">-₹{rupees(totals.productDiscount)}</span>
+                  </div>
+                ) : null}
+                {totals.labour > 0 ? (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Internal labour</span>
+                    <span className="tabular">+₹{rupees(totals.labour)}</span>
+                  </div>
+                ) : null}
+                <div className="flex justify-between"><span className="text-muted-foreground">{totals.productDiscount > 0 || totals.labour > 0 ? 'Taxable amount' : 'Subtotal'}</span><span className="tabular">₹{rupees(totals.subtotal)}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">GST (est.)</span><span className="tabular">₹{rupees(totals.gst)}</span></div>
                 <div className="flex justify-between font-semibold"><span>Total (est.)</span><span className="tabular">₹{rupees(totals.total)}</span></div>
               </div>
@@ -546,7 +757,7 @@ export function InvoiceWizard({
               <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Items ({items.length})</p>
               <ul className="divide-y rounded-md border text-sm">
                 {items.map((item) => (
-                  <li key={item.productId} className="flex justify-between px-3 py-2">
+                  <li key={item.lineId} className="flex justify-between px-3 py-2">
                     <span>{item.productName} × {item.quantity}</span>
                     <span className="tabular">₹{rupees(item.sellingPriceRupees * item.quantity)}</span>
                   </li>
@@ -563,7 +774,7 @@ export function InvoiceWizard({
       </div>
 
       {/* Fixed navigation - stays visible without scrolling to find it. */}
-      <div className="sticky bottom-0 -mx-3 mt-6 flex items-center justify-between border-t bg-background/95 px-3 py-4 backdrop-blur sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
+      <div className="sticky bottom-0 -mx-3 mt-6 flex items-center justify-between border-t bg-background/95 px-3 py-4 pr-[4.75rem] backdrop-blur sm:-mx-5 sm:px-5 sm:pr-[4.75rem] lg:-mx-8 lg:px-8 lg:pr-[4.75rem]">
         <Button type="button" variant="outline" onClick={step === 0 ? onCancel : goBack} disabled={submitting}>
           <ArrowLeft className="h-4 w-4" />
           {step === 0 ? 'Cancel' : 'Back'}

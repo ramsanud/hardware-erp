@@ -10,6 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/shared/components/ui/select';
 import { FormField } from '@/shared/components/FormField';
+import { UnsavedChangesDialog } from '@/shared/components/UnsavedChangesDialog';
 import { ApiError } from '@/shared/types/api';
 import { workTypeService } from '../services/workTypeService';
 import { CustomerPicker } from '../components/CustomerPicker';
@@ -17,6 +18,9 @@ import { WorkTypeQuickAddDialog } from './WorkTypeQuickAddDialog';
 import { projectSchema, type ProjectValues } from '../validation/schemas';
 import type { CustomerSummaryResponse } from '@/modules/customer/types';
 import type { ProjectRequest, ProjectResponse, WorkTypeResponse } from '../types';
+
+/** UnsavedChangesDialog's Save button submits this form by id from outside it. */
+const FORM_ID = 'project-form';
 
 interface ProjectFormProps {
   project?: ProjectResponse;
@@ -32,8 +36,13 @@ export function ProjectForm({ project, onSubmit, onCancel }: ProjectFormProps) {
     project ? { id: project.customerId, customerName: project.customerName, customerCode: '', mobileNo: '', status: 'ACTIVE' } : null,
   );
 
+  // Cancel must not silently throw away edits (BUG-FE-013). A clean form
+  // closes immediately; a dirty one asks first, the same contract Customer,
+  // Product and Shop Settings already use via UnsavedChangesDialog.
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+
   const {
-    register, control, handleSubmit, setValue, formState: { errors, isSubmitting },
+    register, control, handleSubmit, setValue, watch, formState: { errors, isSubmitting, isDirty },
   } = useForm<ProjectValues>({
     resolver: zodResolver(projectSchema),
     defaultValues: {
@@ -74,8 +83,20 @@ export function ProjectForm({ project, onSubmit, onCancel }: ProjectFormProps) {
     }
   });
 
+  /** The picker writes customerId through setValue, which does not mark the
+   *  form dirty on its own - so a customer swap alone would slip past the
+   *  guard. shouldDirty is set at those call sites for that reason. */
+  // Feeds the native picker a min= so the calendar itself greys out invalid
+  // days. The zod superRefine still runs - this is the affordance, not the
+  // control, and a pasted value never goes near the picker.
+  const startDate = watch('startDate');
+  const requestCancel = () => {
+    if (isDirty) { setConfirmingCancel(true); return; }
+    onCancel();
+  };
+
   return (
-    <form onSubmit={submit} className="max-w-3xl space-y-6" noValidate>
+    <form id={FORM_ID} onSubmit={submit} className="max-w-3xl space-y-6" noValidate>
       {formError ? <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert> : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -90,13 +111,13 @@ export function ProjectForm({ project, onSubmit, onCancel }: ProjectFormProps) {
                 <span className="font-medium">{selectedCustomer.customerName}</span>
                 {selectedCustomer.mobileNo ? <span className="text-muted-foreground"> · {selectedCustomer.mobileNo}</span> : null}
               </span>
-              <button type="button" onClick={() => { setSelectedCustomer(null); setValue('customerId', 0); }}
+              <button type="button" onClick={() => { setSelectedCustomer(null); setValue('customerId', 0, { shouldValidate: true, shouldDirty: true }); }}
                       className="text-muted-foreground hover:text-foreground" aria-label="Change customer">
                 <X className="h-4 w-4" />
               </button>
             </div>
           ) : (
-            <CustomerPicker onPick={(customer) => { setSelectedCustomer(customer); setValue('customerId', customer.id, { shouldValidate: true }); }} />
+            <CustomerPicker onPick={(customer) => { setSelectedCustomer(customer); setValue('customerId', customer.id, { shouldValidate: true, shouldDirty: true }); }} />
           )}
         </FormField>
 
@@ -135,12 +156,12 @@ export function ProjectForm({ project, onSubmit, onCancel }: ProjectFormProps) {
         </FormField>
 
         <FormField id="expectedCompletionDate" label="Expected completion (optional)" error={errors.expectedCompletionDate?.message}>
-          <Input id="expectedCompletionDate" type="date" {...register('expectedCompletionDate')} />
+          <Input id="expectedCompletionDate" type="date" min={startDate || undefined} {...register('expectedCompletionDate')} />
         </FormField>
 
         <FormField id="customerDeadline" label="Customer deadline (optional)" error={errors.customerDeadline?.message}
                    hint="Drives the overdue warning on the project list.">
-          <Input id="customerDeadline" type="date" {...register('customerDeadline')} />
+          <Input id="customerDeadline" type="date" min={startDate || undefined} {...register('customerDeadline')} />
         </FormField>
 
         <FormField id="projectValueRupees" label="Project value (₹)" error={errors.projectValueRupees?.message} required
@@ -160,7 +181,7 @@ export function ProjectForm({ project, onSubmit, onCancel }: ProjectFormProps) {
       </div>
 
       <div className="flex items-center justify-end gap-3 border-t pt-4">
-        <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>Cancel</Button>
+        <Button type="button" variant="outline" onClick={requestCancel} disabled={isSubmitting}>Cancel</Button>
         <Button type="submit" loading={isSubmitting}>
           {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {project ? 'Save changes' : 'Create project'}
@@ -172,8 +193,16 @@ export function ProjectForm({ project, onSubmit, onCancel }: ProjectFormProps) {
         onOpenChange={setAddingWorkType}
         onCreated={(created) => {
           setWorkTypes((current) => [...current, created]);
-          setValue('workTypeId', created.id, { shouldValidate: true });
+          setValue('workTypeId', created.id, { shouldValidate: true, shouldDirty: true });
         }}
+      />
+
+      <UnsavedChangesDialog
+        open={confirmingCancel}
+        onContinueEditing={() => setConfirmingCancel(false)}
+        onDiscard={() => { setConfirmingCancel(false); onCancel(); }}
+        formId={FORM_ID}
+        saving={isSubmitting}
       />
     </form>
   );

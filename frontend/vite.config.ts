@@ -33,6 +33,9 @@ export default defineConfig({
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-forms': ['react-hook-form', '@hookform/resolvers', 'zod'],
+          // Recharts is ~100kB gzipped and only the dashboard needs it, so it
+          // gets its own chunk rather than inflating the main bundle.
+          'vendor-charts': ['recharts'],
           'vendor-ui': [
             '@radix-ui/react-dialog',
             '@radix-ui/react-dropdown-menu',

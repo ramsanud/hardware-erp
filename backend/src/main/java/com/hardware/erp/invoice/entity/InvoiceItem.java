@@ -1,5 +1,6 @@
 package com.hardware.erp.invoice.entity;
 
+import com.hardware.erp.common.util.LineDiscount;
 import com.hardware.erp.product.entity.Product;
 import jakarta.persistence.*;
 import lombok.*;
@@ -49,6 +50,40 @@ public class InvoiceItem {
     @Column(name = "gst_rate_percent", nullable = false, precision = 5, scale = 2)
     @Builder.Default
     private BigDecimal gstRatePercent = BigDecimal.ZERO;
+
+
+    /**
+     * CR-047. discountAmountPaise is authoritative for BOTH types - the
+     * entered amount when AMOUNT, the computed amount when PERCENTAGE - so
+     * totals are never re-derived from a percentage at read time and a stored
+     * document cannot re-price itself. discountPercent records the owner's
+     * intent so a "10%" line still prints as 10% and converts as 10%.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "discount_type", nullable = false, length = 20)
+    @Builder.Default
+    private LineDiscount.Type discountType = LineDiscount.Type.NONE;
+
+    @Column(name = "discount_percent", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal discountPercent = BigDecimal.ZERO;
+
+    @Column(name = "discount_amount_paise", nullable = false)
+    @Builder.Default
+    private Long discountAmountPaise = 0L;
+
+
+    /**
+     * CR-050 internal labour margin. Folded into the rate, never shown to the
+     * customer as its own line. labourAmountPaise is the authoritative money.
+     */
+    @Column(name = "labour_percent", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal labourPercent = BigDecimal.ZERO;
+
+    @Column(name = "labour_amount_paise", nullable = false)
+    @Builder.Default
+    private Long labourAmountPaise = 0L;
 
     @Column(name = "line_subtotal_paise", nullable = false)
     private Long lineSubtotalPaise;

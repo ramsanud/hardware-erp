@@ -13,6 +13,15 @@ interface ImageUploadProps {
   /** Rendered when src is null. */
   fallback: React.ReactNode;
   shape?: 'circle' | 'square';
+  /**
+   * Where to anchor the crop when the image is not square (BUG-FE-016).
+   * `object-cover` centres at 50% 50%, which on a portrait photo cuts the
+   * top of the head off - people frame themselves in the upper half, so the
+   * centre of a portrait is usually a chin. `face` biases the crop upward.
+   * Left at `center` for products and logos, where the subject really is
+   * centred.
+   */
+  focus?: 'center' | 'face';
   onUpload: (file: File) => Promise<void>;
   onRemove: () => Promise<void>;
 }
@@ -22,13 +31,16 @@ interface ImageUploadProps {
  * replace, remove, format/size validation and a loading state, all in one
  * place so the two features never drift.
  */
-export function ImageUpload({ src, alt, fallback, shape = 'circle', onUpload, onRemove }: ImageUploadProps) {
+export function ImageUpload({ src, alt, fallback, shape = 'circle', focus = 'center', onUpload, onRemove }: ImageUploadProps) {
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const shapeClass = shape === 'circle' ? 'rounded-full' : 'rounded-md';
+  // 28% rather than the 50% object-cover defaults to, or object-top's 0%:
+  // top-anchoring crops the chin off instead, which is no better.
+  const focusClass = focus === 'face' ? 'object-[50%_28%]' : 'object-center';
 
   const handleFile = async (file: File) => {
     if (!ACCEPTED.includes(file.type)) {
@@ -75,7 +87,7 @@ export function ImageUpload({ src, alt, fallback, shape = 'circle', onUpload, on
       <div className={`relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden border bg-muted ${shapeClass}`}>
         {shown ? (
           // eslint-disable-next-line jsx-a11y/img-redundant-alt
-          <img src={shown} alt={alt} className="h-full w-full object-cover" />
+          <img src={shown} alt={alt} className={`h-full w-full object-cover ${focusClass}`} />
         ) : fallback}
         {busy ? (
           <div className="absolute inset-0 flex items-center justify-center bg-background/70">

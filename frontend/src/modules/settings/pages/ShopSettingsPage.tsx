@@ -97,8 +97,20 @@ export function ShopSettingsPage() {
   const [signatureVersion, setSignatureVersion] = useState(0);
   const [upiQrVersion, setUpiQrVersion] = useState(0);
 
+  /**
+   * The fields this form actually renders. A server error naming anything
+   * else must not be silently swallowed by setError on a field that does not
+   * exist - it goes to the toast instead.
+   */
+  const FORM_FIELDS: Record<keyof SettingsFormValues, true> = {
+    name: true, gstNo: true, addressLine1: true, addressLine2: true, city: true,
+    stateCode: true, pincode: true, signatoryName: true, panNo: true, phone: true,
+    email: true, bankAccountName: true, bankAccountNo: true, bankIfsc: true,
+    bankName: true, upiId: true,
+  };
+
   const {
-    register, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting, isDirty },
+    register, handleSubmit, reset, watch, setValue, setError: setFieldError, formState: { errors, isSubmitting, isDirty },
   } = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsSchema),
     defaultValues: {
@@ -164,7 +176,27 @@ export function ShopSettingsPage() {
       setEditMode(false);
       toast.success('Shop settings saved.');
     } catch (caught) {
-      toast.error(caught, 'Could not save shop settings.');
+      // BUG-SET-001: the server names the offending field in errors, but the
+      // page only showed the generic message - so "Please correct the
+      // highlighted fields" appeared with nothing highlighted, and the owner
+      // had no way to know which of sixteen inputs was wrong.
+      //
+      // Field errors are mapped onto the form so the input itself reports the
+      // problem; anything the form has no input for still reaches the toast,
+      // rather than being swallowed.
+      const unmapped: string[] = [];
+      if (caught instanceof ApiError && caught.fieldErrors) {
+        for (const [field, message] of Object.entries(caught.fieldErrors)) {
+          if (field in FORM_FIELDS) {
+            setFieldError(field as keyof SettingsFormValues, { type: 'server', message });
+          } else {
+            unmapped.push(`${field}: ${message}`);
+          }
+        }
+      }
+      toast.error(caught, unmapped.length > 0
+        ? `Could not save shop settings. ${unmapped.join('; ')}`
+        : 'Could not save shop settings. Check the highlighted fields.');
     }
   });
 

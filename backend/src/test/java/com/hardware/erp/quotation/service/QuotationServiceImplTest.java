@@ -112,7 +112,9 @@ class QuotationServiceImplTest {
 
     private QuotationRequest request(LocalDate validUntil) {
         return new QuotationRequest("Ramesh Traders", "9876500001", null, null, null,
-                validUntil, List.of(new QuotationItemRequest(2L, new BigDecimal("2"))), null);
+                validUntil, List.of(new QuotationItemRequest(2L, new BigDecimal("2"))), null,
+                // CR-049/CR-050: no quotation-level discount in this fixture.
+                null, null);
     }
 
     // 2 x 150.00 = 300.00 subtotal, 18% GST = 54.00, total = 354.00 (35400 paise)
@@ -189,7 +191,7 @@ class QuotationServiceImplTest {
         when(quotationRepository.findByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(quotation));
         when(invoiceService.create(any(InvoiceRequest.class))).thenReturn(
                 new InvoiceResponse(77L, "INV-000077", 3L, "Ramesh Traders", "9876500001",
-                        LocalDate.now(), "300.00", "54.00", "354.00", null, null, "0.00", "354.00",
+                        LocalDate.now(), "300.00", "54.00", "354.00", null, null, null, "0.00", "354.00",
                         com.hardware.erp.invoice.entity.InvoiceStatus.UNPAID, null, null, null, null,
                         List.of(), List.of(), null, null, null, null));
 

@@ -1,0 +1,79 @@
+# Keep-alive ping for the Render free tier.
+#
+# A free Render web service sleeps after 15 minutes with no inbound request,
+# and waking a cold Spring Boot container takes 30-60 seconds. That is the
+# difference between a client demo opening instantly and appearing broken.
+#
+# THIS IS THE BACKUP, NOT THE PRIMARY. Use an external monitor
+# (UptimeRobot / cron-job.org - see docs/DEPLOYMENT.md) as the real pinger,
+# because GitHub's scheduled runs have two properties that make them a poor
+# fit on their own:
+#
+#   1. Schedules are best-effort. Under load a run can be 5-20 minutes late,
+#      which is exactly long enough for the service to have gone to sleep.
+#   2. GitHub disables scheduled workflows on a repository with no commits
+#      for 60 days, silently.
+#
+# Running both is fine and costs nothing - a sleeping service only needs one
+# of them to have fired.
+#
+# SETUP: add a repository variable (Settings -> Secrets and variables ->
+# Actions -> Variables) named API_BASE_URL, e.g.
+#   https://xxxxxx.onrender.com
+# A variable, not a secret - it is a public URL, and secrets are masked in
+# logs which makes failures impossible to read.
+
+name: keepalive
+
+on:
+  schedule:
+    # Every 10 minutes. Deliberately tighter than Render's 15-minute idle
+    # window so that one skipped or delayed run does not let it sleep.
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the health endpoint
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: |
+          set -uo pipefail
+
+          if [ -z "${API_BASE_URL:-}" ]; then
+            echo "::warning::API_BASE_URL repository variable is not set - nothing to ping."
+            exit 0
+          fi
+
+          url="${API_BASE_URL%/}/api/actuator/health"
+          echo "Pinging $url"
+
+          # A sleeping instance can take ~60s to answer the first request, so
+          # allow well past that before calling it a failure. Retry rather
+          # than fail fast: the whole point is to wake it, and the first
+          # attempt is the one most likely to time out.
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o /tmp/body.txt -w '%{http_code}' \
+                        --max-time 90 --retry 0 "$url" || echo "000")
+            body=$(cat /tmp/body.txt 2>/dev/null || true)
+            echo "attempt $attempt -> HTTP $code $body"
+
+            if [ "$code" = "200" ]; then
+              echo "Service is awake."
+              exit 0
+            fi
+            sleep 15
+          done
+
+          # A warning, not a failure. A red X on this workflow every time
+          # Render has a blip trains everyone to ignore the repository's
+          # build status, which costs more than it reports.
+          echo "::warning::Health check did not return 200 after 3 attempts (last: $code)."
+          exit 0

@@ -131,7 +131,7 @@ export function GlobalSearch() {
       </div>
 
       {open && query.trim().length > 0 ? (
-        <div className="surface-panel absolute z-30 mt-1 w-full overflow-hidden rounded-md border">
+        <div className="surface-overlay absolute z-30 mt-1 w-full overflow-hidden rounded-md border">
           <div className="max-h-96 overflow-y-auto py-1">
             {loading ? (
               <p className="px-3 py-3 text-sm text-muted-foreground">Searching…</p>

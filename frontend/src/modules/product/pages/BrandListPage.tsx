@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { MoreHorizontal, Pencil, Tags, Trash2 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Card } from '@/shared/components/ui/card';
@@ -12,6 +13,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
 import { PageHeader } from '@/shared/components/PageHeader';
+import { PRODUCT_ROUTES } from '../constants';
+import { SearchInput } from '@/shared/components/SearchInput';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog';
@@ -38,7 +41,17 @@ export function BrandListPage() {
   const [deleting, setDeleting] = useState<BrandResponse | null>(null);
 
   const { data, loading, error, reload } = useAsyncList(fetchAllAsPage, []);
-  const brands = data?.content ?? [];
+  const allBrands = data?.content ?? [];
+
+  // Same reasoning as CategoryListPage: a fully-loaded, shop-sized list.
+  const [filter, setFilter] = useState('');
+  const brands = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return allBrands;
+    return allBrands.filter((b) =>
+      b.brandName.toLowerCase().includes(needle)
+      || b.brandCode.toLowerCase().includes(needle));
+  }, [allBrands, filter]);
 
   const handleCreate = async (values: BrandValues) => {
     await brandService.create({
@@ -89,6 +102,11 @@ export function BrandListPage() {
         }
       />
 
+      <div className="mb-4">
+        <SearchInput value={filter} onChange={setFilter}
+                     placeholder="Search brands by name or code..." />
+      </div>
+
       <Card>
         {error ? (
           <ErrorState error={error} onRetry={reload} />
@@ -116,7 +134,15 @@ export function BrandListPage() {
                       {row.brandCode}
                     </span>
                   </TableCell>
-                  <TableCell className="tabular hidden md:table-cell">{row.productCount}</TableCell>
+                  <TableCell className="tabular hidden md:table-cell">
+                    {row.productCount > 0 ? (
+                      <Link to={`${PRODUCT_ROUTES.list}?brandId=${row.id}`}
+                            className="text-primary underline-offset-4 hover:underline"
+                            aria-label={`View ${row.productCount} products for ${row.brandName}`}>
+                        {row.productCount}
+                      </Link>
+                    ) : row.productCount}
+                  </TableCell>
                   <TableCell><BrandStatusBadge status={row.status} /></TableCell>
                   <TableCell>
                     <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>
