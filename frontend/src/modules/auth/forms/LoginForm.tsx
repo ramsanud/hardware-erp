@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { Alert, AlertDescription } from '@/shared/components/ui/alert';
@@ -80,24 +80,29 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
       ) : null}
 
       <FormField id="identifier" label="Mobile number or email" error={errors.identifier?.message} required>
-        <Input
-          id="identifier"
-          autoComplete="username"
-          inputMode="text"
-          autoFocus
-          placeholder="9876543210"
-          aria-invalid={Boolean(errors.identifier)}
-          {...register('identifier')}
-        />
+        <div className="relative">
+          <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input
+            id="identifier"
+            autoComplete="username"
+            inputMode="text"
+            autoFocus
+            placeholder="9876543210"
+            className="pl-9"
+            aria-invalid={Boolean(errors.identifier)}
+            {...register('identifier')}
+          />
+        </div>
       </FormField>
 
       <FormField id="password" label="Password" error={errors.password?.message} required>
         <div className="relative">
+          <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
             id="password"
             type={showPassword ? 'text' : 'password'}
             autoComplete="current-password"
-            className="pr-10"
+            className="pl-9 pr-10"
             aria-invalid={Boolean(errors.password)}
             {...register('password')}
           />

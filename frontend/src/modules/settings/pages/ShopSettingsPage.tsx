@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Check, Loader2, Palette, Pencil, QrCode, Save, Sparkles, Store } from 'lucide-react';
+import { Check, FileText, Loader2, Palette, Pencil, QrCode, Save, Sparkles, Store } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import {
@@ -29,9 +29,10 @@ import { AUTH_ROUTES } from '@/modules/auth/constants';
 import { useAppChrome } from '@/layouts/AppChromeProvider';
 import { settingsService } from '../services/settingsService';
 import { SUBSCRIPTION_TIER_OPTIONS, SUBSCRIPTION_TIERS } from '../constants/subscriptionTiers';
+import { INVOICE_THEME_OPTIONS, INVOICE_THEMES } from '../constants/invoiceThemes';
 import { SubscriptionCouponsCard } from '../components/SubscriptionCouponsCard';
 import { BankAccountsCard } from '../components/BankAccountsCard';
-import type { SubscriptionTier, TenantSettingsResponse, UsageSummaryResponse } from '../types';
+import type { InvoiceTheme, SubscriptionTier, TenantSettingsResponse, UsageSummaryResponse } from '../types';
 
 const SETTINGS_FORM_ID = 'shop-settings-form';
 
@@ -239,6 +240,39 @@ export function ShopSettingsPage() {
     }
   };
 
+  // Same "own instant-apply Select, outside the main form" shape as
+  // changeTier() above - invoiceTheme is shop data (server-side, printed on
+  // every generated PDF), not the per-person Appearance preference the
+  // AppearanceCard below links out to, so it belongs here rather than there.
+  const changeInvoiceTheme = async (theme: InvoiceTheme) => {
+    if (!settings) return;
+    try {
+      const updated = await settingsService.update({
+        name: settings.name,
+        gstNo: settings.gstNo,
+        addressLine1: settings.addressLine1,
+        addressLine2: settings.addressLine2,
+        city: settings.city,
+        stateCode: settings.stateCode,
+        pincode: settings.pincode,
+        signatoryName: settings.signatoryName,
+        panNo: settings.panNo,
+        phone: settings.phone,
+        email: settings.email,
+        bankAccountName: settings.bankAccountName,
+        bankAccountNo: settings.bankAccountNo,
+        bankIfsc: settings.bankIfsc,
+        bankName: settings.bankName,
+        upiId: settings.upiId,
+        invoiceTheme: theme,
+      });
+      setSettings(updated);
+      toast.success(`Invoice theme changed to ${INVOICE_THEMES[theme].label}.`);
+    } catch (caught) {
+      toast.error(caught, 'Could not change the invoice theme.');
+    }
+  };
+
   /**
    * Patches subscriptionTier/subscriptionTrialExpiresAt directly rather
    * than calling reload() - reload() flips `loading`, which unmounts this
@@ -281,6 +315,7 @@ export function ShopSettingsPage() {
           <SubscriptionPlanCard currentTier={settings.subscriptionTier} trialExpiresAt={settings.subscriptionTrialExpiresAt} onChangeTier={changeTier} />
           {usage ? <UsageCard usage={usage} /> : null}
           <SubscriptionCouponsCard onRedeemed={handleCouponRedeemed} />
+          <InvoiceThemeCard currentTheme={settings.invoiceTheme} onChangeTheme={changeInvoiceTheme} />
           <AppearanceCard />
 
           <Card>
@@ -367,6 +402,7 @@ export function ShopSettingsPage() {
         <SubscriptionPlanCard currentTier={settings.subscriptionTier} trialExpiresAt={settings.subscriptionTrialExpiresAt} onChangeTier={changeTier} />
         {usage ? <UsageCard usage={usage} /> : null}
         <SubscriptionCouponsCard onRedeemed={handleCouponRedeemed} />
+        <InvoiceThemeCard currentTheme={settings.invoiceTheme} onChangeTheme={changeInvoiceTheme} />
       </div>
 
       <form id={SETTINGS_FORM_ID} onSubmit={submit} noValidate className="max-w-2xl space-y-5">
@@ -641,6 +677,61 @@ function SubscriptionPlanCard({
           </Select>
           {changing ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Changing plan" /> : null}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * CR-053 phase 1. A shop-wide default colour/font skin for the generated
+ * invoice PDF - server-side, printed data, so it lives here on its own
+ * instant-apply Select (same shape as SubscriptionPlanCard above), never
+ * bundled into the per-person Appearance preference the AppearanceCard
+ * below links out to.
+ */
+function InvoiceThemeCard({
+  currentTheme, onChangeTheme,
+}: {
+  currentTheme: InvoiceTheme;
+  onChangeTheme: (theme: InvoiceTheme) => Promise<void>;
+}) {
+  const [changing, setChanging] = useState(false);
+
+  const handleChange = async (theme: string) => {
+    setChanging(true);
+    try {
+      await onChangeTheme(theme as InvoiceTheme);
+    } finally {
+      setChanging(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-primary" aria-hidden />
+          <CardTitle className="text-base">Invoice PDF theme</CardTitle>
+          <Badge variant="secondary">{INVOICE_THEMES[currentTheme].label}</Badge>
+        </div>
+        <CardDescription>
+          The colour and font skin printed on every generated invoice PDF - applies to future PDFs
+          immediately, no need to save the form below.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Select value={currentTheme} onValueChange={handleChange} disabled={changing}>
+            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {INVOICE_THEME_OPTIONS.map((theme) => (
+                <SelectItem key={theme} value={theme}>{INVOICE_THEMES[theme].label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {changing ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Changing theme" /> : null}
+        </div>
+        <p className="text-sm text-muted-foreground">{INVOICE_THEMES[currentTheme].description}</p>
       </CardContent>
     </Card>
   );

@@ -100,6 +100,12 @@ public class Tenant extends BaseEntity {
     @Column(name = "subscription_trial_expires_at")
     private java.time.LocalDateTime subscriptionTrialExpiresAt;
 
+    /** CR-053. Shop-wide default skin for the generated invoice PDF - see InvoicePdfService. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "invoice_theme", nullable = false, length = 20)
+    @Builder.Default
+    private InvoiceTheme invoiceTheme = InvoiceTheme.CLASSIC;
+
     public boolean isActive() {
         return status == TenantStatus.ACTIVE;
     }

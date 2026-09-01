@@ -37,7 +37,7 @@ export function LoginPage() {
   };
 
   return (
-    <Card>
+    <Card className="mx-auto w-full max-w-sm">
       <CardHeader>
         <CardTitle className="text-xl">Sign in</CardTitle>
         <CardDescription>

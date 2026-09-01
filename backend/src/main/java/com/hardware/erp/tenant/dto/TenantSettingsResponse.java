@@ -1,5 +1,6 @@
 package com.hardware.erp.tenant.dto;
 
+import com.hardware.erp.tenant.entity.InvoiceTheme;
 import com.hardware.erp.tenant.entity.SubscriptionTier;
 
 import java.time.LocalDateTime;
@@ -27,5 +28,7 @@ public record TenantSettingsResponse(
         String upiId,
         SubscriptionTier subscriptionTier,
         /** CR-032 - null means subscriptionTier (whatever it is) is permanent, not from a trial coupon. */
-        LocalDateTime subscriptionTrialExpiresAt
+        LocalDateTime subscriptionTrialExpiresAt,
+        /** CR-053. Shop-wide default skin for the generated invoice PDF. */
+        InvoiceTheme invoiceTheme
 ) {}

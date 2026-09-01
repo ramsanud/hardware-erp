@@ -162,10 +162,15 @@ export function AuthLayout() {
           </div>
           <ModeToggle />
         </header>
-        <div className="flex flex-1 items-center justify-center px-4 pb-12">
-          {/* max-w-sm on purpose: a wider sign-in card reads as a form to fill
-              in, not a door to walk through. */}
-          <div className="w-full max-w-sm">
+        <div className="flex flex-1 items-center justify-center px-4 py-8">
+          {/*
+            No width cap here - each page's own Card sets it (mx-auto
+            max-w-sm for a short form like Sign in, max-w-xl for Register's
+            wizard). A cap on this wrapper used to silently clip every
+            page's own max-w-* to whatever this div said, which is why
+            RegisterPage's max-w-xl was dead CSS until this changed.
+          */}
+          <div className="w-full">
             <Outlet />
           </div>
         </div>

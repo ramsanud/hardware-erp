@@ -128,6 +128,60 @@ class InvoicePdfServiceTest {
         assertThat(html).contains("Goods once sold cannot be returned");
         assertThat(html).doesNotContain("No return after 15 days");
     }
+
+    @Test
+    @DisplayName("CR-053: a tenant with no invoiceTheme set renders exactly the CLASSIC skin (default, backward-compatible)")
+    void defaultThemeIsClassic() {
+        Tenant tenant = tenant("29");
+        assertThat(tenant.getInvoiceTheme()).isEqualTo(com.hardware.erp.tenant.entity.InvoiceTheme.CLASSIC);
+
+        String html = pdfService.buildHtml(invoice(customer("29")), tenant, null, null, null);
+
+        assertThat(html).contains("color: #1e3a5f");
+        assertThat(html).contains("background: #1e3a5f; color: #fff");
+    }
+
+    @Test
+    @DisplayName("CR-053: each theme renders its own distinct colour tokens, sharing the same table/pagination structure")
+    void eachThemeRendersDistinctTokens() {
+        Customer customer = customer("29");
+        Invoice invoice = invoice(customer);
+
+        String classic = pdfService.buildHtml(invoice, themedTenant(com.hardware.erp.tenant.entity.InvoiceTheme.CLASSIC), null, null, null);
+        String minimal = pdfService.buildHtml(invoice, themedTenant(com.hardware.erp.tenant.entity.InvoiceTheme.MINIMAL), null, null, null);
+        String bold = pdfService.buildHtml(invoice, themedTenant(com.hardware.erp.tenant.entity.InvoiceTheme.BOLD), null, null, null);
+        String elegant = pdfService.buildHtml(invoice, themedTenant(com.hardware.erp.tenant.entity.InvoiceTheme.ELEGANT), null, null, null);
+
+        assertThat(classic).contains("#1e3a5f");
+        assertThat(minimal).contains("border-bottom: 2px solid #1a1a1a");
+        assertThat(bold).contains("#c2410c");
+        assertThat(elegant).contains("Georgia").contains("#78350f");
+
+        // Every theme must still carry the load-bearing pagination/structural
+        // rules identically - a skin must never touch GST-correctness layout.
+        for (String html : List.of(classic, minimal, bold, elegant)) {
+            assertThat(html).contains("-fs-table-paginate: paginate");
+            assertThat(html).contains("page-break-inside: avoid");
+        }
+    }
+
+    /** All four themes must still produce a well-formed PDF, not just valid-looking HTML. */
+    @Test
+    @DisplayName("CR-053: every theme renders a well-formed PDF, not just valid HTML")
+    void everyThemeRendersAWellFormedPdf() {
+        for (com.hardware.erp.tenant.entity.InvoiceTheme theme : com.hardware.erp.tenant.entity.InvoiceTheme.values()) {
+            byte[] pdf = pdfService.render(invoice(customer("29")), themedTenant(theme));
+            assertThat(pdf).isNotEmpty();
+            assertThat(new String(pdf, 0, 5, java.nio.charset.StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
+        }
+    }
+
+    private Tenant themedTenant(com.hardware.erp.tenant.entity.InvoiceTheme theme) {
+        Tenant tenant = tenant("29");
+        tenant.setInvoiceTheme(theme);
+        return tenant;
+    }
+
     @Test
     @DisplayName("renders a well-formed PDF for an intra-state sale (same state code)")
     void rendersIntraStateInvoice() {

@@ -52,7 +52,7 @@ export function ResetPasswordPage() {
   // explanation rather than a form that will always fail.
   if (!token) {
     return (
-      <Card>
+      <Card className="mx-auto w-full max-w-sm">
         <CardHeader>
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
             <ShieldAlert className="h-5 w-5 text-destructive" aria-hidden />
@@ -79,7 +79,7 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <Card>
+    <Card className="mx-auto w-full max-w-sm">
       <CardHeader>
         <CardTitle>Choose a new password</CardTitle>
         <CardDescription>This link can only be used once.</CardDescription>
