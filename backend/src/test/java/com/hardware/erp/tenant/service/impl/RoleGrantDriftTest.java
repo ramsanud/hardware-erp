@@ -72,6 +72,10 @@ class RoleGrantDriftTest {
             PermissionCode.COUPON_MANAGE,
             PermissionCode.SETTINGS_VIEW,
             PermissionCode.SETTINGS_MANAGE,
+            // An accountant sees orders/challans for billing context but does
+            // not raise them - same reasoning as QUOTATION_MANAGE above.
+            PermissionCode.SALES_ORDER_MANAGE,
+            PermissionCode.DELIVERY_CHALLAN_MANAGE,
             // See WITHHELD_FROM_MANAGER - developer diagnostics, CR-045.
             PermissionCode.DEVELOPER_INSPECT);
 
@@ -108,6 +112,12 @@ class RoleGrantDriftTest {
             // PRODUCT_VIEW_COST above.
             PermissionCode.LABOUR_VIEW,
             PermissionCode.LABOUR_MANAGE,
+            // Dispatching goods and issuing a return/credit are not
+            // front-counter authority - same footing as INVOICE_CANCEL.
+            PermissionCode.DELIVERY_CHALLAN_VIEW,
+            PermissionCode.DELIVERY_CHALLAN_MANAGE,
+            PermissionCode.CREDIT_NOTE_VIEW,
+            PermissionCode.CREDIT_NOTE_MANAGE,
             // See WITHHELD_FROM_MANAGER - developer diagnostics, CR-045.
             PermissionCode.DEVELOPER_INSPECT);
 

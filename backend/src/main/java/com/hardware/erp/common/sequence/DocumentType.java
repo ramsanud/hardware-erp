@@ -19,7 +19,10 @@ public enum DocumentType {
     INVOICE("INV-", 6),
     QUOTATION("QUO-", 6),
     PURCHASE("PUR-", 6),
-    PROJECT("PRJ-", 4);
+    PROJECT("PRJ-", 4),
+    SALES_ORDER("SO-", 6),
+    DELIVERY_CHALLAN("DC-", 6),
+    CREDIT_NOTE("CN-", 6);
 
     private final String prefix;
     private final int digits;

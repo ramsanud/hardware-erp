@@ -82,6 +82,14 @@ public final class PermissionCode {
     public static final String LABOUR_VIEW   = "LABOUR_VIEW";
     public static final String LABOUR_MANAGE = "LABOUR_MANAGE";
 
+    // SALES ORDER / DELIVERY CHALLAN / CREDIT NOTE (CR-052)
+    public static final String SALES_ORDER_VIEW   = "SALES_ORDER_VIEW";
+    public static final String SALES_ORDER_MANAGE = "SALES_ORDER_MANAGE";
+    public static final String DELIVERY_CHALLAN_VIEW   = "DELIVERY_CHALLAN_VIEW";
+    public static final String DELIVERY_CHALLAN_MANAGE = "DELIVERY_CHALLAN_MANAGE";
+    public static final String CREDIT_NOTE_VIEW   = "CREDIT_NOTE_VIEW";
+    public static final String CREDIT_NOTE_MANAGE = "CREDIT_NOTE_MANAGE";
+
     /**
      * DEVELOPER (CR-045) - the only permission in the catalogue that is not an
      * ERP capability, and the only one no default role holds.

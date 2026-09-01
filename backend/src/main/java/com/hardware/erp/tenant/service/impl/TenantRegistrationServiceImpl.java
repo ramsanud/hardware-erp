@@ -101,7 +101,10 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 "REPORT_VIEW", "SETTINGS_VIEW",
                 "COUPON_VIEW", "COUPON_MANAGE",
                 "PROJECT_VIEW", "PROJECT_MANAGE", "PROJECT_MATERIAL_VIEW", "PROJECT_MATERIAL_MANAGE",
-                "LABOUR_VIEW", "LABOUR_MANAGE"));
+                "LABOUR_VIEW", "LABOUR_MANAGE",
+                "SALES_ORDER_VIEW", "SALES_ORDER_MANAGE",
+                "DELIVERY_CHALLAN_VIEW", "DELIVERY_CHALLAN_MANAGE",
+                "CREDIT_NOTE_VIEW", "CREDIT_NOTE_MANAGE"));
         ROLE_PERMISSIONS.put("ACCOUNTANT", Set.of(
                 "CUSTOMER_VIEW", "CUSTOMER_MANAGE", "SUPPLIER_VIEW",
                 "PRODUCT_VIEW", "PRODUCT_VIEW_COST", "PRODUCT_VIEW_STOCK",
@@ -111,7 +114,13 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 "REPORT_VIEW", "REPORT_FINANCIAL",
                 "COUPON_VIEW",
                 "PROJECT_VIEW", "PROJECT_MATERIAL_VIEW",
-                "LABOUR_VIEW", "LABOUR_MANAGE"));
+                "LABOUR_VIEW", "LABOUR_MANAGE",
+                // Sees orders/challans for billing context but does not raise
+                // them - same reasoning as QUOTATION_VIEW without MANAGE.
+                "SALES_ORDER_VIEW", "DELIVERY_CHALLAN_VIEW",
+                // A credit note is a financial document, same footing as
+                // INVOICE_CREATE.
+                "CREDIT_NOTE_VIEW", "CREDIT_NOTE_MANAGE"));
         // STAFF deliberately excludes PRODUCT_VIEW_COST - counter staff must
         // not see purchase cost or margin, enforced server-side (see V1's
         // identical comment on the seed data this mirrors).
@@ -122,7 +131,10 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 "INVOICE_VIEW", "INVOICE_CREATE",
                 "PAYMENT_VIEW", "INVENTORY_VIEW",
                 "COUPON_VIEW",
-                "PROJECT_VIEW"));
+                "PROJECT_VIEW",
+                // Counter staff takes orders the same way it raises
+                // quotations and invoices.
+                "SALES_ORDER_VIEW", "SALES_ORDER_MANAGE"));
     }
 
     private final TenantRepository tenantRepository;
