@@ -1115,3 +1115,329 @@ a signal. CI is the answer, and it is part of this change.
 New permission code `DEVELOPER_INSPECT`, new `permission.module_code` value
 `DEVELOPER`. New package `com.hardware.erp.developer`. New helper
 `SecurityUtils.requestPath`. No renames.
+
+---
+
+## CR-051 — Idempotency service for double-submitted writes (APPLIED 2026-08-31)
+
+### The problem
+
+Master Prompt Phase 1. A shop-counter double-click, a request retried after a
+timeout, or a slow connection that makes the owner click "Create" twice must
+never create the same document twice. Nothing in the codebase before this
+CR prevented it — a retried `POST` simply ran the whole create path again.
+
+### The fix
+
+`IdempotencyService.execute(tenantId, operation, idempotencyKey, requestPayload,
+responseType, action)` — one shared, low-level service, reused by every
+write endpoint that accepts a client-supplied idempotency key, rather than a
+bespoke guard per module.
+
+New `idempotency_record` table (V34): `UNIQUE (tenant_id, idempotency_key)`,
+`response_status = 0` as an in-flight sentinel (never a real HTTP status),
+`request_hash` (SHA-256, reusing `JwtService.hashToken()`'s exact
+`MessageDigest`/`HexFormat` pattern) to detect the same key reused with a
+*different* payload — rejected as `IdempotencyKeyReusedException` (409), not
+silently replayed, because serving the wrong cached response would be wrong,
+not merely redundant.
+
+Same two-step "insert-if-absent, then `SELECT … FOR UPDATE`" pattern as
+`DocumentSequenceService` (CR-041), and for the identical reason:
+`Propagation.MANDATORY`, joining the caller's transaction rather than
+`REQUIRES_NEW`, so the row lock is held until the caller's own writes commit
+or roll back together with it — a rolled-back attempt leaves no completed
+record behind, and a retry with the same key is free to try again from
+scratch.
+
+**Design correction made mid-implementation:** the first version resolved
+`tenantId` internally via `SecurityUtils.requireCurrentTenantId()`. Running
+`IdempotencyServiceIT` against a raw `@Autowired` service (no web request, no
+`SecurityContext`) failed 4 of 5 tests with `AuthException: Not authenticated`
+— a real design bug, not a test artifact. `DocumentSequenceService.next(docType,
+tenantId)` takes `tenantId` as an explicit parameter for exactly this reason: a
+low-level reusable service should not re-derive identity its caller has
+already resolved. Fixed by adding `Long tenantId` as the interface's first
+parameter.
+
+Proven with a 20-thread concurrent-caller test asserting the wrapped action
+ran exactly once and every caller received an identical result, plus
+key-reuse-with-different-payload rejection, rollback-leaves-no-record, and
+independent-keys-never-interfere. `mvn verify`: 5/5 pass against real
+PostgreSQL (Testcontainers — H2 cannot faithfully reproduce the
+`SELECT … FOR UPDATE` semantics this guarantee depends on).
+
+### Effect on the naming registry
+
+New table `idempotency_record`. New package
+`com.hardware.erp.common.idempotency`. No renames.
+
+---
+
+## CR-052 — Sales Order, Delivery Challan, Credit Note (APPLIED 2026-08-31)
+
+### Scope
+
+Master Prompt Phase 1, the second half (idempotency, CR-051, was the first).
+Three document types the sales pipeline was missing between Quotation and
+Invoice, and after Invoice:
+
+```
+Quotation --> Sales Order --> Delivery Challan --> Invoice --> Credit Note
+     \______________/______________________/
+      (either can skip straight to Invoice)
+```
+
+Built as three modules (`salesorder`, `deliverychallan`, `creditnote`),
+migrations V35–V37, each modeled directly on the closest existing module
+rather than inventing new shapes — per CLAUDE.md's "reuse existing
+architecture" rule and the Master Prompt's own repeated instruction to prefer
+existing patterns.
+
+### Sales Order
+
+Modeled on Quotation (CR-022) field for field: never moves stock, never posts
+anything until converted, same three-column discount shape and per-line
+internal labour margin (CR-047/CR-050), same whole-document discount
+(CR-049), same percentage-only discount type (CR-050). `expectedDeliveryDate`
+is informational only — unlike Quotation's `validUntil`, nothing gates on it.
+
+Converts exactly once, to exactly one of a Delivery Challan or an Invoice —
+`convertedDeliveryChallanId`/`convertedInvoiceId` are mutually exclusive,
+mirroring `Quotation.convertedInvoiceId`. Splitting one order across several
+challans/invoices is deliberately **not** built — that is the kind of
+lifecycle-state engine CLAUDE.md's proactive-scope section reserves for its
+own CR, not a "while I'm in here" addition.
+
+### Delivery Challan
+
+Deliberately **not** a tax document: no GST split, no discount ladder, no
+labour margin. Items carry only product, quantity, and an informational
+value (qty × unit price at dispatch) — pricing/discount is decided once, at
+the eventual invoicing step, same as it always has been.
+
+Unlike Quotation/Sales Order, a challan **does** move stock
+(`MovementType.DELIVERY`) — goods have genuinely left the shop. Converting a
+challan to an Invoice first reverses that movement (`DELIVERY_REVERSAL`),
+then calls `InvoiceService.create()`, which takes the same stock again as a
+normal `SALE`. The Invoice module needed **zero** changes: no stock-skip
+flag, no special-case branch. Net stock effect is exactly one unit out, and
+the ledger honestly shows both the original dispatch and its conversion —
+chosen over adding a "skip stock" parameter to `InvoiceService.create()`
+specifically to keep that module's blast radius at zero.
+
+### Credit Note
+
+A GST-compliant record of goods returned against an already-issued Invoice.
+Deliberately **never edits the original invoice** — `InvoiceServiceImpl.update()`'s
+own comment already states the rule: "altering figures the customer has
+already settled against is what credit and debit notes are for." Invoice's
+`subtotal_paise`/`gst_amount_paise`/`total_paise`/`paid_paise`/`balance_paise`
+are untouched by this CR; a Credit Note stands beside the invoice as its own
+document. **"What the customer still owes, net of returns" is left as a
+reporting-layer question for a future CR** — not solved here by mutating a
+settled invoice.
+
+`credit_note_item.invoice_item_id` (NOT NULL) links each returned line to the
+exact original `invoice_item` row, **not** to a product id. This is the one
+place this CR deliberately front-runs a defect class already seen once:
+BUG-FE-021 was exactly a line keyed on product id instead of its own row,
+silently corrupting every other line sharing that product. An invoice can
+legitimately carry the same product on two lines (two different negotiated
+discounts in one sale); keying by `invoice_item_id` makes that ambiguity
+impossible from the start rather than fixing it after the fact.
+
+Quantity already credited against a line is capped at that line's original
+quantity — summed across every non-cancelled credit note via
+`CreditNoteItemRepository.sumCreditedQuantity()`, checked at creation time
+(a cross-row aggregate a CHECK constraint cannot see). The credited rate is
+the line's **effective** taxable rate (net of its own discount, divided
+across its quantity), never the product's gross price — a credit note can
+never refund more than was actually collected.
+
+### Idempotency wiring
+
+`create()` on all three, plus Sales Order's two convert actions and Delivery
+Challan's convert-to-invoice, accept an optional `Idempotency-Key` request
+header and route through `IdempotencyService` (CR-051) when present — the
+first real consumers of that service, exactly as CR-051 was built for.
+
+### Permissions
+
+`SALES_ORDER_VIEW/MANAGE`, `DELIVERY_CHALLAN_VIEW/MANAGE`,
+`CREDIT_NOTE_VIEW/MANAGE`. Granted to OWNER (via the live-table filter) and
+MANAGER in full. ACCOUNTANT gets `SALES_ORDER_VIEW` and
+`DELIVERY_CHALLAN_VIEW` (billing context, does not raise them — same footing
+as its `QUOTATION_VIEW`-without-`MANAGE` grant) and both `CREDIT_NOTE_VIEW`
+and `CREDIT_NOTE_MANAGE` (a financial document, same footing as
+`INVOICE_CREATE`). STAFF gets `SALES_ORDER_VIEW/MANAGE` only (counter staff
+takes orders the same way it raises quotations and invoices) — dispatch and
+returns/credit are withheld, the same footing as `INVOICE_CANCEL`.
+`RoleGrantDriftTest` (BUG-LAB-006's regression guard) enforces every new code
+is decided for every role, in both the migration and
+`TenantRegistrationServiceImpl`'s map.
+
+### Testing
+
+Mockito unit-test coverage per module (mirroring `QuotationServiceImplTest`/
+`InvoiceServiceImplTest`'s established shape) rather than new Testcontainers
+IT classes: totals/effective-rate arithmetic, status-transition guards,
+stock-movement call verification, and the over-return/wrong-invoice/
+cancelled-invoice rejection paths for Credit Note. `mvn clean verify`: full
+suite green after this change (see RESUME_POINT.md for the exact count).
+
+### Explicitly deferred, not silently built
+
+PDF/print templates for all three document types, and any frontend
+page/wizard for any of them — this CR is backend infrastructure only. Also
+deferred: a reporting view showing "what a customer owes net of credit
+notes" (see the Credit Note section above). None of these were started;
+flagging them here so a future session does not assume they exist.
+
+### Effect on the naming registry
+
+New tables `sales_order`, `sales_order_item`, `delivery_challan`,
+`delivery_challan_item`, `credit_note`, `credit_note_item`. New enum values
+`DocumentType.SALES_ORDER/DELIVERY_CHALLAN/CREDIT_NOTE`,
+`MovementType.DELIVERY/DELIVERY_REVERSAL/SALES_RETURN/SALES_RETURN_REVERSAL`.
+New packages `com.hardware.erp.salesorder`, `com.hardware.erp.deliverychallan`,
+`com.hardware.erp.creditnote`. No renames.
+
+---
+
+## CR-053 phase 1 — Invoice PDF themes (APPLIED 2026-08-31)
+
+### Scope
+
+First of a multi-feature backlog the user asked for from a set of
+myBillBook screenshots (invoice PDF themes, reminder settings, named user
+roles + activity feed, a GST/margin calculator, and the rest of a premium-
+plan feature list). Explicitly sequenced one at a time rather than
+attempted together - each is its own multi-day subsystem. This entry
+covers only the first.
+
+### What was actually built
+
+A shop-wide default colour/font skin (`Tenant.invoiceTheme`, V38) for the
+generated invoice PDF - **not** a photographic background image. No such
+asset exists anywhere in this codebase, and the screenshots' floral/
+monument backgrounds cannot be honestly reproduced without real design
+input; pasting in a placeholder would look cheap, not "themed". Four
+skins - `CLASSIC` (default), `MINIMAL`, `BOLD`, `ELEGANT` - implemented as
+a small **token recipe** (accent colour, header fill, body font) swapped
+into one shared stylesheet, the same architecture CR-034 already proved
+out for the frontend's own design styles. The structural/pagination CSS
+(table layout, `page-break-inside`, the repeating `<thead>`) is identical
+across every theme - that is GST-correctness layout, not decoration, and
+must never vary by skin.
+
+`CLASSIC`'s tokens are, deliberately, byte-for-byte what `InvoicePdfService`
+always rendered before this CR - an existing tenant that never opens
+Settings sees no change at all, proven by `defaultThemeIsClassic()` and by
+every pre-existing `InvoicePdfServiceTest` still passing unmodified.
+
+Wired through the existing Settings screen (`TenantSettingsRequest`/
+`Response.invoiceTheme`, nullable = "leave unchanged", same convention as
+`subscriptionTier`) rather than a new endpoint - one shop-wide default,
+not a per-invoice picker, matching how logo/signature/bank details already
+work.
+
+### Verified
+
+`mvn clean verify`: 350 unit + 105 integration tests, 0 failures (up from
+347/105 - 3 new `InvoicePdfServiceTest` cases: default-is-CLASSIC, all
+four themes render distinct tokens while sharing the identical structural
+rules, and all four still produce a well-formed `%PDF-` file). **Live-
+verified against the real local backend**, not just unit-tested: switched
+a real tenant's theme via `PUT /v1/settings` between BOLD/CLASSIC/ELEGANT
+and regenerated the same invoice's PDF each time - three different MD5
+checksums, confirming genuinely different rendered output, not just a
+different response field. Read the BOLD-themed PDF directly: correct
+orange title/table-header/tint throughout, GST arithmetic and layout
+unchanged from CLASSIC.
+
+### Explicitly deferred
+
+`QuotationPdfService` duplicates the exact same pre-CR-053 hardcoded
+colour scheme (confirmed by `grep`) and was **not** touched - theming it
+too is a natural, small follow-up, left undone here to keep this change's
+diff scoped to what was actually asked for (invoice PDFs, per the
+screenshots). The remaining backlog items (reminder settings, named
+roles + activity feed, GST calculator, and the rest of the premium-plan
+list) are separate, not-yet-started phases of the same request.
+
+### Effect on the naming registry
+
+New column `tenant.invoice_theme`. New enum `InvoiceTheme`. No renames.
+
+---
+
+## CR-053 phase 2 — Registration form scroll fix + auth-page icon polish (APPLIED, frontend only, 2026-08-31)
+
+### The complaint and its actual root cause
+
+"Registration form needs scrolling, feels like old UI." Investigated rather
+than guessed: `RegisterPage.tsx`'s `<Card>` already declared `max-w-xl`, but
+`AuthLayout.tsx`'s Outlet wrapper hardcoded `max-w-sm` on the div wrapping
+every auth page - the wrapper silently clipped Register's own width request
+the whole time, forcing six fields plus the full consent section into a
+384px column. The `max-w-xl` class was dead CSS, not a mistake in
+`RegisterPage` itself.
+
+### The fix
+
+Two independent changes, both needed:
+
+1. **`AuthLayout.tsx`'s wrapper no longer hardcodes a width** - each auth
+   page's own `<Card>` now carries `mx-auto w-full max-w-*`, exactly
+   matching what CR-034's own frontend design-token philosophy already
+   established elsewhere: shared structure, page-level control over its own
+   presentation. `LoginPage`, `ForgotPasswordPage`, `ResetPasswordPage` all
+   gained an explicit `max-w-sm` to preserve their exact previous width -
+   this was implicit before, now it is stated.
+2. **`RegisterPage` rebuilt as a 3-step wizard** ("Your shop" /
+   "Sign-in details" / "Plan & agreement"), mirroring `SupplierWizard`'s
+   already-proven step-indicator + sticky Back/Next pattern (CR-017) rather
+   than inventing a new one - same field set, same Zod schema, same
+   `tenantRegistrationService.register()` call, only the presentation
+   changed. Now that its `max-w-xl` genuinely applies, even the widest step
+   (plan selection + the full `ConsentSection`) fits without scrolling on a
+   normal viewport.
+
+**Icon-prefixed inputs** added to `LoginForm`, `ForgotPasswordPage`, and
+every text field across the new Register wizard (`Building2`/`User`/
+`Phone`/`Mail`/`Lock`, the same manual `relative`/`absolute` pattern the
+password eye-toggle already used) - this was the literal design reference
+the user gave in an earlier session (a "BalanceDesk"-style two-column auth
+layout with icon-prefixed fields, recorded in memory at the time) that had
+never actually been carried through to the inputs themselves.
+
+**A real, incidental bug fixed along the way, not copied forward:**
+`SupplierWizard`'s submit button passes `loading={submitting}` to `Button`
+*and* separately renders its own `<Loader2 className="animate-spin" />` -
+`Button`'s own `loading` prop already renders that same spinner internally
+(`button.tsx`), so `SupplierWizard` has been showing two overlapping
+spinners on submit. Not touched here (out of scope, `SupplierWizard` itself
+was not part of this request) but the new `RegisterPage` deliberately does
+**not** repeat it - flagging it here as a small pre-existing defect for
+whoever next touches `SupplierWizard`.
+
+### Explicitly not done
+
+The user's own phrasing ("login show right… register… show left side")
+was ambiguous between "fix the scrolling" and "mirror which side the brand
+panel sits on between Login and Register." Read as the former (the
+concrete, unambiguous complaint) - the brand panel stays on the same side
+for both flows, matching the stored design-reference memory's original
+choice. If a genuine mirrored layout is wanted, that is a one-line follow-up
+change to `AuthLayout`/`RegisterPage`, not done here to avoid guessing wrong
+on a stored preference.
+
+### Verified
+
+`tsc -b --force` clean. `vite build` clean (chunk-size warning is
+pre-existing and unrelated). **Not performed**: no browser automation tool
+is available in this environment (a constraint noted repeatedly elsewhere
+in this project's history) - the visual result has not been screenshotted
+or clicked through, only typechecked and build-verified. Stated plainly
+rather than claimed.

@@ -6,6 +6,7 @@ import com.hardware.erp.common.util.IndianStates;
 import com.hardware.erp.customer.entity.Customer;
 import com.hardware.erp.invoice.entity.Invoice;
 import com.hardware.erp.invoice.entity.InvoiceItem;
+import com.hardware.erp.tenant.entity.InvoiceTheme;
 import com.hardware.erp.tenant.entity.Tenant;
 import com.hardware.erp.tenant.entity.TenantBankAccount;
 import com.hardware.erp.tenant.entity.TenantBankAccountQr;
@@ -165,12 +166,13 @@ public class InvoicePdfService {
                       + row("SGST", IndianCurrencyFormat.rupees(sgstTotal)));
 
         boolean hasShipment = anyNonBlank(invoice.getTransportMode(), invoice.getVehicleNumber(), invoice.getDeliveryAddress());
+        InvoiceTheme theme = tenant.getInvoiceTheme() == null ? InvoiceTheme.CLASSIC : tenant.getInvoiceTheme();
 
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
             + "<!DOCTYPE html>\n"
             + "<html xmlns=\"http://www.w3.org/1999/xhtml\">\n"
             + "<head><style>\n"
-            + stylesheet()
+            + stylesheet(theme)
             + "</style></head>\n"
             + "<body>\n"
             + "  <div class=\"title\">TAX INVOICE</div>\n"
@@ -236,26 +238,40 @@ public class InvoicePdfService {
             + "</body></html>";
     }
 
-    private static String stylesheet() {
+    /**
+     * CR-053. A shop-wide default skin, not a photographic background - see
+     * V38's migration comment for why. The structural/pagination rules
+     * (table layout, page-break-inside, the repeating &lt;thead&gt;) are
+     * IDENTICAL across every theme, because those are load-bearing for
+     * correct multi-page GST rendering, not decoration - only the token
+     * values below (colour, header fill, font) change per theme, the same
+     * "shared structure, swapped tokens" approach CR-034 already used for
+     * the frontend's own design styles. CLASSIC's tokens are, deliberately,
+     * byte-for-byte what this method always returned before this CR - an
+     * existing tenant that never opens Settings sees no change at all.
+     */
+    private static String stylesheet(InvoiceTheme theme) {
+        ThemeTokens t = tokensFor(theme);
         return "  @page { size: A4; margin: 24px 24px 36px 24px;\n"
             + "    @bottom-center { content: \"Page \" counter(page) \" of \" counter(pages); font-size: 8px; color: #888; } }\n"
-            + "  body { font-family: Helvetica, Arial, sans-serif; font-size: 10px; color: #1a1a1a; }\n"
+            + "  body { font-family: " + t.bodyFont + "; font-size: 10px; color: #1a1a1a; }\n"
             + "  h1 { font-size: 16px; margin: 0 0 2px 0; }\n"
             + "  .muted { color: #555; }\n"
             + "  .title { text-align: center; font-size: 15px; font-weight: bold; letter-spacing: 1.5px;\n"
-            + "           color: #1e3a5f; margin-bottom: 8px; }\n"
-            + "  .company { width: 100%; border-top: 3px solid #1e3a5f; margin-bottom: 10px; box-sizing: border-box; }\n"
+            + "           color: " + t.titleColor + "; margin-bottom: 8px; }\n"
+            + "  .company { width: 100%; border-top: " + t.companyBorder + "; margin-bottom: 10px; box-sizing: border-box; }\n"
             + "  .company .logo { float: right; max-height: 48px; max-width: 140px; margin-left: 12px; }\n"
             + "  .header { width: 100%; margin-top: 8px; }\n"
             + "  .header td { vertical-align: top; padding: 0; }\n"
-            + "  .box { border: 1px solid #ccc; background: #f7f8fa; padding: 6px; width: 48%; }\n"
+            + "  .box { border: 1px solid #ccc; background: " + t.boxBg + "; padding: 6px; width: 48%; }\n"
             + "  table.items { width: 100%; border-collapse: collapse; margin-top: 10px;\n"
             + "    -fs-table-paginate: paginate; }\n"
             + "  table.items thead { display: table-header-group; }\n"
             + "  table.items tr { page-break-inside: avoid; }\n"
             + "  table.items th, table.items td { border: 1px solid #ccc; padding: 4px 5px; }\n"
-            + "  table.items th { background: #1e3a5f; color: #fff; text-align: left; font-weight: normal; }\n"
-            + "  table.items tbody tr:nth-child(even) { background: #f7f8fa; }\n"
+            + "  table.items th { background: " + t.headerBg + "; color: " + t.headerText + ";\n"
+            + "    text-align: left; font-weight: normal; " + t.headerExtra + " }\n"
+            + "  table.items tbody tr:nth-child(even) { background: " + t.stripeBg + "; }\n"
             + "  .num { text-align: right; }\n"
             // The rate sits above the amount in each tax cell - smaller and
             // grey, so the money still reads first.
@@ -266,7 +282,7 @@ public class InvoicePdfService {
             + "  table.totals td.value { text-align: right; width: 90px; }\n"
             + "  table.totals tr.grand td { border-top: 1px solid #333; font-weight: bold; font-size: 11px; }\n"
             + "  .section-divider { margin-top: 14px; border-top: 1px dashed #b8c4d0; }\n"
-            + "  .payment { width: 100%; margin-top: 10px; background: #f4f8fb; padding: 8px; box-sizing: border-box; }\n"
+            + "  .payment { width: 100%; margin-top: 10px; background: " + t.paymentBg + "; padding: 8px; box-sizing: border-box; }\n"
             + "  .payment td { vertical-align: top; padding: 0; }\n"
             + "  .qr-box { text-align: center; width: 130px; }\n"
             + "  .qr-box img { width: 100px; height: 100px; }\n"
@@ -277,8 +293,40 @@ public class InvoicePdfService {
             + "  .signature-img { max-height: 60px; max-width: 180px; float: right; margin-top: 6px; }\n"
             + "  .clear { clear: both; }\n"
             + "  .thank-you { margin-top: 16px; text-align: center; font-size: 11px; font-weight: bold;\n"
-            + "               color: #1e3a5f; }\n"
+            + "               color: " + t.titleColor + "; }\n"
             + "  .footer-note { margin-top: 4px; text-align: center; font-size: 8.5px; color: #777; }\n";
+    }
+
+    /** One row per theme - see stylesheet()'s header comment for why these are the only things that ever vary. */
+    private record ThemeTokens(String bodyFont, String titleColor, String companyBorder,
+                                String boxBg, String headerBg, String headerText, String headerExtra,
+                                String stripeBg, String paymentBg) {}
+
+    private static ThemeTokens tokensFor(InvoiceTheme theme) {
+        return switch (theme) {
+            case CLASSIC -> new ThemeTokens(
+                    "Helvetica, Arial, sans-serif", "#1e3a5f", "3px solid #1e3a5f",
+                    "#f7f8fa", "#1e3a5f", "#fff", "",
+                    "#f7f8fa", "#f4f8fb");
+            // Thin, mostly monochrome, no filled header band - reads as
+            // "quiet" next to CLASSIC's coloured one.
+            case MINIMAL -> new ThemeTokens(
+                    "Helvetica, Arial, sans-serif", "#1a1a1a", "1px solid #1a1a1a",
+                    "#ffffff", "#ffffff", "#1a1a1a", "border-bottom: 2px solid #1a1a1a;",
+                    "#ffffff", "#f9f9f9");
+            // The shop's own brand orange, a strong filled header.
+            case BOLD -> new ThemeTokens(
+                    "Helvetica, Arial, sans-serif", "#c2410c", "4px solid #c2410c",
+                    "#fff5eb", "#c2410c", "#fff", "",
+                    "#fff5eb", "#fff2e5");
+            // Serif type, a warm gold/maroon palette, a double top rule -
+            // the one theme that reads as "formal document" rather than
+            // "counter receipt".
+            case ELEGANT -> new ThemeTokens(
+                    "Georgia, 'Times New Roman', serif", "#78350f", "4px double #78350f",
+                    "#fdf6ec", "#78350f", "#fff5e6", "",
+                    "#fdf6ec", "#fbf0dd");
+        };
     }
 
     /**

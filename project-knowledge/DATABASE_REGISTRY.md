@@ -670,3 +670,85 @@ ever goes red, "admin = developer" has crept back in.
 
 To grant it, an owner assigns it to a role on the Roles screen, in the
 environment where it is wanted. It still does nothing in production.
+
+---
+
+## CR-051: idempotency infrastructure (V34)
+
+`idempotency_record` - one row per `(tenant_id, idempotency_key)`:
+`operation` (which endpoint/action the key belongs to), `request_hash`
+(SHA-256 of the serialized request, to detect the same key reused with a
+different payload), `response_status` (`0` is a never-a-real-HTTP-status
+in-flight sentinel), `response_body` (the serialized cached result, empty
+while in-flight). `UNIQUE (tenant_id, idempotency_key)`, FK to `tenant`,
+indexed on `created_at`.
+
+Same "insert-if-absent via `ON CONFLICT DO NOTHING`, then `SELECT ... FOR
+UPDATE`" pattern as `document_sequence` (CR-041), for the identical
+concurrency reason. No new permission codes - internal infrastructure,
+never an endpoint of its own.
+
+## CR-052: Sales Order, Delivery Challan, Credit Note (V35, V36, V37)
+
+Three tables plus their item tables, one migration each.
+
+**`sales_order` / `sales_order_item` (V35).** Structurally identical to
+`quotation`/`quotation_item` in its *final* shape (post CR-047/049/050) -
+same three-column discount shape at both header and line level, same
+per-line internal labour margin, percentage-only discount (`AMOUNT` was
+never offered here, unlike quotation's history). Adds
+`expected_delivery_date` (informational only) and
+`converted_delivery_challan_id` alongside `converted_invoice_id` - exactly
+one of the two is ever set. `fk_sales_order_delivery_challan` is added at
+the end of V36, not V35, since `delivery_challan` did not exist yet when
+V35 ran.
+
+**`delivery_challan` / `delivery_challan_item` (V36).** Deliberately not a
+tax document: no discount columns, no GST split on the item table -
+`unit_price_paise`/`value_paise` are informational only. `status` is
+`ISSUED` (default) / `CONVERTED` / `CANCELLED`, no `DRAFT` - a challan that
+has not been issued does not need to exist yet, mirroring Invoice/Purchase's
+simple create+cancel model rather than a reservation workflow.
+`source_sales_order_id` (nullable) records a challan raised by converting a
+Sales Order; `converted_invoice_id` (nullable) records the invoice it was
+later billed into.
+
+**`credit_note` / `credit_note_item` (V37).** `credit_note_item.invoice_item_id`
+(`NOT NULL`, FK to `invoice_item`) is the load-bearing design decision here -
+a returned line points at the exact original `invoice_item` row, never at a
+bare `product_id`. See CR-052's entry in the Change Request Registry for why
+(BUG-FE-021 was exactly the product-id-keyed defect class this prevents).
+`credit_note` itself carries its own `subtotal_paise`/`gst_amount_paise`/
+`total_paise`; `invoice`'s own columns are never written to by this
+migration or by `CreditNoteServiceImpl` - a settled tax invoice is never
+rewritten.
+
+**`stock_movement.movement_type` widened twice more** (V36 adds `DELIVERY`/
+`DELIVERY_REVERSAL`, V37 adds `SALES_RETURN`/`SALES_RETURN_REVERSAL`), same
+`DROP CONSTRAINT` / `ADD CONSTRAINT` pattern V21 established for
+`PURCHASE_RECEIPT`/`PURCHASE_RETURN`.
+
+**`document_sequence.doc_type` widened once, in V35**, to add all three of
+`SALES_ORDER`, `DELIVERY_CHALLAN`, `CREDIT_NOTE` at once (rather than once
+per migration) since V35 is the first of the three to run and the column is
+just a string domain restriction - the referenced tables do not need to
+exist yet for the CHECK to name them.
+
+**New permission codes**, one `VIEW`/`MANAGE` pair per module:
+`SALES_ORDER_VIEW/MANAGE`, `DELIVERY_CHALLAN_VIEW/MANAGE`,
+`CREDIT_NOTE_VIEW/MANAGE` - module_codes `SALES_ORDER`, `DELIVERY_CHALLAN`,
+`CREDIT_NOTE`, each new to `PermissionCodeConsistencyTest.everyPermissionHasAModule`'s
+fixed list (that test failed on the first full-suite run after this CR,
+exactly as CLAUDE.md's "run the full suite" rule exists to catch). See
+CR-052's Change Request Registry entry for the full per-role grant
+reasoning.
+
+## CR-053 phase 1: invoice PDF themes (V38)
+
+`tenant.invoice_theme` - `VARCHAR(20) NOT NULL DEFAULT 'CLASSIC'`, `CHECK`
+on the four values (`CLASSIC`, `MINIMAL`, `BOLD`, `ELEGANT`). No new table
+- a shop-wide default, same shape as the existing single-row bank/UPI
+fields on `tenant`. `CLASSIC` as the default means an existing tenant's
+column backfills to the exact skin `InvoicePdfService` always rendered
+before this migration - no visible change until the owner opens Settings.
+No new permission codes - reuses `SETTINGS_MANAGE`.

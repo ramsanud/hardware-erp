@@ -1,5 +1,6 @@
 package com.hardware.erp.tenant.dto;
 
+import com.hardware.erp.tenant.entity.InvoiceTheme;
 import com.hardware.erp.tenant.entity.SubscriptionTier;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -44,5 +45,7 @@ public record TenantSettingsRequest(
         @Size(max = 200) String bankName,
         @Size(max = 100) String upiId,
         /** Null means "leave unchanged" - not every settings save is also a plan change. Self-declared, see CR-027: no payment gateway exists yet. */
-        SubscriptionTier subscriptionTier
+        SubscriptionTier subscriptionTier,
+        /** CR-053. Null means "leave unchanged", same convention as subscriptionTier above. */
+        InvoiceTheme invoiceTheme
 ) {}

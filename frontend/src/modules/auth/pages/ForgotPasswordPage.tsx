@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, MailCheck } from 'lucide-react';
+import { ArrowLeft, MailCheck, User } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import {
@@ -39,7 +39,7 @@ export function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <Card>
+      <Card className="mx-auto w-full max-w-sm">
         <CardHeader>
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-success/10">
             <MailCheck className="h-5 w-5 text-success" aria-hidden />
@@ -69,7 +69,7 @@ export function ForgotPasswordPage() {
   }
 
   return (
-    <Card>
+    <Card className="mx-auto w-full max-w-sm">
       <CardHeader>
         <CardTitle>Reset your password</CardTitle>
         <CardDescription>
@@ -80,9 +80,12 @@ export function ForgotPasswordPage() {
         <form onSubmit={submit} className="space-y-4" noValidate>
           <FormField id="identifier" label="Mobile number or email"
                      error={errors.identifier?.message} required>
-            <Input id="identifier" autoFocus autoComplete="username"
-                   placeholder="9876543210"
-                   aria-invalid={Boolean(errors.identifier)} {...register('identifier')} />
+            <div className="relative">
+              <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <Input id="identifier" autoFocus autoComplete="username"
+                     placeholder="9876543210" className="pl-9"
+                     aria-invalid={Boolean(errors.identifier)} {...register('identifier')} />
+            </div>
           </FormField>
 
           <Button type="submit" className="w-full" loading={isSubmitting}>

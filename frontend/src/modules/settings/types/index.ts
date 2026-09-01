@@ -1,5 +1,8 @@
 export type SubscriptionTier = 'FREE' | 'PRO' | 'MAX';
 
+/** CR-053 phase 1 - a shop-wide default colour/font skin for the generated invoice PDF, never a photographic background. */
+export type InvoiceTheme = 'CLASSIC' | 'MINIMAL' | 'BOLD' | 'ELEGANT';
+
 export interface TenantSettingsResponse {
   id: number;
   name: string;
@@ -24,6 +27,8 @@ export interface TenantSettingsResponse {
   subscriptionTier: SubscriptionTier;
   /** CR-032 - null means subscriptionTier is permanent, not from a trial coupon. */
   subscriptionTrialExpiresAt?: string | null;
+  /** CR-053 phase 1. */
+  invoiceTheme: InvoiceTheme;
 }
 
 export type SubscriptionCouponStatus = 'ACTIVE' | 'INACTIVE';
@@ -121,4 +126,6 @@ export interface TenantSettingsRequest {
   bankName?: string | null;
   upiId?: string | null;
   subscriptionTier?: SubscriptionTier | null;
+  /** CR-053 phase 1. Null means "leave unchanged", same convention as subscriptionTier above. */
+  invoiceTheme?: InvoiceTheme | null;
 }

@@ -81,6 +81,9 @@ public class TenantSettingsServiceImpl implements TenantSettingsService {
             // the owner explicitly chose back to FREE behind their back.
             tenant.setSubscriptionTrialExpiresAt(null);
         }
+        if (request.invoiceTheme() != null) {
+            tenant.setInvoiceTheme(request.invoiceTheme());
+        }
 
         Tenant saved = tenantRepository.save(tenant);
 
@@ -115,6 +118,7 @@ public class TenantSettingsServiceImpl implements TenantSettingsService {
         values.put("bankName", tenant.getBankName());
         values.put("upiId", tenant.getUpiId());
         values.put("subscriptionTier", tenant.getSubscriptionTier());
+        values.put("invoiceTheme", tenant.getInvoiceTheme());
         return values;
     }
 
@@ -129,6 +133,6 @@ public class TenantSettingsServiceImpl implements TenantSettingsService {
                 tenant.getPanNo(), tenant.getPhone(), tenant.getEmail(),
                 tenant.getBankAccountName(), tenant.getBankAccountNo(), tenant.getBankIfsc(),
                 tenant.getBankName(), tenant.getUpiId(), tenant.getSubscriptionTier(),
-                tenant.getSubscriptionTrialExpiresAt());
+                tenant.getSubscriptionTrialExpiresAt(), tenant.getInvoiceTheme());
     }
 }
