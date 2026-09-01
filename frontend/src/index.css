@@ -244,8 +244,15 @@
     box-shadow: var(--control-inset-shadow);
   }
 
+  /*
+   * position: relative + the ::before bar below give the active item a
+   * visible left accent, the detail that reads as "polished admin panel"
+   * rather than a plain highlighted row - a common complaint about a flat
+   * sidebar is that active state is easy to miss at a glance; a coloured
+   * edge is legible even out of the corner of your eye.
+   */
   .sidebar-link {
-    @apply flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors;
+    @apply relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors;
     color: hsl(var(--sidebar-muted));
   }
   .sidebar-link:hover {
@@ -257,8 +264,19 @@
     color: hsl(var(--sidebar-active));
     font-weight: 500;
   }
+  .sidebar-link[data-active='true']::before {
+    content: '';
+    position: absolute;
+    left: -0.5rem;
+    top: 50%;
+    height: 1.25rem;
+    width: 3px;
+    transform: translateY(-50%);
+    border-radius: 9999px;
+    background: hsl(var(--sidebar-active));
+  }
   .sidebar-section {
-    @apply px-3 pb-1 pt-4 text-[11px] font-medium uppercase tracking-wider;
+    @apply px-3 pb-1.5 pt-5 text-[11px] font-medium uppercase tracking-wider;
     color: hsl(var(--sidebar-section));
   }
   /*

@@ -151,7 +151,14 @@ function AppLayoutInner() {
           </DropdownMenu>
         </header>
 
-        <main className="flex-1 px-3 py-5 sm:px-5 lg:px-8">
+        {/*
+          pb-24 (not py-5's default) - the floating AiChatWidget sits fixed
+          at bottom-5 with its own 12x12 footprint, so ordinary py-5 bottom
+          padding let a long table's last rows or a chart's own x-axis
+          labels render directly underneath it. This is clearance for the
+          FAB, not a general spacing change.
+        */}
+        <main className="flex-1 px-3 pb-24 pt-5 sm:px-5 lg:px-8">
           <div className="mx-auto w-full max-w-7xl space-y-5">
             <Outlet />
           </div>
