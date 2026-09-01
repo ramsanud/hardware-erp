@@ -407,3 +407,65 @@ under the `prod` profile. `/swagger-ui/**` and `/v3/api-docs/**` keep their
 `permitAll` matcher, which in production matches nothing because no handler is
 registered. A complete map of every endpoint, parameter and DTO is useful to an
 attacker and to nobody running a hardware shop.
+
+---
+
+## CR-051 / CR-052 — Sales Order, Delivery Challan, Credit Note, idempotency
+
+CR-051 (idempotency) adds no endpoint of its own — it is a service every
+`POST`/convert endpoint below can opt into via an `Idempotency-Key` request
+header. Header absent or blank: the endpoint behaves exactly as if CR-051
+did not exist. Header present: `IdempotencyService` guarantees the wrapped
+write runs exactly once for that key (see the Change Request Registry entry
+for the full mechanism); a retried request with the same key and the same
+body replays the first response, and the same key with a different body is
+rejected `409 IDEMPOTENCY_KEY_REUSED`.
+
+### Sales Order — `/v1/sales-orders`
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| POST | `/v1/sales-orders` | `SALES_ORDER_MANAGE` | Accepts `Idempotency-Key`. |
+| GET | `/v1/sales-orders` | `SALES_ORDER_VIEW` | `search`, `status`, `fromDate`, `toDate`, paged. |
+| GET | `/v1/sales-orders/{id}` | `SALES_ORDER_VIEW` | |
+| PUT | `/v1/sales-orders/{id}` | `SALES_ORDER_MANAGE` | Only while `DRAFT`/`CONFIRMED`. |
+| PATCH | `/v1/sales-orders/{id}/status` | `SALES_ORDER_MANAGE` | `CONVERTED` cannot be set directly — use a convert action. |
+| POST | `/v1/sales-orders/{id}/convert-to-invoice` | `INVOICE_CREATE` | Bills the order directly, skipping a challan. Accepts `Idempotency-Key`. |
+| POST | `/v1/sales-orders/{id}/convert-to-delivery-challan` | `DELIVERY_CHALLAN_MANAGE` | Dispatches without billing yet. Accepts `Idempotency-Key`. |
+
+No `/pdf` route yet — deferred, see CR-052's Change Request Registry entry.
+
+### Delivery Challan — `/v1/delivery-challans`
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| POST | `/v1/delivery-challans` | `DELIVERY_CHALLAN_MANAGE` | Accepts `Idempotency-Key`. Items are `productId` + `quantity` only — not a tax document, no discount/GST fields. |
+| GET | `/v1/delivery-challans` | `DELIVERY_CHALLAN_VIEW` | `search`, `status`, `fromDate`, `toDate`, paged. |
+| GET | `/v1/delivery-challans/{id}` | `DELIVERY_CHALLAN_VIEW` | |
+| POST | `/v1/delivery-challans/{id}/cancel` | `DELIVERY_CHALLAN_MANAGE` | Only while `ISSUED`. Restores the stock the challan took. |
+| POST | `/v1/delivery-challans/{id}/convert-to-invoice` | `INVOICE_CREATE` | Only while `ISSUED`. Accepts `Idempotency-Key`. |
+
+No `/pdf` route yet — deferred.
+
+### Credit Note — `/v1/credit-notes`
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| POST | `/v1/credit-notes` | `CREDIT_NOTE_MANAGE` | Accepts `Idempotency-Key`. Body is `invoiceId` + items keyed by `invoiceItemId` (not `productId` — see CR-052) + `reason` (required) + optional `remarks`. No customer fields — the customer is read from the invoice. |
+| GET | `/v1/credit-notes` | `CREDIT_NOTE_VIEW` | `search`, `status`, `fromDate`, `toDate`, paged. |
+| GET | `/v1/credit-notes/{id}` | `CREDIT_NOTE_VIEW` | |
+| POST | `/v1/credit-notes/{id}/cancel` | `CREDIT_NOTE_MANAGE` | Only while `ISSUED`. Reverses the stock the credit note restored. Never touches the original invoice. |
+
+No `/pdf` route yet — deferred.
+
+---
+
+## CR-053 phase 1 — Invoice PDF themes
+
+No new endpoint. `PUT /v1/settings` (`SETTINGS_MANAGE`, unchanged
+permission) gained one new optional field, `invoiceTheme` — one of
+`CLASSIC` (default) / `MINIMAL` / `BOLD` / `ELEGANT`. Null means leave
+unchanged, same convention `subscriptionTier` already uses on this DTO.
+`GET /v1/settings` echoes the current value back. `GET /v1/invoices/{id}/pdf`
+is unchanged in shape — it now simply renders using whichever theme the
+tenant has set.

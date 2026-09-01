@@ -92,7 +92,18 @@ only two modules from the original 12 still not started.
 | — | Product Variant (price history, loss-sale workflow) | — | — | — | deferred — see FEATURE_REGISTRY deviation note |
 | — | Purchase | — | — | — | not started — blocks real Supplier Payables, see `MASTER_PROJECT_STATUS.md` §4.4 |
 | 8 | Project Management | DONE (CR-029) | DONE | 3+7=10 written | work types, projects, materials, expenses, payments, server-computed profitability, rooftop calculator — live-verified end to end |
-| — | Labour / Team / Attendance | — | — | — | not started — Phase 7, see MASTER_PROJECT_STATUS.md |
+| — | Labour / Team / Attendance | DONE (CR-036) | DONE | 13 written | workers, attendance, wage summary, project labour cost — this table's own "not started" row predates CR-036 and was not otherwise reconciled, see the note below |
+| — | Sales Order | DONE (CR-052) | not started | 8 written | backend only — converts to Delivery Challan or Invoice |
+| — | Delivery Challan | DONE (CR-052) | not started | 5 written | backend only — not a tax document, moves stock |
+| — | Credit Note | DONE (CR-052) | not started | 7 written | backend only — returns against an Invoice line |
+
+**Note (2026-08-31):** this table drifted badly behind actual repository
+state well before CR-052 — the Purchase row above still reads "not started"
+despite Purchase shipping in CR-035, and several other CRs (036 through 050)
+made no entry here either. Left as found rather than silently rewritten
+wholesale in passing; reconciling the full table against `git log` is its
+own worthwhile pass, not a side effect of this session's Sales Order/
+Delivery Challan/Credit Note work.
 | — | Finance / Cash-Bank-Cheque ledger | — | — | — | not started — Phase 8 |
 | — | Reports (daily/weekly/monthly/yearly) | — | — | — | not started — Phase 9 |
 

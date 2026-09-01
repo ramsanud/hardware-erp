@@ -1,12 +1,38 @@
 # RESUME POINT
 
-**Updated:** 2026-08-26 (CR-045: Version 1 Git and environment foundation. The repository had no commits at all; it now has a branch strategy, four environment profiles, environment- and permission-gated developer inspection, CI, and the `v1.0.0` tag. Two pre-existing test failures were found by running the suite end to end and fixed: BUG-AUTH-014 and BUG-SEC-003.)
+**Updated:** 2026-08-31 (CR-051 + CR-052 done and live-verified locally. CR-053 phase 1 — invoice PDF themes — also done and live-verified. Neither is committed yet. A second, separate multi-phase backlog (CR-053 phases 2+) is queued from a screenshot-driven request — see below.)
 
 ---
 
 ## Next file to work on
 
-**CR-042, increment 2 — thermal print rendering.** Unchanged by CR-045. Start with
+**Uncommitted work sitting on `main` right now — commit it first, following CLAUDE.md's branch workflow, before starting anything else.** `main` and `develop` both exist; this work was built directly against `main`'s working tree, same as every other change this session, but per CLAUDE.md it belongs on a feature branch merged back with `--no-ff`. Everything below is one working tree's worth of uncommitted diff (CR-051, CR-052, CR-053 phase 1 together) — commit as one or split per CR, reviewer's call. Suggested: `git switch -c feature/sales-order-delivery-challan-credit-note-invoice-themes`, commit, merge into `develop`, then into `main`. Not yet done because committing was not explicitly requested this round.
+
+**CR-053, phases 3+ — a live backlog, being worked one item at a time on explicit "add all features one by one" authorization.** Phase 1 (invoice PDF themes) and phase 2 (registration-form scroll fix + auth-page icon polish) are both done. The queue, roughly in the order raised, none of the rest started yet - pick the next one using judgement, no need to re-ask before each (already authorized), but keep doing them one at a time and verify each before moving on:
+
+1. **Invoice "Additional Settings" toggles** — Show Item Description, Show Alternate Unit, Price History, Free Quantity, Show Time on Invoices, Show Item Image, Tagline. Small, bounded, same shape as `Tenant.invoiceTheme` (CR-053 phase 1) - most likely more `tenant` columns read by `InvoicePdfService`.
+2. **Tally export** — a Tally-compatible XML export of sales/purchases/parties/items for a date range. Real, bounded, no external credential needed.
+3. **TDS/TCS settings** — under Business & GST Settings, affecting invoice/purchase tax calculation. Bounded, no external dependency.
+4. **e-Invoice (IRN) — UI-only, explicitly not-yet-live.** User's own decision when asked: build the seller/buyer/voucher/HSN-code review screens and wire them to save data, but the final "Generate e-Invoice" action must stay disabled with an honest "needs a GSP/NIC account" message - same degrade-gracefully pattern CR-036 phase 1 used for WhatsApp sharing. **Never** fabricate a real IRN or claim generation succeeded - no GSP/NIC credential exists anywhere in this environment. If real credentials are ever supplied, this becomes a different, bigger piece of work (a real GSP/NIC API integration), not an extension of the UI shell.
+5. **Reminder settings page** — SMS-to-party on transaction, payment-due reminders, daily outstanding-payments/sales-summary digest, low-stock alert, WhatsApp alerts. Needs a scheduled job (nothing in this codebase currently runs one). WhatsApp alerts hit the same no-credential gap as e-Invoice above - default to the same UI-present-but-disabled or browser-share-fallback treatment rather than asking again, unless something below changes that.
+6. **Named user roles + activity feed** — preset display names (Partner, Salesman, Stock Manager, Delivery Boy, CA) over the existing four system roles, plus a per-user activity timeline on the Manage User page. The RBAC/permission engine underneath already exists in full (`PermissionGate`, `PermissionCode`, `@PreAuthorize`) — this is a presentation layer, not new authorization.
+7. **GST/margin calculator tool** — a standalone cost-price + GST% → selling-price calculator with a profit-ratio donut chart. Not tied to any existing document; a small new page, likely with no backend at all (pure arithmetic).
+8. The rest of the screenshotted premium-plan list, not yet scoped in detail: barcode generation/printing, scan-to-create-invoice, an online store, foreign-currency invoicing, "Add your CA" access, GSTR JSON export, remove-branding toggle, recover deleted invoices, bulk-edit items. Several of these overlap with Master Prompt phases already known to be missing (barcode/warehouse was one of the three Master Prompt phases the user has not yet picked) — resolve that overlap before starting rather than guessing which backlog takes priority.
+
+**A defect noticed in passing, not fixed (out of scope for CR-053 phase 2):** `SupplierWizard`'s submit button shows two overlapping loading spinners - it passes `loading={submitting}` to `Button` *and* separately renders its own `<Loader2 className="animate-spin" />`, but `Button`'s own `loading` prop already renders that spinner internally. `RegisterPage`'s new wizard (phase 2) deliberately does not repeat this. Worth a one-line fix whenever `SupplierWizard` is next touched.
+
+After CR-053 is worked through (or paused), the other still-open piece of
+Master Prompt work is whichever of *its* remaining three proposed phases the
+user picks next (they chose Phase 1 — idempotency + Sales Order/Delivery
+Challan/Credit Note — via AskUserQuestion; the other three were never
+started and must not be silently begun): warehouse/rack + barcode scanning,
+e-invoice/e-way bill, WhatsApp Business API, backup/restore, invoice
+template designer, 4-tier entitlements, financial year rollover, price
+history — see this session's own 15-point audit for the full list.
+
+**CR-042, increment 2 — thermal print rendering** is still queued behind
+whichever Master Prompt phase comes next; unchanged by anything in this
+entry. Start with
 `backend/src/main/java/com/hardware/erp/device/escpos/EscPosBuilder.java`
 and the raster receipt renderer. The plan, decisions and phase breakdown live
 in the "Shop Counter Architecture" document produced 2026-08-26.
@@ -16,12 +42,80 @@ Approved decisions from that plan, do not re-litigate them:
 - Offline stock conflict → **strict reject into CONFLICT**; the server never
   lets stock go invalid. The user resolves on a conflict screen.
 - Build order → numbering fix (done) → thermal print → Bluetooth/USB →
-  idempotency → PWA offline reads → offline writes → push.
+  idempotency (done, CR-051) → PWA offline reads → offline writes → push.
 - Offline write scope → invoice, payment, **quotation and customer drafts**,
   all gated behind a new `OFFLINE_TRANSACT` permission.
 
-Do that work on a branch: `git switch develop && git switch -c feature/thermal-printing`.
-`main` and `develop` both exist now, and feature work no longer happens on either.
+---
+
+## CR-051 + CR-052: Idempotency, Sales Order, Delivery Challan, Credit Note (DONE 2026-08-31)
+
+Master Prompt Phase 1, the phase the user picked via AskUserQuestion out of
+four proposed. Full detail in `project-knowledge/CHANGE_REQUEST_REGISTRY.md`'s
+CR-051/CR-052 entries and `project-knowledge/DATABASE_REGISTRY.md`/
+`API_REGISTRY.md`'s matching sections — this is the summary.
+
+**CR-051 (V34)**: `IdempotencyService`, reusing `DocumentSequenceService`'s
+(CR-041) exact "insert-if-absent, then `SELECT ... FOR UPDATE`,
+`Propagation.MANDATORY`" pattern. Proven with a 20-thread concurrent-caller
+test (action ran exactly once, every caller got an identical result) plus
+key-reuse-with-different-payload rejection, rollback-leaves-no-record, and
+independent-keys-never-interfere — all against real PostgreSQL. One design
+correction made mid-implementation: `tenantId` moved from
+internally-resolved to a caller-supplied parameter, matching
+`DocumentSequenceService`'s own signature, after the first version failed
+4/5 IT tests with `AuthException: Not authenticated` when called outside a
+web request's `SecurityContext`.
+
+**CR-052 (V35/V36/V37)**: three new modules, each modeled on the closest
+existing one rather than a new shape —
+
+- **Sales Order** (`salesorder` package) — Quotation's exact shape
+  (discount ladder, internal labour margin, percentage-only discount),
+  minus stock movement, plus two convert actions (`convert-to-invoice`,
+  `convert-to-delivery-challan`) instead of Quotation's one.
+- **Delivery Challan** (`deliverychallan` package) — deliberately not a tax
+  document (no GST/discount fields on its items). Genuinely moves stock
+  (`MovementType.DELIVERY`) since goods physically leave; converting to an
+  Invoice reverses that movement first so `InvoiceService.create()` can
+  retake it as a normal `SALE` — the Invoice module needed **zero** code
+  changes for this.
+- **Credit Note** (`creditnote` package) — returns against an Invoice line,
+  keyed by `invoiceItemId` rather than `productId` specifically to front-run
+  the BUG-FE-021 defect class (a line keyed on product id corrupts every
+  other line sharing that product) before it could recur here. Never edits
+  the original invoice's own figures — stands beside it as its own document.
+
+All three `create()` calls, Sales Order's two converts, and Delivery
+Challan's convert-to-invoice accept an optional `Idempotency-Key` header and
+route through `IdempotencyService` when present — the first real consumers
+of CR-051.
+
+**One real gap found by running the full suite, not by review**:
+`PermissionCodeConsistencyTest.everyPermissionHasAModule` has a hardcoded
+module-code whitelist (the same shape of test that already caught a gap once
+before, for `PROJECT`/`LABOUR` — see CR-041's own entry above). It failed on
+`CREDIT_NOTE` the first time the full suite ran after this CR; fixed by
+adding `SALES_ORDER`, `DELIVERY_CHALLAN`, `CREDIT_NOTE` to its list in the
+same change.
+
+**Verified**: `mvn clean compile` clean after every module; full
+`mvn clean verify` — **347 unit tests + 105 integration tests, 0 failures, 0
+errors, BUILD SUCCESS** (up from the 327/100 baseline immediately before this
+work: +8 `SalesOrderServiceImplTest`, +5 `DeliveryChallanServiceImplTest`,
++7 `CreditNoteServiceImplTest`, +5 `IdempotencyServiceIT`). Migrations V34–V37
+apply cleanly against real PostgreSQL (Testcontainers) as part of that same
+run. `python3` still not installed on this machine — `registry/static_check.py`
+was **not executed**, not merely skipped silently.
+
+**Explicitly deferred, not silently built** (stated so a future session does
+not assume they exist): PDF/print templates for all three new document
+types; any frontend page or wizard for any of them (this phase is backend
+infrastructure only); a reporting view for "what a customer owes net of
+credit notes" (Credit Note never mutates the original invoice's balance, by
+design — see the CR-052 registry entry for why).
+
+**Not committed to git yet** — see "Next file to work on" above.
 
 ---
 
