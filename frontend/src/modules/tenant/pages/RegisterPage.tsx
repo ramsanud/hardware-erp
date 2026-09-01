@@ -1,4 +1,4 @@
-import { useEffect, useState, type InputHTMLAttributes } from 'react';
+import { forwardRef, useEffect, useState, type InputHTMLAttributes } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -302,14 +302,25 @@ function PlanFeatures({ tier }: { tier: SubscriptionTier }) {
   );
 }
 
-/** A leading-icon input, the same manual relative/absolute pattern the password eye-toggle already uses. */
-function IconInput({
-  icon: Icon, className, ...props
-}: InputHTMLAttributes<HTMLInputElement> & { icon: typeof Building2 }) {
-  return (
+/**
+ * A leading-icon input, the same manual relative/absolute pattern the
+ * password eye-toggle already uses.
+ *
+ * MUST forward its ref to the underlying <Input>: react-hook-form's
+ * register() returns a ref callback that has to reach the real DOM node
+ * for the field to be tracked at all. A plain (non-forwardRef) function
+ * component silently drops a ref passed to it - React treats ref as a
+ * reserved prop for such components and never delivers it - which left
+ * every IconInput-wrapped field permanently untracked: watch('shopName')
+ * returned undefined instead of '', and the debounced-slug-check effect
+ * crashed calling .trim() on it.
+ */
+const IconInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { icon: typeof Building2 }>(
+  ({ icon: Icon, className, ...props }, ref) => (
     <div className="relative">
       <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-      <Input className={cn('pl-9', className)} {...props} />
+      <Input ref={ref} className={cn('pl-9', className)} {...props} />
     </div>
-  );
-}
+  ),
+);
+IconInput.displayName = 'IconInput';
