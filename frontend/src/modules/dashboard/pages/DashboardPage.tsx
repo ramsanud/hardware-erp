@@ -11,6 +11,7 @@ import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { PermissionGate } from '@/routes/RequirePermission';
 import { SalesTrendChart } from '../components/SalesTrendChart';
+import { SalesByCategoryChart } from '../components/SalesByCategoryChart';
 import { PERMISSIONS } from '@/modules/auth/constants';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { useDesignStyle } from '@/theme/DesignStyleProvider';
@@ -235,7 +236,10 @@ export function DashboardPage() {
           the same permission the analytics endpoints require, so the card is
           never shown to someone whose request would 403. */}
       <PermissionGate permission={PERMISSIONS.REPORT_VIEW}>
-        <SalesTrendChart />
+        <div className="grid gap-5 lg:grid-cols-3">
+          <div className="lg:col-span-2"><SalesTrendChart /></div>
+          <SalesByCategoryChart />
+        </div>
       </PermissionGate>
 
       <div className="grid gap-5 lg:grid-cols-2">

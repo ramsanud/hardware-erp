@@ -35,6 +35,20 @@ export interface TrendSeries {
   summary: string;
 }
 
+export interface CategorySlice {
+  label: string;
+  amountPaise: number;
+  amountDisplay: string;
+  quantity: number;
+  sharePercent: number;
+}
+
+export interface CategoryBreakdown {
+  period: Period;
+  slices: CategorySlice[];
+  summary: string;
+}
+
 export interface AnalyticsSummary {
   period: Period;
   revenuePaise: number;
@@ -56,6 +70,9 @@ export const analyticsService = {
     apiGet<TrendSeries>(
       `/v1/analytics/revenue-trend?${range(from, to)}&granularity=${granularity}`,
     ),
+
+  salesByCategory: (from: string, to: string) =>
+    apiGet<CategoryBreakdown>(`/v1/analytics/sales-by-category?${range(from, to)}`),
 };
 
 // ---------------------------------------------------------------------------

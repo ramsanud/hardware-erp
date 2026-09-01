@@ -1,4 +1,4 @@
-import { Check, Laptop, Moon, Sun } from 'lucide-react';
+import { Check, Laptop, Moon, RotateCcw, Sun } from 'lucide-react';
 import { Card, CardContent } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
@@ -6,7 +6,8 @@ import { Badge } from '@/shared/components/ui/badge';
 import { cn } from '@/shared/lib/utils';
 import { useTheme, type Theme } from '@/theme/ThemeProvider';
 import { useColorTheme } from '@/theme/ColorThemeProvider';
-import { useDesignStyle } from '@/theme/DesignStyleProvider';
+import { useDesignStyle, DEFAULT_APPEARANCE_SETTINGS } from '@/theme/DesignStyleProvider';
+import { DEFAULT_COLOR_THEME_ID } from '@/theme/colorThemes';
 import {
   CORNER_RADIUS_REM, type CornerStyle, type Elevation, type Intensity, type Motion,
 } from '@/theme/designStyles';
@@ -91,8 +92,30 @@ export function AppearanceSettings() {
     setFontScale, setFontFamily,
   } = useDesignStyle();
 
+  const resetToDefault = () => {
+    setTheme('system');
+    setColorThemeId(DEFAULT_COLOR_THEME_ID);
+    setDesignStyleId(DEFAULT_APPEARANCE_SETTINGS.designStyleId);
+    setIntensity(DEFAULT_APPEARANCE_SETTINGS.intensity);
+    setCorner(DEFAULT_APPEARANCE_SETTINGS.corner);
+    setElevation(DEFAULT_APPEARANCE_SETTINGS.elevation);
+    setMotion(DEFAULT_APPEARANCE_SETTINGS.motion);
+    setFontScale(DEFAULT_APPEARANCE_SETTINGS.fontScale);
+    setFontFamily(DEFAULT_APPEARANCE_SETTINGS.fontFamily);
+  };
+
   return (
     <div className="space-y-8">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          Every choice below applies immediately and is remembered for you on this device.
+        </p>
+        <Button type="button" variant="outline" size="sm" onClick={resetToDefault}>
+          <RotateCcw className="h-3.5 w-3.5" />
+          Reset to default theme
+        </Button>
+      </div>
+
       <section>
         <p className="mb-1 text-sm font-medium">Design style</p>
         <p className="mb-3 text-xs text-muted-foreground">

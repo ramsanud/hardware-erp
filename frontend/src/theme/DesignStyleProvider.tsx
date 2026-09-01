@@ -25,7 +25,8 @@ interface AppearanceSettings {
   fontFamily: FontFamilyId;
 }
 
-const DEFAULTS: AppearanceSettings = {
+/** Exported so a "Reset to default" action elsewhere (AppearanceSettings) uses this exact source rather than duplicating the values and risking drift. */
+export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   designStyleId: DEFAULT_DESIGN_STYLE_ID,
   intensity: 'balanced',
   corner: 'standard',
@@ -52,12 +53,12 @@ const DesignStyleContext = createContext<DesignStyleContextValue | null>(null);
 
 function readSettings(): AppearanceSettings {
   const raw = readScoped(STORAGE_KEY);
-  if (!raw) return DEFAULTS;
+  if (!raw) return DEFAULT_APPEARANCE_SETTINGS;
   try {
     const parsed = JSON.parse(raw) as Partial<AppearanceSettings>;
-    return { ...DEFAULTS, ...parsed };
+    return { ...DEFAULT_APPEARANCE_SETTINGS, ...parsed };
   } catch {
-    return DEFAULTS;
+    return DEFAULT_APPEARANCE_SETTINGS;
   }
 }
 
