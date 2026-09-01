@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Calculator, Loader2, Pencil, Plus, RefreshCcw, Trash2,
+  Calculator, Loader2, Pencil, Plus, RefreshCcw, Trash2,
 } from 'lucide-react';
+import { BackLink } from '@/shared/components/BackLink';
 import { Button } from '@/shared/components/ui/button';
 import {
   Card, CardContent, CardHeader, CardTitle,
@@ -96,11 +97,7 @@ export function ProjectDetailPage() {
 
   return (
     <>
-      <div className="mb-4">
-        <Link to={PROJECT_ROUTES.list} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Projects
-        </Link>
-      </div>
+      <BackLink to={PROJECT_ROUTES.list} label="Projects" />
 
       <PageHeader
         title={project.projectName}

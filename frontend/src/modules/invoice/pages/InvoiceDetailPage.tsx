@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-  ArrowLeft, Ban, Download, Eye, IndianRupee, Loader2, Mail, MessageCircle, Pencil, Repeat, Share2,
+  Ban, Download, Eye, IndianRupee, Loader2, Mail, MessageCircle, Pencil, Repeat, Share2,
 } from 'lucide-react';
+import { BackLink } from '@/shared/components/BackLink';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import {
@@ -250,14 +251,13 @@ export function InvoiceDetailPage() {
 
   return (
     <>
+      <BackLink to={INVOICE_ROUTES.list} label="Invoices" />
+
       <PageHeader
         title={invoice.invoiceNumber}
         description={`${invoice.customerName} · ${invoice.customerMobile} · ${invoice.invoiceDate}`}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" asChild>
-              <Link to={INVOICE_ROUTES.list}><ArrowLeft className="h-4 w-4" />Back</Link>
-            </Button>
             <Button variant="outline" onClick={handlePreviewPdf} loading={previewingPdf}>
               <Eye className="h-4 w-4" />
               <span className="hidden sm:inline">Preview</span>

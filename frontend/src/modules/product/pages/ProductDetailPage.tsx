@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ImageIcon, Loader2, Trash2 } from 'lucide-react';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { ImageIcon, Loader2, Trash2 } from 'lucide-react';
+import { BackLink } from '@/shared/components/BackLink';
 import { Button } from '@/shared/components/ui/button';
 import {
   Card, CardContent, CardHeader, CardTitle,
@@ -117,11 +118,7 @@ export function ProductDetailPage() {
 
   return (
     <>
-      <Link to={PRODUCT_ROUTES.list}
-            className="mb-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" />
-        Products
-      </Link>
+      <BackLink to={PRODUCT_ROUTES.list} label="Products" />
 
       <PageHeader
         title={product.productName}

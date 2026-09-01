@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Eye, EyeOff, Loader2, Trash2, UserPlus,
+  Eye, EyeOff, Loader2, Trash2, UserPlus,
 } from 'lucide-react';
+import { BackLink } from '@/shared/components/BackLink';
 import { Button } from '@/shared/components/ui/button';
 import {
   Card, CardContent, CardHeader, CardTitle,
@@ -138,11 +139,7 @@ export function SupplierDetailPage() {
 
   return (
     <>
-      <Link to={SUPPLIER_ROUTES.list}
-            className="mb-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" />
-        Suppliers
-      </Link>
+      <BackLink to={SUPPLIER_ROUTES.list} label="Suppliers" />
 
       <PageHeader
         title={supplier.supplierName}

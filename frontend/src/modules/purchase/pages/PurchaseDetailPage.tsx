@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-  ArrowLeft, Ban, FileDown, IndianRupee, Loader2, Paperclip,
+  Ban, FileDown, IndianRupee, Loader2, Paperclip,
 } from 'lucide-react';
+import { BackLink } from '@/shared/components/BackLink';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import {
@@ -68,7 +69,6 @@ function usePurchaseDetail(id: number) {
 export function PurchaseDetailPage() {
   const params = useParams<{ id: string }>();
   const id = Number(params.id);
-  const navigate = useNavigate();
   const toast = useToast();
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -124,14 +124,13 @@ export function PurchaseDetailPage() {
 
   return (
     <>
+      <BackLink to={PURCHASE_ROUTES.list} label="Purchases" />
+
       <PageHeader
         title={purchase.purchaseNumber}
         description={`${purchase.supplierName} · ${purchase.supplierMobile} · ${purchase.purchaseDate}`}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => navigate(PURCHASE_ROUTES.list)}>
-              <ArrowLeft className="h-4 w-4" />Back
-            </Button>
             {purchase.hasDocument ? (
               <Button variant="outline" asChild>
                 <a href={purchaseService.documentUrl(id)} target="_blank" rel="noreferrer">

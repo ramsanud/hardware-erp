@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Loader2, Plus, Wallet, X } from 'lucide-react';
+import { Navigate, useParams } from 'react-router-dom';
+import { Loader2, Plus, Wallet, X } from 'lucide-react';
+import { BackLink } from '@/shared/components/BackLink';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Input } from '@/shared/components/ui/input';
@@ -108,11 +109,7 @@ export function WorkerDetailPage() {
 
   return (
     <>
-      <Link to={LABOUR_ROUTES.workers}
-            className="mb-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" />
-        Workers
-      </Link>
+      <BackLink to={LABOUR_ROUTES.workers} label="Workers" />
 
       <PageHeader
         title={worker.name}

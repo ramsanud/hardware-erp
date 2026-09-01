@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, ArrowRightCircle, Download, Eye, Loader2, Pencil, Repeat, Send, ThumbsDown, ThumbsUp,
+  ArrowRightCircle, Download, Eye, Loader2, Pencil, Repeat, Send, ThumbsDown, ThumbsUp,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -11,6 +11,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
 import { PageHeader } from '@/shared/components/PageHeader';
+import { BackLink } from '@/shared/components/BackLink';
 import { ErrorState } from '@/shared/components/ErrorState';
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog';
 import { ApiError } from '@/shared/types/api';
@@ -161,14 +162,13 @@ export function QuotationDetailPage() {
 
   return (
     <>
+      <BackLink to={QUOTATION_ROUTES.list} label="Quotations" />
+
       <PageHeader
         title={quotation.quotationNumber}
         description={`${quotation.customerName} · ${quotation.customerMobile} · valid until ${quotation.validUntil}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" asChild>
-              <Link to={QUOTATION_ROUTES.list}><ArrowLeft className="h-4 w-4" />Back</Link>
-            </Button>
             <Button variant="outline" onClick={handlePreviewPdf} loading={previewingPdf}>
               <Eye className="h-4 w-4" />
               <span className="hidden sm:inline">Preview</span>
