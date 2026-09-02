@@ -52,6 +52,10 @@ public class NotificationLog {
     @Column(name = "related_entity_id")
     private Long relatedEntityId;
 
+    /** The provider's own message id on a real send - null for LOGGED_ONLY/FAILED. Not yet reconciled against delivery-status webhooks. */
+    @Column(name = "provider_message_id", length = 100)
+    private String providerMessageId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

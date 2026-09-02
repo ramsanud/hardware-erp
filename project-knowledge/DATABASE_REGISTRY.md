@@ -794,3 +794,43 @@ the spec, not tenant-configurable, so a DB-backed system would be overhead
 nobody can use): `PLATFORM_ADMIN_MANAGE`, granted only to `SUPER_ADMIN` in
 Phase 1. `PermissionCodeConsistencyTest`/`RoleGrantDriftTest` do not apply
 to this enum - it is a separate, intentionally simpler authority model.
+
+## CR-056: tenant-owned WhatsApp Business API integration (V45)
+
+Note: V40–V44 (CR-053 backlog items 2–5, and V44 specifically - the
+earlier single-shared-number WhatsApp attempt documented as CR-055 in
+`CHANGE_REQUEST_REGISTRY.md`, superseded by this CR) were never
+backfilled into this file - a pre-existing gap, not introduced here.
+
+**`tenant_whatsapp_connection`** - one row per tenant, replacing the
+previous design (a single app-wide `WHATSAPP_ACCESS_TOKEN`/
+`WHATSAPP_PHONE_NUMBER_ID` pair in `application.yml`) with a real
+per-tenant connection: `business_account_id`, `phone_number_id`
+(`UNIQUE` across the whole table, not just per tenant - it is also the
+routing key `WhatsAppWebhookController` uses to find which tenant an
+inbound event belongs to), `display_phone_number`, `business_name`,
+`access_token` (encrypted via new `WhatsAppAccessTokenConverter`, reusing
+`FieldEncryptor`/CR-018's AES-256-GCM scheme, never plaintext at rest),
+`connection_status` (`CONNECTED`/`DISCONNECTED`/`NEEDS_ATTENTION`,
+`CHECK`-constrained), `connected_at`/`last_verified_at`/`disconnected_at`.
+`UNIQUE(tenant_id)` - one connection per tenant in this phase, matching
+manual credential entry; deliberately not designed to prevent a future
+multi-number relaxation, just not built for it yet.
+
+**`customer`** gains `whatsapp_opt_in` (`BOOLEAN NOT NULL DEFAULT true`)
+and `whatsapp_opt_in_at`. Defaults true because every customer already
+received transactional WhatsApp messages (invoice created, payment
+received) before this CR as a normal part of the sale they were already
+in - this column is what lets an owner turn that off per customer, not a
+retroactive gate on sends that were already shipping.
+
+**`notification_log.status`** (V14) CHECK constraint widened to add
+`DELIVERED`/`READ`, set only by a real inbound Meta webhook event
+(`WhatsAppWebhookController`) - never assumed from a successful send. See
+`NotificationStatus` enum.
+
+No new permission codes - reuses `SETTINGS_VIEW`/`SETTINGS_MANAGE` for the
+connection (same pair `tenant_bank_account`, CR-022, already uses) and
+each business module's own existing permission (`INVOICE_VIEW`,
+`PAYMENT_MANAGE`, `INVENTORY_VIEW`) for the send actions built on top of
+it.

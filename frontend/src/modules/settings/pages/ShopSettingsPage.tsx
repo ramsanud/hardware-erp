@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Check, FileText, Loader2, Palette, Pencil, QrCode, Save, Sparkles, Store } from 'lucide-react';
+import { Check, FileText, Loader2, MessageCircle, Palette, Pencil, QrCode, Save, Sparkles, Store } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import {
@@ -29,6 +29,7 @@ import { useToast } from '@/modules/auth/hooks/useToast';
 import { AUTH_ROUTES } from '@/modules/auth/constants';
 import { useAppChrome } from '@/layouts/AppChromeProvider';
 import { settingsService } from '../services/settingsService';
+import { SETTINGS_ROUTES } from '../constants';
 import { SUBSCRIPTION_TIER_OPTIONS, SUBSCRIPTION_TIERS } from '../constants/subscriptionTiers';
 import { INVOICE_THEME_OPTIONS, INVOICE_THEMES } from '../constants/invoiceThemes';
 import { SubscriptionCouponsCard } from '../components/SubscriptionCouponsCard';
@@ -485,6 +486,7 @@ export function ShopSettingsPage() {
           <InvoiceThemeCard currentTheme={settings.invoiceTheme} onChangeTheme={changeInvoiceTheme} />
           <AdditionalSettingsCard settings={settings} onChange={changeAdditionalSettings} />
           <TdsTcsCard settings={settings} onChange={changeTdsTcs} />
+          <WhatsAppBusinessCard />
           <AppearanceCard />
 
           <Card>
@@ -574,6 +576,7 @@ export function ShopSettingsPage() {
         <InvoiceThemeCard currentTheme={settings.invoiceTheme} onChangeTheme={changeInvoiceTheme} />
         <AdditionalSettingsCard settings={settings} onChange={changeAdditionalSettings} />
         <TdsTcsCard settings={settings} onChange={changeTdsTcs} />
+        <WhatsAppBusinessCard />
       </div>
 
       <form id={SETTINGS_FORM_ID} onSubmit={submit} noValidate className="max-w-2xl space-y-5">
@@ -1233,6 +1236,32 @@ function UsageCard({ usage }: { usage: UsageSummaryResponse }) {
  * one dedicated page (AppearanceSettings, also reachable from My Profile ->
  * Appearance) rather than being duplicated inline here.
  */
+/** CR-056 - links out to its own page, same shape as AppearanceCard below (a whole connect/disconnect/test flow does not fit inline in this form). */
+function WhatsAppBusinessCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <MessageCircle className="h-4 w-4 text-primary" aria-hidden />
+          <CardTitle className="text-base">WhatsApp Business</CardTitle>
+        </div>
+        <CardDescription>
+          Connect your own WhatsApp Business account to send invoices and payment reminders
+          directly to your customers.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button variant="outline" asChild>
+          <Link to={SETTINGS_ROUTES.whatsapp}>
+            <MessageCircle className="h-4 w-4" />
+            Open WhatsApp Business settings
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function AppearanceCard() {
   return (
     <Card>

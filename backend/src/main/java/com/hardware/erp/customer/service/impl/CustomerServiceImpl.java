@@ -210,6 +210,12 @@ public class CustomerServiceImpl implements CustomerService {
         customer.setPincode(blankToNull(request.pincode()));
         customer.setCreditLimitPaise(request.creditLimitPaise() != null ? request.creditLimitPaise() : 0L);
         customer.setStatus(request.status());
+
+        boolean optIn = request.whatsappOptIn() == null || request.whatsappOptIn();
+        if (optIn != customer.isWhatsappOptIn()) {
+            customer.setWhatsappOptInAt(java.time.LocalDateTime.now());
+        }
+        customer.setWhatsappOptIn(optIn);
     }
 
     private static String blankToNull(String value) {

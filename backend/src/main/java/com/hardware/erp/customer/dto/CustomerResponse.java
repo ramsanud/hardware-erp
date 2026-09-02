@@ -18,5 +18,6 @@ public record CustomerResponse(
         String pincode,
         String creditLimitDisplay,
         CustomerStatus status,
+        boolean whatsappOptIn,
         LocalDateTime createdAt
 ) {}

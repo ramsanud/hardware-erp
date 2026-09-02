@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   Boxes, Calculator, CalendarCheck, ChevronDown, ClipboardList, Coins, FileClock, FileDown, FileText, HardHat, KeyRound, Landmark,
-  LayoutDashboard, Layers, Package, PackageSearch, Settings,
+  LayoutDashboard, Layers, LifeBuoy, Package, PackageSearch, Settings,
   ShieldCheck, ShoppingBag, ShoppingCart, Tags, TerminalSquare, Ticket, TrendingUp, Truck,
   UserCheck, UserCircle, Users, Wallet, Wrench,
 } from 'lucide-react';
@@ -10,6 +10,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { AUTH_ROUTES, PERMISSIONS } from '@/modules/auth/constants';
 import { DEVELOPER_ROUTES } from '@/modules/developer/constants';
+import { SUPPORT_ROUTES } from '@/modules/support/constants';
 import { brandService } from '@/modules/settings/services/brandService';
 import { useAuthenticatedImage } from '@/shared/hooks/useAuthenticatedImage';
 import { APP_NAME } from '@/shared/constants';
@@ -110,6 +111,7 @@ const NAV_SECTIONS: NavSection[] = [
     icon: Settings,
     items: [
       { to: AUTH_ROUTES.profile, label: 'My profile', icon: UserCircle, available: true },
+      { to: SUPPORT_ROUTES.list, label: 'Support', icon: LifeBuoy, available: true },
       { to: AUTH_ROUTES.users, label: 'Users', icon: Users, permission: PERMISSIONS.USER_VIEW, available: true },
       { to: AUTH_ROUTES.roles, label: 'Roles', icon: ShieldCheck, permission: PERMISSIONS.ROLE_VIEW, available: true },
       { to: AUTH_ROUTES.permissions, label: 'Permissions', icon: KeyRound, permission: PERMISSIONS.ROLE_VIEW, available: true },

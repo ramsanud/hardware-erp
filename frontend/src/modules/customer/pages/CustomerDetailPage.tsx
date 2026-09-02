@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
-  ClipboardList, FileText, IndianRupee, Loader2, Pencil, Plus,
+  ClipboardList, FileText, IndianRupee, Loader2, MessageCircle, Pencil, Plus,
 } from 'lucide-react';
 import { BackLink } from '@/shared/components/BackLink';
 import { Button } from '@/shared/components/ui/button';
@@ -24,6 +24,7 @@ import { PERMISSIONS } from '@/modules/auth/constants';
 import { useToast } from '@/modules/auth/hooks/useToast';
 import { INVOICE_ROUTES } from '@/modules/invoice/constants';
 import { InvoiceStatusBadge } from '@/modules/invoice/components/InvoiceStatusBadge';
+import { invoiceService } from '@/modules/invoice/services/invoiceService';
 import { QUOTATION_ROUTES } from '@/modules/quotation/constants';
 import { QuotationStatusBadge } from '@/modules/quotation/components/QuotationStatusBadge';
 import { CUSTOMER_ROUTES } from '../constants';
@@ -91,6 +92,7 @@ export function CustomerDetailPage() {
   const [editMode, setEditMode] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [confirmingClose, setConfirmingClose] = useState(false);
+  const [sendingReminderId, setSendingReminderId] = useState<number | null>(null);
 
   const validId = Boolean(params.id) && !Number.isNaN(id);
   const {
@@ -111,6 +113,25 @@ export function CustomerDetailPage() {
     setConfirmingClose(false);
     setEditMode(false);
     await reload();
+  };
+
+  /** CR-056 §9 - the Customer page's own "Send WhatsApp Reminder" per outstanding invoice. */
+  const handleSendReminder = async (invoiceId: number) => {
+    setSendingReminderId(invoiceId);
+    try {
+      const status = await invoiceService.sendPaymentReminder(invoiceId);
+      if (status === 'SENT') {
+        toast.success('WhatsApp payment reminder sent.');
+      } else if (status === 'LOGGED_ONLY') {
+        toast.info('WhatsApp is not connected yet - the reminder was logged, not sent.');
+      } else {
+        toast.error(new Error('Send failed'), 'Could not send the WhatsApp reminder.');
+      }
+    } catch (caught) {
+      toast.error(caught, 'Could not send the WhatsApp reminder.');
+    } finally {
+      setSendingReminderId(null);
+    }
   };
 
   if (error) return <Card><ErrorState error={error} onRetry={reload} /></Card>;
@@ -252,6 +273,20 @@ export function CustomerDetailPage() {
                             <IndianRupee className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
                             <span className="tabular">{invoice.totalDisplay}</span>
                             <InvoiceStatusBadge status={invoice.status} />
+                            {invoice.status === 'UNPAID' || invoice.status === 'PARTIALLY_PAID' ? (
+                              <PermissionGate permission={PERMISSIONS.INVOICE_VIEW}>
+                                <Button type="button" variant="ghost" size="sm"
+                                        loading={sendingReminderId === invoice.id}
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          void handleSendReminder(invoice.id);
+                                        }}>
+                                  <MessageCircle className="h-4 w-4" />
+                                  <span className="hidden sm:inline">Send WhatsApp Reminder</span>
+                                </Button>
+                              </PermissionGate>
+                            ) : null}
                           </span>
                         </Link>
                       ))

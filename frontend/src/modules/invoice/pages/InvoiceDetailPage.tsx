@@ -84,6 +84,9 @@ export function InvoiceDetailPage() {
   const [emailAddress, setEmailAddress] = useState('');
   const [emailing, setEmailing] = useState(false);
   const [sharingViaApp, setSharingViaApp] = useState(false);
+  const [sendingReminder, setSendingReminder] = useState(false);
+  const [sendWhatsAppConfirmOpen, setSendWhatsAppConfirmOpen] = useState(false);
+  const [sendingReceiptId, setSendingReceiptId] = useState<number | null>(null);
 
   const { invoice, loading, error, reload } = useInvoiceDetail(id);
 
@@ -190,6 +193,56 @@ export function InvoiceDetailPage() {
     }
   };
 
+  /** Task 05 (WhatsApp reminders, MUST-HAVE) - real backend send via WhatsAppBusinessProvider, not the client-side share sheet handleShareViaApp uses. LOGGED_ONLY is an honest "no WhatsApp Business account configured here yet" state, not an error. */
+  const handleSendReminder = async () => {
+    setSendingReminder(true);
+    try {
+      const status = await invoiceService.sendPaymentReminder(id);
+      if (status === 'SENT') {
+        toast.success('WhatsApp payment reminder sent.');
+      } else if (status === 'LOGGED_ONLY') {
+        toast.info('WhatsApp is not configured on this server yet - the reminder was logged, not sent.');
+      } else {
+        toast.error(new Error('Send failed'), 'Could not send the WhatsApp reminder. Please try again.');
+      }
+    } catch (caught) {
+      toast.error(caught, 'Could not send the WhatsApp reminder.');
+    } finally {
+      setSendingReminder(false);
+    }
+  };
+
+  /** CR-056 §8 - the actual tenant-owned WhatsApp Business send, distinct from handleShareViaApp's browser share sheet above. */
+  const handleSendInvoiceWhatsApp = async () => {
+    const status = await invoiceService.sendInvoiceViaWhatsApp(id);
+    if (status === 'SENT') {
+      toast.success('Invoice sent via WhatsApp.');
+    } else if (status === 'LOGGED_ONLY') {
+      toast.info('WhatsApp is not connected yet - the message was logged, not sent.');
+    } else {
+      toast.error(new Error('Send failed'), 'Could not send the invoice via WhatsApp. Please try again.');
+    }
+  };
+
+  /** CR-056 §10 - manual only, per recorded payment. */
+  const handleSendPaymentReceipt = async (paymentId: number) => {
+    setSendingReceiptId(paymentId);
+    try {
+      const status = await invoiceService.sendPaymentReceiptViaWhatsApp(id, paymentId);
+      if (status === 'SENT') {
+        toast.success('Payment receipt sent via WhatsApp.');
+      } else if (status === 'LOGGED_ONLY') {
+        toast.info('WhatsApp is not connected yet - the receipt was logged, not sent.');
+      } else {
+        toast.error(new Error('Send failed'), 'Could not send the receipt via WhatsApp. Please try again.');
+      }
+    } catch (caught) {
+      toast.error(caught, 'Could not send the receipt via WhatsApp.');
+    } finally {
+      setSendingReceiptId(null);
+    }
+  };
+
   const handleCancel = async () => {
     try {
       await invoiceService.cancel(id);
@@ -280,6 +333,12 @@ export function InvoiceDetailPage() {
                   <Mail className="h-4 w-4" />
                   Email
                 </DropdownMenuItem>
+                <PermissionGate permission={PERMISSIONS.INVOICE_VIEW}>
+                  <DropdownMenuItem onSelect={() => setSendWhatsAppConfirmOpen(true)}>
+                    <MessageCircle className="h-4 w-4" />
+                    Send WhatsApp
+                  </DropdownMenuItem>
+                </PermissionGate>
                 <DropdownMenuItem disabled={sharingViaApp} onSelect={() => void handleShareViaApp()}>
                   <MessageCircle className="h-4 w-4" />
                   WhatsApp / more apps
@@ -300,6 +359,14 @@ export function InvoiceDetailPage() {
                 <span className="hidden sm:inline">Repeat</span>
               </Button>
             </PermissionGate>
+            {canTakePayment ? (
+              <PermissionGate permission={PERMISSIONS.INVOICE_VIEW}>
+                <Button variant="outline" onClick={() => void handleSendReminder()} loading={sendingReminder}>
+                  <MessageCircle className="h-4 w-4" />
+                  <span className="hidden sm:inline">WhatsApp reminder</span>
+                </Button>
+              </PermissionGate>
+            ) : null}
             {canTakePayment ? (
               <PermissionGate permission={PERMISSIONS.PAYMENT_MANAGE}>
                 <Button onClick={() => setPayDialogOpen(true)}>
@@ -428,6 +495,14 @@ export function InvoiceDetailPage() {
                       <p>₹{payment.amountDisplay} · {payment.paymentMethod}</p>
                       <p className="text-xs text-muted-foreground">{formatDateTime(payment.paymentDate)}</p>
                     </div>
+                    <PermissionGate permission={PERMISSIONS.PAYMENT_MANAGE}>
+                      <Button type="button" variant="ghost" size="sm"
+                              onClick={() => void handleSendPaymentReceipt(payment.id)}
+                              loading={sendingReceiptId === payment.id}>
+                        <MessageCircle className="h-4 w-4" />
+                        <span className="hidden sm:inline">Send receipt</span>
+                      </Button>
+                    </PermissionGate>
                   </div>
                 ))}
               </CardContent>
@@ -499,6 +574,15 @@ export function InvoiceDetailPage() {
         confirmLabel="Cancel invoice"
         destructive
         onConfirm={handleCancel}
+      />
+
+      <ConfirmDialog
+        open={sendWhatsAppConfirmOpen}
+        onOpenChange={setSendWhatsAppConfirmOpen}
+        title="Send invoice via WhatsApp"
+        description={`Customer: ${invoice.customerName} · Phone: ${invoice.customerMobile} · Invoice: ${invoice.invoiceNumber} · Amount: ${invoice.totalDisplay}`}
+        confirmLabel="Send"
+        onConfirm={handleSendInvoiceWhatsApp}
       />
     </>
   );

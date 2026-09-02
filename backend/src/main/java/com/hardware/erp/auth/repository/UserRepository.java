@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -104,4 +105,27 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Query("select count(u) from User u where u.tenant.id = :tenantId and u.role.code = 'OWNER' " +
            "and u.status = com.hardware.erp.auth.entity.UserStatus.ACTIVE")
     long countActiveOwners(@Param("tenantId") Long tenantId);
+
+    // ---------------------------------------------------------------
+    // Platform Admin Console (CR-054 phase 2). Cross-tenant by design -
+    // the platform admin's own security boundary, distinct from every
+    // other query in this file which is deliberately tenant.id-scoped.
+    // ---------------------------------------------------------------
+
+    /** Tenant Management "Users" column and Tenant Detail "Users" usage count. Excludes soft-deleted rows automatically (User's own @SQLRestriction). */
+    long countByTenantId(Long tenantId);
+
+    long countByTenantIdAndStatus(Long tenantId, com.hardware.erp.auth.entity.UserStatus status);
+
+    /** Overview KPI - active users platform-wide. */
+    long countByStatus(com.hardware.erp.auth.entity.UserStatus status);
+
+    /** Overview KPI - new users today, platform-wide. */
+    long countByCreatedAtBetween(LocalDateTime from, LocalDateTime to);
+
+    /** Tenant Management "Last Active" column / Tenant Detail "last login" - null when nobody at this tenant has ever signed in. */
+    @Query("select max(u.lastLoginAt) from User u where u.tenant.id = :tenantId")
+    LocalDateTime lastLoginAtForTenant(@Param("tenantId") Long tenantId);
+
+    Optional<User> findFirstByTenantIdAndRole_CodeOrderByIdAsc(Long tenantId, String roleCode);
 }

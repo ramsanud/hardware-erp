@@ -9,4 +9,7 @@ export const stockService = {
 
   adjust: (productId: number, body: StockAdjustmentRequest) =>
     apiPost(`/v1/stock/${productId}/adjust`, body),
+
+  /** CR-056 §11 - backend: notification/reminder/LowStockAlertController.java. Returns how many products triggered it. */
+  sendLowStockAlert: () => apiPost<number>('/v1/inventory/low-stock/send-alert'),
 };

@@ -162,3 +162,8 @@ export async function platformAdminPost<T>(
   const { data } = await platformAdminHttp.post<ApiResponse<T>>(url, body ?? {}, config);
   return data.data;
 }
+
+export async function platformAdminDelete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  const { data } = await platformAdminHttp.delete<ApiResponse<T>>(url, config);
+  return data.data;
+}

@@ -11,4 +11,7 @@ public interface PlatformAdminRepository extends JpaRepository<PlatformAdmin, Lo
     Optional<PlatformAdmin> findByEmailIgnoreCase(String email);
 
     List<PlatformAdmin> findAllByOrderByCreatedAtDesc();
+
+    /** Security Center - MFA coverage. */
+    long countByMfaEnabled(boolean mfaEnabled);
 }

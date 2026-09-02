@@ -25,4 +25,16 @@ export const invoiceService = {
 
   emailInvoice: (id: number, toEmail: string) =>
     apiPost<'SENT' | 'LOGGED_ONLY' | 'FAILED'>(`/v1/invoices/${id}/share/email`, { toEmail }),
+
+  /** Task 05 (WhatsApp reminders). Synchronous - the response is the real resulting status, never assumed. */
+  sendPaymentReminder: (id: number) =>
+    apiPost<'SENT' | 'LOGGED_ONLY' | 'FAILED'>(`/v1/invoices/${id}/remind`),
+
+  /** CR-056 - manual resend of the invoice-created message over WhatsApp. */
+  sendInvoiceViaWhatsApp: (id: number) =>
+    apiPost<'SENT' | 'LOGGED_ONLY' | 'FAILED'>(`/v1/invoices/${id}/share/whatsapp`),
+
+  /** CR-056 - manual only, one recorded payment. */
+  sendPaymentReceiptViaWhatsApp: (invoiceId: number, paymentId: number) =>
+    apiPost<'SENT' | 'LOGGED_ONLY' | 'FAILED'>(`/v1/invoices/${invoiceId}/payments/${paymentId}/share/whatsapp`),
 };

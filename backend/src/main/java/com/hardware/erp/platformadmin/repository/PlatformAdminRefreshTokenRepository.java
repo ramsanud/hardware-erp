@@ -25,4 +25,8 @@ public interface PlatformAdminRefreshTokenRepository extends JpaRepository<Platf
     int revokeAllForAdmin(@Param("adminId") Long adminId,
                           @Param("reason") RevokedReason reason,
                           @Param("now") LocalDateTime now);
+
+    /** Security Center dashboard - a real "usable right now" count, not every row ever created. */
+    @Query("select count(t) from PlatformAdminRefreshToken t where t.revokedAt is null and t.expiresAt > :now")
+    long countActive(@Param("now") LocalDateTime now);
 }

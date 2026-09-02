@@ -1,5 +1,6 @@
 package com.hardware.erp.notification.service.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hardware.erp.customer.entity.Customer;
 import com.hardware.erp.invoice.entity.Invoice;
 import com.hardware.erp.invoice.entity.Payment;
@@ -7,7 +8,9 @@ import com.hardware.erp.notification.entity.NotificationChannel;
 import com.hardware.erp.notification.entity.NotificationLog;
 import com.hardware.erp.notification.entity.NotificationStatus;
 import com.hardware.erp.notification.repository.NotificationLogRepository;
+import com.hardware.erp.notification.repository.TenantWhatsAppConnectionRepository;
 import com.hardware.erp.notification.service.NotificationProvider;
+import com.hardware.erp.notification.service.NotificationSendResult;
 import com.hardware.erp.tenant.entity.Tenant;
 import com.hardware.erp.tenant.entity.TenantStatus;
 import com.hardware.erp.tenant.repository.TenantRepository;
@@ -65,10 +68,11 @@ class NotificationServiceImplTest {
     }
 
     @Test
-    @DisplayName("invoice created sends to both SMS and email when the customer has both, with the invoice number and amount in the body")
+    @DisplayName("invoice created sends to SMS, WhatsApp and email when the customer has a mobile and an email, with the invoice number and amount in the body")
     void notifyInvoiceCreatedSendsToBothChannels() {
-        when(fakeProvider.supportedChannels()).thenReturn(EnumSet.of(NotificationChannel.SMS, NotificationChannel.EMAIL));
-        when(fakeProvider.send(any(), anyString(), any(), anyString())).thenReturn(NotificationStatus.SENT);
+        when(fakeProvider.supportedChannels()).thenReturn(
+                EnumSet.of(NotificationChannel.SMS, NotificationChannel.EMAIL, NotificationChannel.WHATSAPP));
+        when(fakeProvider.send(any(), any(), anyString(), any(), anyString())).thenReturn(NotificationSendResult.sent("wamid.TEST"));
 
         NotificationServiceImpl service = serviceWith(fakeProvider);
         service.notifyInvoiceCreated(invoice);
@@ -76,42 +80,45 @@ class NotificationServiceImplTest {
         ArgumentCaptor<NotificationChannel> channelCaptor = ArgumentCaptor.forClass(NotificationChannel.class);
         ArgumentCaptor<String> toCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(fakeProvider, times(2)).send(channelCaptor.capture(), toCaptor.capture(), any(), bodyCaptor.capture());
+        verify(fakeProvider, times(3)).send(any(), channelCaptor.capture(), toCaptor.capture(), any(), bodyCaptor.capture());
 
         assertThat(channelCaptor.getAllValues())
-                .containsExactlyInAnyOrder(NotificationChannel.SMS, NotificationChannel.EMAIL);
+                .containsExactlyInAnyOrder(NotificationChannel.SMS, NotificationChannel.WHATSAPP, NotificationChannel.EMAIL);
         assertThat(toCaptor.getAllValues())
-                .containsExactlyInAnyOrder("9876500001", "ramesh@example.com");
+                .containsExactlyInAnyOrder("9876500001", "9876500001", "ramesh@example.com");
         assertThat(bodyCaptor.getAllValues())
                 .allMatch(body -> body.contains("INV-000042") && body.contains("1,234.00"));
 
-        verify(notificationLogRepository, times(2)).save(any(NotificationLog.class));
+        verify(notificationLogRepository, times(3)).save(any(NotificationLog.class));
     }
 
     @Test
-    @DisplayName("a customer with only a mobile number gets SMS only, not an email attempt")
+    @DisplayName("a customer with only a mobile number gets SMS and WhatsApp only, not an email attempt")
     void notifyInvoiceCreatedSkipsEmailWhenCustomerHasNone() {
         Customer mobileOnly = Customer.builder().id(6L).tenant(tenant).customerCode("CUS-0002")
                 .customerName("No Email Traders").mobileNo("9876500002").build();
         Invoice invoiceNoEmail = Invoice.builder().id(43L).tenant(tenant).invoiceNumber("INV-000043")
                 .customer(mobileOnly).totalPaise(50000L).balancePaise(50000L).build();
 
-        when(fakeProvider.supportedChannels()).thenReturn(EnumSet.of(NotificationChannel.SMS, NotificationChannel.EMAIL));
-        when(fakeProvider.send(any(), anyString(), any(), anyString())).thenReturn(NotificationStatus.SENT);
+        when(fakeProvider.supportedChannels()).thenReturn(
+                EnumSet.of(NotificationChannel.SMS, NotificationChannel.EMAIL, NotificationChannel.WHATSAPP));
+        when(fakeProvider.send(any(), any(), anyString(), any(), anyString())).thenReturn(NotificationSendResult.sent("wamid.TEST"));
 
         NotificationServiceImpl service = serviceWith(fakeProvider);
         service.notifyInvoiceCreated(invoiceNoEmail);
 
-        verify(fakeProvider, times(1)).send(eq(NotificationChannel.SMS), eq("9876500002"), isNull(), anyString());
-        verify(fakeProvider, never()).send(eq(NotificationChannel.EMAIL), anyString(), any(), anyString());
-        verify(notificationLogRepository, times(1)).save(any(NotificationLog.class));
+        verify(fakeProvider, times(1)).send(any(), eq(NotificationChannel.SMS), eq("9876500002"), isNull(), anyString());
+        verify(fakeProvider, times(1)).send(any(), eq(NotificationChannel.WHATSAPP), eq("9876500002"), isNull(), anyString());
+        verify(fakeProvider, never()).send(any(), eq(NotificationChannel.EMAIL), anyString(), any(), anyString());
+        verify(notificationLogRepository, times(2)).save(any(NotificationLog.class));
     }
 
     @Test
     @DisplayName("payment received includes the payment amount and the remaining balance")
     void notifyPaymentReceivedContainsAmountAndBalance() {
-        when(fakeProvider.supportedChannels()).thenReturn(EnumSet.of(NotificationChannel.SMS, NotificationChannel.EMAIL));
-        when(fakeProvider.send(any(), anyString(), any(), anyString())).thenReturn(NotificationStatus.SENT);
+        when(fakeProvider.supportedChannels()).thenReturn(
+                EnumSet.of(NotificationChannel.SMS, NotificationChannel.EMAIL, NotificationChannel.WHATSAPP));
+        when(fakeProvider.send(any(), any(), anyString(), any(), anyString())).thenReturn(NotificationSendResult.sent("wamid.TEST"));
 
         Payment payment = Payment.builder().id(9L).tenant(tenant).invoice(invoice).amountPaise(50000L).build();
 
@@ -119,7 +126,7 @@ class NotificationServiceImplTest {
         service.notifyPaymentReceived(invoice, payment);
 
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(fakeProvider, times(2)).send(any(), anyString(), any(), bodyCaptor.capture());
+        verify(fakeProvider, times(3)).send(any(), any(), anyString(), any(), bodyCaptor.capture());
         assertThat(bodyCaptor.getAllValues()).allMatch(body ->
                 body.contains("INV-000042") && body.contains("500.00") && body.contains("734.00"));
     }
@@ -127,8 +134,9 @@ class NotificationServiceImplTest {
     @Test
     @DisplayName("a provider that throws still gets a FAILED log entry, and the exception never escapes")
     void providerFailureIsRecordedNotPropagated() {
-        when(fakeProvider.supportedChannels()).thenReturn(EnumSet.of(NotificationChannel.SMS, NotificationChannel.EMAIL));
-        when(fakeProvider.send(any(), anyString(), any(), anyString()))
+        when(fakeProvider.supportedChannels()).thenReturn(
+                EnumSet.of(NotificationChannel.SMS, NotificationChannel.EMAIL, NotificationChannel.WHATSAPP));
+        when(fakeProvider.send(any(), any(), anyString(), any(), anyString()))
                 .thenThrow(new RuntimeException("gateway down"));
 
         NotificationServiceImpl service = serviceWith(fakeProvider);
@@ -136,26 +144,30 @@ class NotificationServiceImplTest {
         assertThatCode(() -> service.notifyInvoiceCreated(invoice)).doesNotThrowAnyException();
 
         ArgumentCaptor<NotificationLog> logCaptor = ArgumentCaptor.forClass(NotificationLog.class);
-        verify(notificationLogRepository, times(2)).save(logCaptor.capture());
+        verify(notificationLogRepository, times(3)).save(logCaptor.capture());
         assertThat(logCaptor.getAllValues()).allMatch(entry -> entry.getStatus() == NotificationStatus.FAILED);
     }
 
     @Test
     @DisplayName("a channel with no registered provider is recorded as FAILED instead of throwing")
     void missingProviderForChannelIsRecordedAsFailed() {
-        // fakeProvider only claims EMAIL, so the SMS attempt has nowhere to go.
+        // fakeProvider only claims EMAIL, so the SMS and WhatsApp attempts have nowhere to go.
         when(fakeProvider.supportedChannels()).thenReturn(EnumSet.of(NotificationChannel.EMAIL));
-        when(fakeProvider.send(any(), anyString(), any(), anyString())).thenReturn(NotificationStatus.SENT);
+        when(fakeProvider.send(any(), any(), anyString(), any(), anyString())).thenReturn(NotificationSendResult.sent("wamid.TEST"));
 
         NotificationServiceImpl service = serviceWith(fakeProvider);
         service.notifyInvoiceCreated(invoice);
 
         ArgumentCaptor<NotificationLog> logCaptor = ArgumentCaptor.forClass(NotificationLog.class);
-        verify(notificationLogRepository, times(2)).save(logCaptor.capture());
+        verify(notificationLogRepository, times(3)).save(logCaptor.capture());
         NotificationLog smsEntry = logCaptor.getAllValues().stream()
                 .filter(entry -> entry.getChannel() == NotificationChannel.SMS)
                 .findFirst().orElseThrow();
         assertThat(smsEntry.getStatus()).isEqualTo(NotificationStatus.FAILED);
+        NotificationLog whatsAppEntry = logCaptor.getAllValues().stream()
+                .filter(entry -> entry.getChannel() == NotificationChannel.WHATSAPP)
+                .findFirst().orElseThrow();
+        assertThat(whatsAppEntry.getStatus()).isEqualTo(NotificationStatus.FAILED);
     }
 
     // ---------------------------------------------------------------
@@ -172,23 +184,34 @@ class NotificationServiceImplTest {
         // "SMTP not configured" state.
         EmailNotificationProvider emailProvider = new EmailNotificationProvider(mailSender);
 
-        NotificationStatus status = emailProvider.send(NotificationChannel.EMAIL, "ramesh@example.com",
+        NotificationSendResult result = emailProvider.send(1L, NotificationChannel.EMAIL, "ramesh@example.com",
                 "Invoice INV-000042 generated", "Your invoice INV-000042 for ₹1,234.00 has been generated.");
 
-        assertThat(status).isEqualTo(NotificationStatus.LOGGED_ONLY);
+        assertThat(result.status()).isEqualTo(NotificationStatus.LOGGED_ONLY);
         verify(mailSender, never()).send(any(SimpleMailMessage.class));
     }
 
     @Test
-    @DisplayName("the SMS/WhatsApp stub always logs and never throws, for either channel")
-    void smsWhatsAppStubAlwaysLogsOnly() {
-        SmsWhatsAppNotificationProvider provider = new SmsWhatsAppNotificationProvider();
+    @DisplayName("the SMS stub always logs and never throws")
+    void smsStubAlwaysLogsOnly() {
+        SmsNotificationProvider provider = new SmsNotificationProvider();
 
-        assertThat(provider.supportedChannels())
-                .containsExactlyInAnyOrder(NotificationChannel.SMS, NotificationChannel.WHATSAPP);
-        assertThat(provider.send(NotificationChannel.SMS, "9876500001", null, "test message"))
+        assertThat(provider.supportedChannels()).containsExactly(NotificationChannel.SMS);
+        assertThat(provider.send(1L, NotificationChannel.SMS, "9876500001", null, "test message").status())
                 .isEqualTo(NotificationStatus.LOGGED_ONLY);
-        assertThat(provider.send(NotificationChannel.WHATSAPP, "9876500001", null, "test message"))
+    }
+
+    @Test
+    @DisplayName("a tenant with no connected WhatsApp Business account logs instead of sending, and never throws")
+    void unconfiguredWhatsAppProviderLogsInsteadOfSending() {
+        WhatsAppProperties properties = new WhatsAppProperties("https://graph.facebook.com/v19.0", "", "");
+        TenantWhatsAppConnectionRepository connectionRepository = mock(TenantWhatsAppConnectionRepository.class);
+        when(connectionRepository.findByTenantId(1L)).thenReturn(java.util.Optional.empty());
+        WhatsAppBusinessProvider provider = new WhatsAppBusinessProvider(connectionRepository, properties, new ObjectMapper());
+
+        assertThat(provider.supportedChannels()).containsExactly(NotificationChannel.WHATSAPP);
+        assertThat(provider.isConfigured(1L)).isFalse();
+        assertThat(provider.send(1L, NotificationChannel.WHATSAPP, "9876500001", null, "test message").status())
                 .isEqualTo(NotificationStatus.LOGGED_ONLY);
     }
 }

@@ -16,6 +16,12 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
 
     Optional<Purchase> findByIdAndTenantId(Long id, Long tenantId);
 
+    /** Platform Admin tenant usage summary. */
+    long countByTenantId(Long tenantId);
+
+    /** Platform Admin overview KPI - "purchases today" across every tenant, not scoped to one. */
+    long countByPurchaseDate(LocalDate purchaseDate);
+
     @Query("""
            select p from Purchase p
            where p.tenant.id = :tenantId

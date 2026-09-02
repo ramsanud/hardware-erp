@@ -14,6 +14,7 @@ export const customerSchema = z.object({
   pincode: z.string().trim().regex(/^\d{6}$/, 'Enter a valid 6-digit pincode').optional().or(z.literal('')),
   creditLimitRupees: z.coerce.number().min(0, 'Credit limit cannot be negative').optional(),
   status: z.enum(['ACTIVE', 'INACTIVE']),
+  whatsappOptIn: z.boolean(),
 });
 
 export type CustomerValues = z.infer<typeof customerSchema>;

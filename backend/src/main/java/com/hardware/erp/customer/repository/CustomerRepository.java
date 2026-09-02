@@ -18,6 +18,9 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     long countByStatusAndTenantId(CustomerStatus status, Long tenantId);
 
+    /** Platform Admin tenant usage summary. */
+    long countByTenantId(Long tenantId);
+
     @Query("""
            select c from Customer c
            where c.tenant.id = :tenantId

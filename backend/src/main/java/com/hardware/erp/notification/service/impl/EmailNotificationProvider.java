@@ -1,8 +1,8 @@
 package com.hardware.erp.notification.service.impl;
 
 import com.hardware.erp.notification.entity.NotificationChannel;
-import com.hardware.erp.notification.entity.NotificationStatus;
 import com.hardware.erp.notification.service.NotificationProvider;
+import com.hardware.erp.notification.service.NotificationSendResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,11 +37,11 @@ public class EmailNotificationProvider implements NotificationProvider {
     }
 
     @Override
-    public NotificationStatus send(NotificationChannel channel, String toAddress, String subject, String body) {
+    public NotificationSendResult send(Long tenantId, NotificationChannel channel, String toAddress, String subject, String body) {
         if (fromAddress == null || fromAddress.isBlank()) {
             log.info("Mail not configured - would have sent to {} - subject: {} - body: {}",
                     toAddress, subject, body);
-            return NotificationStatus.LOGGED_ONLY;
+            return NotificationSendResult.loggedOnly();
         }
 
         SimpleMailMessage message = new SimpleMailMessage();
@@ -50,6 +50,7 @@ public class EmailNotificationProvider implements NotificationProvider {
         message.setSubject(subject);
         message.setText(body);
         mailSender.send(message);
-        return NotificationStatus.SENT;
+        // SMTP itself never hands back a provider-side message id.
+        return NotificationSendResult.sent(null);
     }
 }

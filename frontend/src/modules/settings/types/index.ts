@@ -180,3 +180,23 @@ export interface TenantSettingsRequest {
   paymentDueReminderEnabled: boolean;
   lowStockAlertEnabled: boolean;
 }
+
+/** Mirrors backend notification/entity/WhatsAppConnectionStatus.java. */
+export type WhatsAppConnectionStatus = 'CONNECTED' | 'DISCONNECTED' | 'NEEDS_ATTENTION';
+
+/** Mirrors backend notification/dto/WhatsAppConnectionResponse.java - never carries an access token. */
+export interface WhatsAppConnectionResponse {
+  connected: boolean;
+  status: WhatsAppConnectionStatus;
+  businessName?: string | null;
+  phoneNumberMasked?: string | null;
+  connectedAt?: string | null;
+  lastVerifiedAt?: string | null;
+}
+
+/** Mirrors backend notification/dto/WhatsAppConnectionRequest.java. */
+export interface WhatsAppConnectionRequest {
+  businessAccountId: string;
+  phoneNumberId: string;
+  accessToken: string;
+}

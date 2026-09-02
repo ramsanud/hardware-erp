@@ -133,7 +133,7 @@ class CustomerServiceImplTest {
 
         var request = new com.hardware.erp.customer.dto.CustomerRequest(
                 "New Customer", "9000000001", null, null, null, null, null, null, null, null,
-                CustomerStatus.ACTIVE);
+                CustomerStatus.ACTIVE, null);
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> customerService.create(request))
                 .isInstanceOf(com.hardware.erp.common.exception.BusinessException.class)
@@ -152,7 +152,7 @@ class CustomerServiceImplTest {
 
         var request = new com.hardware.erp.customer.dto.CustomerRequest(
                 "Ram Sangar", "9999999999", null, null, null, null, null, null, null, null,
-                CustomerStatus.ACTIVE);
+                CustomerStatus.ACTIVE, null);
         customerService.update(6L, request);
 
         org.mockito.ArgumentCaptor<Customer> captor = org.mockito.ArgumentCaptor.forClass(Customer.class);

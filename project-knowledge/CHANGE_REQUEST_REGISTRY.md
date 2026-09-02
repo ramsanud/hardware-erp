@@ -1657,3 +1657,621 @@ cleanly through V41-V43. **Not performed**: no browser automation tool in
 this environment - every page built this round has been typechecked and
 build-verified, and the backend endpoints compile/test-pass, but none of
 it has been clicked through in a real browser.
+
+## CR-055 — WhatsApp reminders made real (APPLIED, 2026-09-02)
+
+The single non-negotiable item from the user's "Free-Tier-First
+Completion" master prompt: `NotificationChannel.WHATSAPP` had existed as
+an enum value since CR-027 but no business logic ever attempted it -
+`sendToCustomer` only ever tried SMS and EMAIL. This CR closes that gap
+with a real, provider-ready implementation, not a second stub.
+
+**Migration**: V44 adds `notification_log.provider_message_id` (nullable
+`VARCHAR(100)`) - the provider's own message id on a real accepted send,
+kept for a future delivery-status-webhook reconciliation this CR does not
+build.
+
+**`NotificationProvider.send()` return type changed** from
+`NotificationStatus` to a new `NotificationSendResult` record (`status` +
+`providerMessageId`), across every implementation
+(`EmailNotificationProvider`, `SmsNotificationProvider`,
+`WhatsAppBusinessProvider`) and every call site
+(`NotificationServiceImpl.attempt()`/`contactAdmin()`). `SmsWhatsAppNotificationProvider`
+was split into `SmsNotificationProvider` (SMS-only stub, unchanged
+behaviour) and `WhatsAppBusinessProvider` (new) - two providers both
+claiming `WHATSAPP` would have silently collided in the channel-to-provider
+map NotificationServiceImpl builds at `@PostConstruct` (last one registered
+wins, no error), so the split is load-bearing, not cosmetic.
+
+**`WhatsAppBusinessProvider`** (`app.notifications.whatsapp.*`, env-backed:
+`WHATSAPP_PROVIDER` default `meta`, `WHATSAPP_ACCESS_TOKEN`,
+`WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_API_BASE_URL` default
+`https://graph.facebook.com/v19.0`). Same graceful-degradation contract as
+every other provider in this codebase: unconfigured (blank token or phone
+number id) logs at INFO and returns `LOGGED_ONLY`, never a fake `SENT`.
+When configured, POSTs a real `type: "text"` message to Meta's WhatsApp
+Cloud API via `java.net.http.HttpClient` (no new Maven dependency, same
+precedent as the hand-rolled TOTP in CR-054) and returns Meta's own
+`wamid.*` message id on success; a non-2xx response or network failure
+throws, and the caller (`NotificationServiceImpl.attempt`) is the one that
+records `FAILED` - exactly one write to `notification_log` per attempt,
+success or failure, same as every other channel.
+
+**Stated limitation, not hidden**: this sends free-form `type: "text"`
+messages. Meta only accepts those for a business-initiated conversation
+within 24 hours of the customer's own last message; a reminder sent
+outside that window - most of what this feature exists for - needs a
+pre-approved `type: "template"` message instead, which requires
+registering exact wording with Meta through a real WhatsApp Business
+Manager account. No such account exists in this environment and none can
+be created by writing code. Until one registers templates and
+`WhatsAppBusinessProvider`/`app.notifications.whatsapp` are extended with
+a template name, expect Meta to accept this call inside a live customer
+session and reject it outside one - Meta's policy, not a bug here. Real
+delivery therefore stays `LOGGED_ONLY` in every environment until the
+user supplies `WHATSAPP_ACCESS_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID`, and full
+production conformance additionally needs the template extension above.
+
+**Wired into every place WhatsApp was asked for**:
+- `sendToCustomer()` (backs `notifyInvoiceCreated`/`notifyPaymentReceived`)
+  now attempts WHATSAPP alongside SMS whenever the customer has a mobile
+  number - invoice-created and payment-received both now reach WhatsApp,
+  not just SMS/email.
+- `NotificationService.notifyPaymentDue(Invoice)` (new) - synchronous
+  (unlike the `@Async` trigger methods above), because a person clicking a
+  button needs the real resulting status, not a background fire-and-forget.
+  Refuses a cancelled invoice, a fully-paid invoice, a customer with no
+  mobile number, and a reminder already sent today for this invoice
+  (`notification_log` existence check on `WHATSAPP` + `INVOICE_REMINDER` +
+  invoice id + `createdAt` since local midnight) - same once-daily cadence
+  as the scheduled digest below, so a shop cannot spam a customer by
+  repeat-clicking.
+- `POST /v1/invoices/{id}/remind` (`INVOICE_VIEW`, same permission as the
+  existing `/share/email`) → `InvoiceServiceImpl.sendPaymentReminder()` →
+  `notifyPaymentDue()`. Synchronous `ApiResponse<NotificationStatus>`.
+- Invoice Detail page: a "WhatsApp reminder" button next to "Record
+  payment" (same `canTakePayment` visibility - UNPAID/PARTIALLY_PAID
+  only), showing the real Sent/Logged-only/Failed toast - distinct from
+  the pre-existing "WhatsApp / more apps" share-sheet item, which is a
+  client-side PDF share and was not touched.
+- `ReminderSchedulerService`'s daily shop-facing digest (payment-due
+  summary, low-stock alert) now sends via both `SmsNotificationProvider`
+  and `WhatsAppBusinessProvider` to the tenant's own contact number; a
+  WhatsApp failure for one tenant is caught and logged, not allowed to
+  abort the rest of that day's run.
+- `GET /v1/notifications/log` (`NotificationLogResponse`, pre-existing
+  endpoint) now also returns `providerMessageId` - the smallest useful
+  step toward "delivery status" without building the webhook
+  reconciliation this CR deliberately does not include.
+
+**Not built, and explicitly not implied by "MUST-HAVE"**: Meta template
+registration/approval (needs a real account - see limitation above),
+delivery-status webhook reconciliation, retry/backoff on transient
+failures beyond the caller's own try/catch, rate limiting specific to the
+WhatsApp channel (the app-wide `RateLimitFilter` still applies to the
+HTTP endpoint), and a frontend "Notification history" page (the backend
+`search()`/`GET /v1/notifications/log` this CR extended already existed
+before this CR and remains usable via Postman/Swagger; no page in this
+codebase renders it yet).
+
+**Verified**: `mvn compile` and `mvn test-compile` both clean after every
+file. `NotificationServiceImplTest` (rewritten for the new
+`NotificationSendResult` return type and the extra WhatsApp attempt on
+`sendToCustomer`) - 8/8 passing, including two new tests exercising the
+unconfigured-WhatsApp `LOGGED_ONLY` path directly against
+`WhatsAppBusinessProvider` (no mock). Full `mvn test` - 352 passing, 0
+failures; the only 2 errors are `PermissionCodeConsistencyTest` and
+`SecurityFilterRegistrationTest`, both failing on `Could not find a valid
+Docker environment` (Testcontainers) - a pre-existing environment
+limitation unrelated to this change, not a regression it introduced.
+`tsc -b --force` clean. **Not performed**: no browser automation tool in
+this environment, and no real WhatsApp Business account exists to
+live-verify an actual outbound send - the unconfigured/`LOGGED_ONLY` path
+is exercised by both the automated test above and, exactly like every
+other channel in this codebase, is exactly what every environment gets
+until real credentials are supplied.
+
+## CR-056 — Tenant-owned WhatsApp Business API integration (APPLIED, 2026-09-02)
+
+**Supersedes CR-055 above.** The user's explicit, non-negotiable
+requirement: every hardware-shop tenant must send WhatsApp messages from
+**their own** WhatsApp Business identity, never Hardware ERP's. CR-055
+built a real Meta Cloud API integration but with one shared app-level
+`WHATSAPP_ACCESS_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID` for the whole
+application - exactly the architecture the user's spec forbids
+(§29: "Never implement ONE WhatsApp Account → ALL TENANTS"). This CR
+replaces that with a real per-tenant connection, before any of it was
+committed to git.
+
+**Phase decision, made with the user via `AskUserQuestion`**: Meta's true
+Embedded Signup OAuth flow needs a registered Meta Tech Provider app with
+Business verification and App Review already granted - none of that
+exists in this environment and none of it can be created by writing code.
+The user chose **manual credential entry** for phase 1 (the tenant pastes
+a token/phone-number-id/WABA-id they already obtained from their own Meta
+Business Manager) - the architecture is forward-compatible with real
+Embedded Signup later (only how the token/phone-number-id get populated
+would change, not `tenant_whatsapp_connection`'s shape or anything built
+on top of it). The user also chose to work through every phase in one
+pass rather than stopping after the connection foundation.
+
+### Database (V45)
+
+`tenant_whatsapp_connection` - one row per tenant. `phone_number_id` is
+`UNIQUE` across the *whole table*, not per tenant - it doubles as the
+routing key an inbound webhook event uses to find which tenant it belongs
+to, so two tenants can never share one. `access_token` encrypted via new
+`WhatsAppAccessTokenConverter` (reusing `FieldEncryptor`/CR-018's
+AES-256-GCM, never a new scheme). `connection_status` (`CONNECTED`/
+`DISCONNECTED`/`NEEDS_ATTENTION`). See `DATABASE_REGISTRY.md` for the full
+column list.
+
+`customer` gains `whatsapp_opt_in` (default `true`) + `whatsapp_opt_in_at`
+(§16). Defaults true, not false: every customer already received
+transactional WhatsApp (invoice created, payment received) before this CR
+as part of a sale they were already in, not unsolicited marketing - this
+column is what lets an owner turn it off per customer, not a retroactive
+gate that would silently break an already-shipping feature.
+
+`notification_log.status` (V14) widened to add `DELIVERED`/`READ`, set
+only by a real inbound Meta webhook event - never assumed or faked (spec
+§13's own instruction).
+
+### Backend architecture
+
+- **`TenantWhatsAppConnectionService`/`Impl`** - `connect()` makes a real,
+  live GET call to Meta's Graph API (`/{phoneNumberId}?fields=verified_name,display_phone_number`)
+  using the pasted token, *before* writing anything - a typo'd token or
+  phone number id is caught immediately, not discovered on the first real
+  invoice send. Checks phone-number-id uniqueness across tenants *before*
+  calling Meta, both so one tenant can never even attempt to claim
+  another's number and so a doomed request never burns a real API call.
+  `disconnect()` keeps the row (business name/phone/history preserved per
+  spec §19) but revokes the stored token.
+- **`NotificationProvider.send()`** gained a leading `tenantId` parameter
+  (every implementation and call site updated: `EmailNotificationProvider`,
+  `SmsNotificationProvider`, `WhatsAppBusinessProvider`,
+  `NotificationServiceImpl`, `ReminderSchedulerService`) - the one
+  structural change needed so a shared interface could still resolve a
+  tenant-specific connection instead of a global one.
+- **`WhatsAppBusinessProvider`** rewritten: resolves the connection by
+  `tenantId` via `TenantWhatsAppConnectionRepository`, no more
+  `WhatsAppProperties.accessToken`/`phoneNumberId` (that record now holds
+  only the app-wide `apiBaseUrl`/`appSecret`/`webhookVerifyToken`). A 401/403
+  from Meta marks the connection `NEEDS_ATTENTION` (spec §18's "reconnect"
+  state) instead of failing silently forever. Same graceful-degradation
+  contract as before: no connection for a tenant means `LOGGED_ONLY`, not
+  an error - except `NotificationService.sendTestWhatsApp()`, which checks
+  first and throws, because a "Test WhatsApp" button reporting fake
+  success would be worse than not having one.
+- **`WhatsAppWebhookController`** (new, §14) - one endpoint for the whole
+  app (Meta supports one callback URL per app). GET is the one-time
+  `hub.verify_token` handshake. POST verifies `X-Hub-Signature-256` via
+  HMAC-SHA256 against `WHATSAPP_APP_SECRET`, routes each event to a tenant
+  by `phone_number_id`, and advances the matching `notification_log` row's
+  status forward only (`SENT → DELIVERED → READ`, or → `FAILED`) -
+  idempotent against Meta's own redelivery. **Stated limitation**: the
+  signature check is only meaningful for a tenant connected through this
+  app's own (future) Meta Tech Provider app; a phase-1 tenant who supplied
+  a token minted through a *different* Meta app of their own will not have
+  matching webhook events verify here until real Embedded Signup exists.
+- **Manual sends built on the same `NotificationServiceImpl` plumbing**:
+  `sendInvoiceViaWhatsApp` (§8, resend), `sendPaymentReceiptViaWhatsApp`
+  (§10, manual only - no auto-send toggle exists, so "do not automatically
+  send" is satisfied by this never firing on its own), `sendTestWhatsApp`
+  (§3). `ReminderSchedulerService.sendLowStockAlertNow()` (§11, new manual
+  trigger alongside its existing daily 8am job) - sends to the shop's own
+  contact number, never a customer, and refuses with a clear message if no
+  contact number is on file.
+- **Customer opt-in enforced** (§16): `sendToCustomer()`'s automatic
+  WhatsApp attempt (invoice created/payment received) now checks
+  `customer.isWhatsappOptIn()` first - SMS is unaffected, consent is
+  WhatsApp-specific per the spec. Every manual send (reminder/invoice/
+  receipt) throws a clear "opted out" error via a shared
+  `requireWhatsAppEligible()` check.
+- No new permission codes - reuses `SETTINGS_VIEW`/`SETTINGS_MANAGE` (the
+  same pair `tenant_bank_account`, CR-022, already uses) for the
+  connection, and each module's own existing permission for the sends
+  built on top of it (`INVOICE_VIEW`, `PAYMENT_MANAGE`, `INVENTORY_VIEW`).
+
+### Frontend
+
+`WhatsAppSettingsPage` (`/settings/whatsapp`, linked from Shop Settings) -
+connect/reconnect/disconnect/test-send, matching the spec's own §2-§3
+mockups almost exactly (connected/not-connected states, masked phone,
+"needs attention" banner). `NotificationHistoryPage`
+(`/settings/whatsapp/history`) - Date/Recipient/Type/Status, defaulting to
+the WhatsApp channel filter, DELIVERED/READ badges genuinely sourced from
+`notification_log`. Invoice Detail gained a "Send WhatsApp" item in the
+Share menu (a `ConfirmDialog` showing customer/phone/invoice/amount before
+sending, per spec §8) and a "Send receipt" button per recorded payment.
+Customer Detail gained a "Send WhatsApp Reminder" button per outstanding
+invoice row (reuses the existing `/remind` endpoint - no new backend
+needed). Stock page gained a "Send WhatsApp Alert" toolbar button.
+`CustomerForm` gained the opt-in checkbox (§16).
+
+### Explicitly not built, and why - not silently dropped
+
+- **Message Templates (spec §15)** - not built. A local CRUD showing a
+  self-invented "Pending Approval" status that never actually syncs with
+  Meta would be exactly the kind of fake functionality the spec itself
+  forbids (§15 "do not fake WhatsApp functionality"); real template
+  registration needs a Meta Business Manager account, which does not exist
+  in this environment, same reasoning `WhatsAppBusinessProvider`'s own
+  `type: "text"`-only limitation already documents.
+- **Platform Admin console visibility (spec §21)** - not built. CR-054's
+  console phase 2+ (tenant management, and everything after identity/auth)
+  was never selected by the user; extending it here without that decision
+  would be exactly the "silently start a phase nobody picked" mistake
+  `RESUME_POINT.md` already warns against for CR-054.
+- **Subscription-tier entitlement gating (spec §22)** - deliberately not
+  added. The spec's own text says WhatsApp reminders must stay available
+  on the Free tier; since nothing here is meant to be tier-gated yet, there
+  is nothing to wire into `EntitlementService` without inventing a rule the
+  user never asked for.
+- **Vitest/Playwright (spec §27)** - not built. This project has no
+  frontend test runner at all (see `RESUME_POINT.md`'s own "Not present"
+  line); standing one up from scratch is its own large undertaking,
+  separate from this feature, and was not part of what was asked.
+- **A real Meta Embedded Signup OAuth flow** - not built, per the phase
+  decision above; the connection UI and backend are shaped so it drops in
+  later without changing `tenant_whatsapp_connection` or anything that
+  reads from it.
+
+### Verified
+
+`mvn -DskipTests compile` and `mvn -DskipTests test-compile` both clean.
+`mvn test` (everything not requiring Docker/Testcontainers): all passing,
+including `NotificationServiceImplTest` (rewritten for the new `tenantId`
+parameter - 8/8) and `CustomerServiceImplTest` (7/7, covering the new
+`whatsappOptIn` field). The only 2 errors anywhere in the suite are
+`PermissionCodeConsistencyTest`/`SecurityFilterRegistrationTest`, both
+`Could not find a valid Docker environment` - this machine has no Docker,
+a pre-existing environment limitation, not a regression. New
+`WhatsAppConnectionSecurityIT` (6 tests, spec §20's own tenant-isolation
+list) compiles and is written against real Testcontainers PostgreSQL, but
+**could not be run in this environment** for the same Docker reason -
+reported honestly rather than claimed. It seeds connections directly via
+the repository rather than through `connect()`, deliberately: `connect()`'s
+live Meta verification call is exactly what makes it trustworthy in
+production and exactly what makes it unreachable from a sandboxed test
+with no real Meta account behind it; what the test exercises instead -
+tenant resolution, the phone-number-id uniqueness guard, and role
+permission gates - is the same isolation logic `connect()` itself runs
+before it would ever reach Meta. `tsc -b --force` and `vite build` both
+clean. **Not performed**: no browser automation tool in this environment,
+and no real Meta WhatsApp Business account exists to live-verify an actual
+Embedded-Signup-free manual connection end to end - the same limitation
+CR-055 already stated, now scoped per-tenant instead of per-app.
+
+## CR-057 phase 2 — Platform Admin Console: Tenant Management + Overview (APPLIED, 2026-09-02)
+
+The user's own 76-section Platform Admin Console spec, explicitly rejecting
+CR-054 phase 1's dashboard as "only identity/MFA - NOT sufficient" and
+demanding real tenant management, real KPIs, and no fake/placeholder UI.
+Given the spec's own instruction to work one phase/module at a time
+(§68-69), this CR covers exactly its first two priority items - **Admin
+Overview** and **Tenant Management + Tenant Detail** - the highest-priority
+module per the spec's own §8. Phases 3-8 (System Health, Support Center,
+Billing, Security Center, Audit Logs, Feature Flags, Backup, Developer
+Tools) are explicitly not started - see "Not built" below.
+
+**Reused, not duplicated**: `Tenant`/`User`/`Customer`/`Product`/`Invoice`/
+`Purchase`/`Payment`/`BusinessExpense`/`TenantWhatsAppConnection` - every
+number on both new pages comes from one of these existing entities' own
+repository, never a shadow "admin view" table. No new migration.
+
+### Backend
+
+- **`PlatformPermission`** gained `TENANT_VIEW` (granted to all 7 roles -
+  the minimum useful access) and `TENANT_MANAGE` (suspend/reactivate;
+  withheld from `FINANCE_ADMIN`/`DEVELOPER`/`READ_ONLY_AUDITOR` - least
+  privilege, matching this file's own existing intent). `PlatformAuditAction`
+  gained `TENANT_SUSPENDED`/`TENANT_REACTIVATED` - no migration needed,
+  `platform_audit_log.action` is a plain `VARCHAR(60)` with no CHECK
+  constraint restricting values.
+- **Repository additions, one-liners each** (Spring Data derived queries,
+  no new `@Query` needed except `Tenant.search()`): `countByTenantId` on
+  Customer/Product/Invoice/Purchase/Payment/BusinessExpense repositories;
+  `countByTenantId`/`countByTenantIdAndStatus`/`countByStatus`/
+  `countByCreatedAtBetween`/`lastLoginAtForTenant`/
+  `findFirstByTenantIdAndRole_CodeOrderByIdAsc` on `UserRepository`;
+  `countByStatus`/`countBySubscriptionTier`/`countByCreatedAtBetween`/
+  `search()` on `TenantRepository`; a global (non-tenant-scoped)
+  `countByInvoiceDate`/`countByPurchaseDate`/`countByPaymentDateBetween`
+  for "today" platform-wide KPIs.
+- **`PlatformAdminDashboardService.overview()`** - every field in
+  `PlatformDashboardResponse` is a live aggregate computed at request time:
+  tenant counts by status, a genuine month-over-month new-tenant growth
+  percentage (null when last month had zero, never a division by zero
+  presented as a number), user counts, today's invoice/payment/purchase
+  counts platform-wide, subscription tier mix. **Deliberately excluded**:
+  system health/error rate/background job health (Phase 3's own job, not
+  faked here - `platformHealth.databaseReachable` is the one honest signal
+  this phase can report, and it is trivially true by the response having
+  been computed at all) and MRR/revenue (no billing gateway exists -
+  `subscriptionTier` is self-declared, spec §23 explicitly forbids treating
+  it as real revenue).
+- **`PlatformAdminTenantService`** - `list()` (search/filter/paginate),
+  `get()` (detail + usage aggregate), `suspend()`/`reactivate()` (audited
+  via `PlatformAuditService` under the **acting** admin's own id, resolved
+  from `SecurityContextHolder`, never the target tenant - a distinction
+  worth stating because `PlatformAdminUserService.create()`'s own existing
+  audit call passes the *newly created* admin as the actor, which this
+  service does not copy). Suspending an already-suspended tenant (or
+  reactivating an already-active one) is a real 422, not a silent no-op -
+  live-tested via the IT suite below.
+- **`PlatformAdminTenantController`**: `GET /v1/platform-admin/tenants`,
+  `GET /v1/platform-admin/tenants/{id}`, `POST .../suspend`, `POST
+  .../reactivate` - `TENANT_VIEW`/`TENANT_MANAGE` enforced via
+  `@PreAuthorize`, not just hidden in the frontend (spec §54).
+  `PlatformAdminDashboardController`: `GET /v1/platform-admin/dashboard`,
+  gated only by being an authenticated platform admin (same "authenticated
+  is enough" shape as the existing `/auth/me`) - aggregate platform counts,
+  not one tenant's business data, so every staff role sees them.
+
+### Frontend
+
+New `PlatformAdminLayout` (sidebar + header shell, `layouts/`) - **only
+two nav entries, Overview and Tenants**, deliberately not the spec's full
+20-item mega-sidebar (§4): a nav link to a page that does not exist yet is
+exactly the "navigation without functionality" the spec's own §6/§62
+forbids. Grows one entry per phase as each is actually built, never ahead
+of it. `PlatformAdminDashboardPage` rewritten from the Phase-1 "not
+available yet" stub into real KPI cards (reuses `Card`/`Badge`, a genuine
+trend indicator only when computable). `PlatformAdminTenantListPage`
+(search/status/plan filters, real pagination via the existing `Pagination`/
+`useAsyncList` shared infra - the same components every tenant-side list
+page already uses, not a bespoke admin-only table). `PlatformAdminTenantDetailPage`
+(Overview/Subscription/Integrations/Usage cards, Suspend dialog with a
+required reason field per spec's own §10 mockup, Reactivate via the shared
+`ConfirmDialog`) - the Suspend/Reactivate actions render only when the
+signed-in admin's own `permissions` array includes `TENANT_MANAGE`
+(frontend visibility only; the backend `@PreAuthorize` above is the actual
+enforcement, per spec §54).
+
+### Verified
+
+`mvn compile`/`mvn test-compile` clean throughout. New
+`PlatformAdminTenantServiceTest` (5 unit tests, mocked repositories -
+suspend/reactivate guards, usage aggregation, and specifically that the
+audit call captures the *acting* admin's id). New
+`PlatformAdminTenantControllerIT` (7 tests, real PostgreSQL via
+Testcontainers) - RBAC (`READ_ONLY_AUDITOR` views but gets 403 suspending),
+validation (blank reason → 400), the full suspend→audit→double-suspend-
+refused→reactivate→audit lifecycle against a freshly created tenant (not
+the shared seed tenant, so it cannot collide with any other test), a real
+404 for an unknown tenant id, and cross-boundary isolation (a tenant JWT
+refused on this endpoint). List/detail tests assert against the *real*
+V900 seed values (`slug='default'`, owner `'Saravanan Murugan'`) - caught
+and fixed a mistake made while first drafting the test, where the live
+long-running dev database's own drifted data (an owner renamed to "Siva"
+sometime after V900 was originally seeded) was used instead of what a
+fresh migration run actually produces. Full `mvn test` after: **364
+tests, 0 failures, 0 errors, BUILD SUCCESS** (Docker was available this
+session, so this run includes every Testcontainers-backed test in the
+suite, not just the non-Docker subset). `tsc -b --force` and `vite build`
+both clean. **Live-verified against the real local dev server** (restarted
+to pick up the new compiled classes): `GET /v1/platform-admin/dashboard`,
+`GET /v1/platform-admin/tenants`, and `POST /v1/platform-admin/tenants/1/suspend`
+all correctly return 401 with no token, confirming the new routes are
+wired into the real security filter chain, not just passing in a mocked
+test context. **Not performed**: a full authenticated live click-through
+against the dev server - the platform admin account already living in the
+persistent local dev database has MFA enrolled with a secret only the
+account holder has, and creating a second throwaway account to work around
+that was judged less valuable than the 12 automated tests above, which
+already exercise every one of these endpoints authenticated, over real
+PostgreSQL, with the real Spring Security filter chain. No browser
+automation tool exists in this environment either.
+
+### Not built (Phases 3-8, and the rest of the 76-section spec) - stated, not silently dropped
+
+System Health/Incident/Error Monitoring, Support Center, Subscriptions &
+Billing (genuinely blocked without a real payment gateway - spec's own
+§24 forbids activating a paid tier from an unverified client field), 
+Security Center, Global Audit Log **viewer** (the data is already being
+written to `platform_audit_log`; no screen reads it back yet), Admin
+Team/RBAC management UI (backend RBAC already exists from CR-054 phase 1;
+no admin-facing screen to create/list other admins beyond the phase-1
+API), Feature Flags, Backup & Restore, Developer Tools, Announcements,
+Export Center, Global Search, Maintenance Mode, and Vitest/Playwright
+(this project has no frontend test runner at all, per CR-056's own
+identical note - standing one up is its own separate undertaking). Each
+is a real, separately-sized piece of work per the spec's own phase
+breakdown, not a checkbox to silently skip.
+
+## CR-057 phases 3, 4, 6 (partial), 7 (partial), 8 (partial) — System Health, Incidents, Support Center, Audit Log viewer, Security Center, Developer Tools, Feature Flags (APPLIED, 2026-09-02)
+
+Continuation of CR-057 phase 2, on the user's own explicit "do not stop
+between phases, continue automatically" instruction. Six modules built
+this round, each with real backend enforcement, a real frontend page, and
+real automated tests against PostgreSQL - none use `Math.random()`,
+hardcoded KPI values, or a fake "healthy"/"success" status. Not every
+phase from the user's 76-section spec is complete - see "Not built" at
+the end of this entry for exactly what remains and why.
+
+### Migrations
+
+V46 (`job_execution_log`, `platform_incident`), V47 (`support_ticket`,
+`support_ticket_message`), V48 (`feature_flag`). None carry a FK to
+`platform_admin` for an acting-admin column - every one of them mirrors
+`platform_audit_log.admin_id`'s own no-FK precedent (V39/CR-054), for the
+same reason: an audited row must stay readable even if the admin account
+referenced in it is later removed.
+
+### RBAC extended first, so every phase below could wire against it
+
+`PlatformPermission` grew from 3 values to the user's own stated minimum
+list (`TENANT_VIEW/MANAGE`, `USER_VIEW`, `SYSTEM_HEALTH_VIEW`,
+`INCIDENT_MANAGE`, `SUPPORT_VIEW/MANAGE`, `BILLING_VIEW/MANAGE`,
+`SECURITY_VIEW/MANAGE`, `AUDIT_VIEW`, `DEVELOPER_TOOLS_VIEW/MANAGE`,
+`BACKUP_VIEW/MANAGE`, `FEATURE_FLAG_VIEW/MANAGE`,
+`ANNOUNCEMENT_VIEW/MANAGE`, `ANALYTICS_VIEW/EXPORT`). `PlatformAdminRole`
+now grants `SUPER_ADMIN` everything, `PLATFORM_ADMIN` everything except
+`PLATFORM_ADMIN_MANAGE` (creating other admins stays SUPER_ADMIN-only),
+and every other role a `*_VIEW`-heavy, `*_MANAGE`-light set matching its
+job title - `READ_ONLY_AUDITOR` holds every `*_VIEW` permission and zero
+`*_MANAGE` ones, by design, not an oversight.
+
+### Phase 3 - System Health & Incident Monitoring
+
+`SystemHealthCheckService` computes live status for 7 services -
+Backend, Database, Authentication, Storage, WhatsApp, Email,
+Background Jobs - each from a real, safe signal: a timed `SELECT 1` for
+Database (Storage shares this result, with a stated reason: this app
+stores every file as a `bytea` column, there is no separate object store
+to check); a timed `app_user` count for Authentication; real
+`TenantWhatsAppConnection` status counts for WhatsApp (no outbound ping to
+Meta on every poll - that would be a real cost/rate-limit risk for a
+health check; it reflects connection state already recorded by real send
+attempts); `spring.mail.username` configured-or-not for Email; the most
+recent `job_execution_log` row per known job for Background Jobs.
+`SystemHealthSchedulerJob` runs this every 5 minutes (`app.system-health.check-interval-ms`),
+recording each service's result to the same `job_execution_log` table
+real business jobs use (one mechanism, not two), and opens or bumps a
+`PlatformIncident` on DOWN/DEGRADED (`PlatformIncidentService.recordFailure()`,
+one OPEN/INVESTIGATING incident per service, occurrence count and
+last-seen bumped on repeat rather than duplicated) - a return to HEALTHY
+auto-resolves it, audited under a null "system" admin (`PlatformAuditService`'s
+existing null-admin support, unused until now).
+`JobExecutionTracker` was also wired into the two pre-existing scheduled
+jobs (`TokenCleanupJob`, `ReminderSchedulerService`) so their own run
+history became real for the first time.
+Frontend: `/platform-admin/system-health` (7 live cards: status, response
+time, last checked, last failure, error count in 24h) and
+`/platform-admin/incidents` (search/filter, mark investigating/resolve/
+ignore/reopen).
+
+### Phase 4 - Support Center
+
+Genuinely two-sided, not admin-only: `support_ticket`/`support_ticket_message`
+are written by both a tenant user (`SupportTicketController`, `/v1/support-tickets`,
+ungated by permission - any signed-in tenant user, matching
+`NotificationService.contactAdmin()`'s own precedent) and a platform admin
+(`PlatformAdminSupportController`, `/v1/platform-admin/support`). Internal
+notes (`internal = true`) are filtered out of the tenant-facing read path
+(`SupportTicketService.get()`) and never appear there - proven directly in
+`SupportTicketFlowIT`, which reads both sides of the same ticket and
+asserts the tenant's own view has exactly the public messages, never the
+internal one. A tenant reply to a RESOLVED/CLOSED ticket reopens it
+automatically (the shop is saying "not actually fixed," not filing a new
+ticket) - also proven in that same test. Frontend: a new tenant-facing
+`/support` page (list + "New ticket" dialog + reply thread, linked from
+the sidebar's Administration section) and the platform-admin
+`/platform-admin/support` dashboard + detail page (priority/status
+controls, a visibly distinct amber-bordered internal-note style so an
+admin can never mistake one for a customer-visible reply).
+
+### Phase 6 (partial) - Global Audit Log viewer + Security Center
+
+The audit log itself (`platform_audit_log`) has existed since CR-054
+phase 1; this is the first screen that reads it back.
+`PlatformAuditLogQueryService.search()` batches admin-email resolution
+for a whole page in one query (not per-row - the N+1 shape this exact
+mistake was caught and fixed mid-build in `PlatformAdminSecurityService`
+too, see below) and never returns `password_hash`/`totp_secret` -
+verified directly in `PlatformAuditLogControllerIT`, which asserts the
+raw response body contains neither string.
+Security Center reuses `PlatformAdminRefreshToken` (already tracked since
+CR-054 phase 1, not a new table) for a real Sessions screen - a genuine
+per-admin "your active sessions, revoke one, revoke all others" UI, not
+a mock. Two honesty notes worth recording: "current session" is a
+documented heuristic (the most-recently-used active session), not a real
+thread of the caller's own token identity, since an access token does not
+carry the refresh-token hash that issued it; and the security dashboard's
+"active sessions" count was first written as `refreshTokenRepository.count()`
+(every session ever created, including revoked/expired ones) - caught
+before it shipped and replaced with a real `countActive()` query
+(`revokedAt is null and expiresAt > now`). `GET /v1/platform-admin/security/sessions`
+and its revoke endpoints are deliberately not permission-gated beyond
+authentication (every admin manages their own sessions, same shape as the
+tenant side's own `/auth/logout-all`); the dashboard itself requires
+`SECURITY_VIEW`.
+
+### Phase 7 (partial) - Developer Tools
+
+`DeveloperToolsService` - real Hikari pool stats
+(`HikariPoolMXBean.getActiveConnections()`/etc., not invented numbers)
+and real Flyway migration state (`Flyway.info()`), both already-loaded
+Spring beans, not new infrastructure. Background Jobs lists every
+distinct `job_execution_log.job_name` with its latest status/duration;
+exactly two jobs (`token-cleanup`, `reminder-scheduler`) are retryable
+from this screen - both are naturally idempotent, so "retry" really does
+call `TokenCleanupJob.purge()`/`ReminderSchedulerService.sendDailyReminders()`
+synchronously, proven in `PlatformAdminDeveloperToolsControllerIT` by
+retrying one and confirming a new log row appears. Health-check job names
+(`health:database` etc.) are explicitly NOT retryable from here - they
+run on their own 5-minute schedule and a manual retry button for them
+would be a confusing second trigger path for the same thing.
+**Deliberately not built**: no separate "API Diagnostics" screen (System
+Health's own per-service cards already cover this; a second screen
+duplicating the same data was judged not worth the added surface) and no
+cache diagnostics panel with real numbers - stated honestly on the page
+itself: *"No application-level cache layer (Redis/Caffeine/@Cacheable) is
+configured in this application"* - the alternative (inventing a status)
+is exactly the "fake healthy status" the user's spec explicitly forbids.
+**No arbitrary SQL execution endpoint exists anywhere in this codebase.**
+
+### Phase 8 (partial) - Feature Flags
+
+`FeatureFlagService.isEnabled(key)` is the one real backend enforcement
+point - proven in `PlatformAdminFeatureFlagControllerIT` by creating a
+flag, confirming `isEnabled()` returns false, enabling it through the
+real HTTP endpoint, then confirming `isEnabled()` flips to true through
+the same service a future feature would call. No existing feature in this
+codebase was retrofitted to check a flag (out of scope for this pass -
+the mechanism is real and ready, but wiring every candidate feature
+through it is its own separate initiative). **Honest limitation, stated
+on the `scope` field's own javadoc**: `TENANT`/`PLAN` scope is descriptive
+metadata only in this pass, not an enforced per-tenant override table -
+building real differential targeting (a `feature_flag_tenant_override`
+join table and the resolution logic on top of it) was judged a
+separately-sized piece of work, not silently included under the same flag
+CRUD.
+
+### Verified
+
+`mvn compile`/`mvn test-compile` clean after every file. New tests this
+round: `PlatformIncidentServiceTest` (10 unit), `PlatformAdminSystemHealthControllerIT` (4),
+`SupportTicketFlowIT` (3, including the internal-note-never-leaks and
+auto-reopen assertions), `PlatformAuditLogControllerIT` (2, including the
+no-secrets-in-response assertion), `PlatformAdminDeveloperToolsControllerIT` (4),
+`PlatformAdminSecurityControllerIT` (4, including cross-admin session
+isolation), `PlatformAdminFeatureFlagControllerIT` (3) - 30 new tests,
+all passing against real PostgreSQL via Testcontainers. Full `mvn test`
+after every phase boundary: 0 failures, 0 errors each time. `tsc -b --force`
+and `vite build` both clean after every phase. **Not performed**: no
+browser automation tool exists in this environment, so none of the eight
+new frontend pages (System Health, Incidents, Support ×2, Audit Log,
+Developer Tools, Security Center, Feature Flags, plus the tenant-facing
+Support pages) have been clicked through in a real browser - typechecked
+and build-verified only, same limitation stated on every other CR this
+session.
+
+### Not built this round - stated plainly, not silently dropped
+
+**Phase 5 (Subscriptions & Billing)** - not started. The user's own spec
+requires a complete Razorpay architecture (order creation, webhook
+signature verification, idempotent payment-event persistence) even
+without real credentials; this is a substantial, separately-sized build,
+not a quick addition alongside the six modules above.
+**Phase 8, the rest** (Backup Center / tenant data export, restore) - not
+started.
+**Tenant Analytics** (growth charts, activity classification, module
+usage, retention/churn, PDF/XLSX/CSV export) - not started; this is
+distinct from the Tenant *Management* list/detail CR-057 phase 2 already
+shipped.
+**Announcements, Global Search, Admin Notifications, Maintenance Mode,
+Platform Settings** - not started.
+**Vitest/Playwright** - not started; this project has no frontend test
+runner at all (repeated from CR-056's own identical note).
+**A formal, written-up full security review pass and a full tenant-side
+ERP regression click-through** were not separately performed as their own
+exercise - every phase above stayed additive-only (new tables, new
+permission constants, new endpoints under `/v1/platform-admin/**` or the
+new ungated `/v1/support-tickets`), touched no existing tenant-facing
+business logic, and the full backend suite (every pre-existing test, not
+just new ones) was re-run and green after every phase boundary - but that
+is evidence of no regression, not a substitute for the dedicated security/
+regression pass the spec's own section 74 asks for as a final step.

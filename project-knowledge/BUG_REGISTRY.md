@@ -1639,3 +1639,85 @@ A security control that no test can reach is indistinguishable from one that is
 switched off. When a filter keys on a request attribute, prefer one whose value
 is the same in tests as in production — otherwise the test suite quietly stops
 being evidence.
+
+## BUG-TEST-001 — `mvn test` silently skips every `*IT.java`, and `WhatsAppConnectionSecurityIT` had never actually run
+
+**Module:** Testing / Build / WhatsApp connection security
+**Severity:** MEDIUM (process gap: a real, previously-written integration test
+had never executed against real Postgres in any environment that had Docker,
+because every "full suite" check this session used the wrong Maven goal)
+**Layer:** BACKEND ONLY (one test file's seed data; no production code changed)
+**Status:** Fixed (CR-057 phases 3-8)
+**Found:** 2026-09-02, running `mvn verify` (not `mvn test`) for the first time
+this session as a deliberate final check before reporting CR-057 complete.
+
+### Symptom
+
+Repeated "full suite green" checkpoints this session (`mvn test`, run after
+every CR-057 phase) reported a stable, believable-looking number and
+`BUILD SUCCESS` every time. Running `mvn verify` instead - the goal that
+actually invokes the Failsafe plugin bound to run `*IT.java` classes, per
+`pom.xml`'s own comment at the Failsafe binding warning about exactly this
+trap - failed immediately:
+
+```
+WhatsAppConnectionSecurityIT.eachTenantSeesOnlyItsOwnConnection
+WhatsAppConnectionSecurityIT.cannotClaimAnotherTenantsPhoneNumber
+WhatsAppConnectionSecurityIT.disconnectIsTenantScoped
+  DataIntegrityViolationException: value too long for type character varying(20)
+```
+
+### Root cause (two, layered)
+
+1. **Process**: Maven Surefire's default include pattern is `**/*Test.java`
+   only. `*IT.java` classes are conventionally run by Failsafe during the
+   `integration-test`/`verify` phases, not `test`. Every `mvn test` run this
+   session (and, per `pom.xml`'s own pre-existing comment, apparently in
+   earlier sessions too - this was already known and fixed for the *build*,
+   just not remembered when choosing which goal to run for a manual
+   check) silently excluded all ~25 `*IT.java` classes, both this session's
+   new ones and every pre-existing one, from the reported test count.
+   Individually running each new IT via `-Dtest=ClassName` (done throughout
+   this session) worked around this by accident - `-Dtest` overrides
+   Surefire's own default include filter - which is why every individual
+   phase's tests were genuinely verified even though the aggregate
+   checkpoints were not.
+2. **The actual bug this uncovered**: `WhatsAppConnectionSecurityIT.seedConnection()`
+   built `display_phone_number` (schema: `VARCHAR(20)`, sized for a real
+   value like `"+91 90000 12345"`, 16 characters) by concatenating the
+   test's own synthetic `phoneNumberId` parameter directly onto it -
+   `"+91 90000 " + phoneNumberId"`. That parameter was written as a longer,
+   human-readable test id (`"PNI-TENANT-A-001"`, 17 characters, meant to
+   exercise the real Meta-side opaque `phone_number_id` column, which is
+   `VARCHAR(50)` and comfortably wide enough) - not a value ever meant to
+   also stand in as a display phone number. The combined string (27
+   characters) always overflowed the 20-character column. Because this
+   test could never previously reach a real Postgres instance in this
+   environment (CR-056's own registry entry states plainly: "could not be
+   run in this environment" - no Docker), this defect existed from the
+   moment the test was written and was never exercised until this session's
+   Docker became available and `mvn verify` was finally run.
+
+### Fix
+
+`seedConnection()` now builds `display_phone_number` from the tenant id
+alone (`"+91 90000 " + String.format("%05d", tenantId)`), decoupled from
+whatever length the test's own synthetic `phoneNumberId` parameter happens
+to be. No schema or production code changed - the column width is correct
+for real data; only the test's own synthetic value construction was wrong.
+
+### Regression test
+
+The same three `WhatsAppConnectionSecurityIT` tests, now genuinely passing
+against real PostgreSQL - re-run standalone (10/10... 3/3 in that class) and
+as part of a full `mvn verify` (148 integration tests, 0 failures).
+
+### Lesson
+
+**`mvn verify`, never bare `mvn test`, is the only command that proves this
+project's integration test suite passes** - `pom.xml` already said so in a
+comment before this session started, and running the wrong goal repeatedly
+produced a false sense of "374/374 green" that never touched roughly a
+third of the suite. A "full suite" checkmark is only as good as the command
+that produced it; when a comment in the build file explains a footgun by
+name, read it before trusting a green result.

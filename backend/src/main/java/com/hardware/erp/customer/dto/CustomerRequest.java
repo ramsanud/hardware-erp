@@ -33,5 +33,7 @@ public record CustomerRequest(
         String pincode,
         @PositiveOrZero Long creditLimitPaise,
         @NotNull(message = "Status is required")
-        CustomerStatus status
+        CustomerStatus status,
+        /** CR-056 §16 - null is treated as true (opted in), matching the column's own default for existing rows. */
+        Boolean whatsappOptIn
 ) {}

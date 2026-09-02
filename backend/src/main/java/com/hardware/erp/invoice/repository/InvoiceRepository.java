@@ -80,6 +80,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     long countByTenantIdAndCustomerId(Long tenantId, Long customerId);
 
+    /** Platform Admin tenant usage summary. */
+    long countByTenantId(Long tenantId);
+
+    /** Platform Admin overview KPI - "invoices today" across every tenant, not scoped to one. */
+    long countByInvoiceDate(LocalDate invoiceDate);
+
     /** Cancelled invoices excluded, same as customerFinancialSummary - they carry no real financial weight. */
     @Query("""
            select coalesce(sum(i.totalPaise), 0), coalesce(sum(i.balancePaise), 0)

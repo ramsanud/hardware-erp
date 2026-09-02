@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { NumberInput } from '@/shared/components/ui/number-input';
+import { Checkbox } from '@/shared/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/shared/components/ui/alert';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -45,6 +46,7 @@ export function CustomerForm({ customer, onSubmit, onCancel, onDirtyChange }: Cu
       pincode: customer?.pincode ?? '',
       creditLimitRupees: customer ? Number(customer.creditLimitDisplay.replace(/,/g, '')) : 0,
       status: customer?.status ?? 'ACTIVE',
+      whatsappOptIn: customer?.whatsappOptIn ?? true,
     },
   });
   const values = watch();
@@ -66,6 +68,7 @@ export function CustomerForm({ customer, onSubmit, onCancel, onDirtyChange }: Cu
         pincode: form.pincode || null,
         creditLimitPaise: form.creditLimitRupees ? Math.round(form.creditLimitRupees * 100) : 0,
         status: form.status,
+        whatsappOptIn: form.whatsappOptIn,
       });
     } catch (error) {
       if (error instanceof ApiError) {
@@ -160,6 +163,18 @@ export function CustomerForm({ customer, onSubmit, onCancel, onDirtyChange }: Cu
                  {...register('stateCode')} />
         </FormField>
       </div>
+
+      <label className="flex items-start gap-2 text-sm">
+        <Checkbox checked={values.whatsappOptIn}
+                  onCheckedChange={(checked) => setValue('whatsappOptIn', checked === true, { shouldDirty: true })}
+                  className="mt-0.5" />
+        <span>
+          <span className="font-medium">Send WhatsApp messages to this customer</span>
+          <p className="text-muted-foreground">
+            Invoices, payment reminders and receipts. Turn off if this customer asks not to be messaged on WhatsApp.
+          </p>
+        </span>
+      </label>
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>Cancel</Button>

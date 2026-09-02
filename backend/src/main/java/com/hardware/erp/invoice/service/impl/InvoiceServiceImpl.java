@@ -24,6 +24,7 @@ import com.hardware.erp.invoice.pdf.InvoicePdfService;
 import com.hardware.erp.invoice.repository.InvoiceRepository;
 import com.hardware.erp.invoice.repository.PaymentRepository;
 import com.hardware.erp.invoice.service.InvoiceService;
+import com.hardware.erp.notification.entity.NotificationStatus;
 import com.hardware.erp.notification.service.NotificationService;
 import com.hardware.erp.product.entity.Product;
 import com.hardware.erp.product.repository.ProductRepository;
@@ -229,6 +230,34 @@ public class InvoiceServiceImpl implements InvoiceService {
                 tenantSignatureRepository.findById(tenantId).orElse(null),
                 tenantLogoRepository.findById(tenantId).orElse(null),
                 tenantUpiQrRepository.findById(tenantId).orElse(null));
+    }
+
+    @Override
+    @Transactional
+    public NotificationStatus sendPaymentReminder(Long id) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        Invoice invoice = require(id, tenantId);
+        return notificationService.notifyPaymentDue(invoice);
+    }
+
+    @Override
+    @Transactional
+    public NotificationStatus sendInvoiceViaWhatsApp(Long id) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        Invoice invoice = require(id, tenantId);
+        return notificationService.sendInvoiceViaWhatsApp(invoice);
+    }
+
+    @Override
+    @Transactional
+    public NotificationStatus sendPaymentReceiptViaWhatsApp(Long invoiceId, Long paymentId) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        Invoice invoice = require(invoiceId, tenantId);
+        Payment payment = paymentRepository.findByInvoiceIdOrderByPaymentDateAsc(invoiceId).stream()
+                .filter(p -> p.getId().equals(paymentId))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Payment", paymentId));
+        return notificationService.sendPaymentReceiptViaWhatsApp(invoice, payment);
     }
 
     /** Null is a valid, common choice - "use the shop's default bank fields," not an error. */

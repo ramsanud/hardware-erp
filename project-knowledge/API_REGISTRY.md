@@ -496,3 +496,26 @@ refused here and a platform-admin access token is refused on every
 
 No tenant-facing endpoint changed. No endpoint here accepts or reads a
 `tenant_id` in any form.
+
+## CR-056 — Tenant-owned WhatsApp Business API integration
+
+Every endpoint below resolves the tenant from
+`SecurityUtils.requireCurrentTenantId()` (JWT-derived) - none accepts a
+`tenantId`/`phoneNumberId`/`connectionId` in the request. See
+`WhatsAppConnectionSecurityIT` for the cross-tenant proof.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/settings/whatsapp` | `SETTINGS_VIEW` | Connection status for the caller's own tenant only. Never returns the access token. |
+| POST | `/v1/settings/whatsapp/connect` | `SETTINGS_MANAGE` | Body: `businessAccountId`, `phoneNumberId`, `accessToken` (the tenant's own, obtained from their own Meta Business Manager - phase 1 manual entry, not OAuth). Verifies live against Meta's Graph API before saving; 409 if `phoneNumberId` already belongs to another tenant. |
+| POST | `/v1/settings/whatsapp/disconnect` | `SETTINGS_MANAGE` | Keeps the row (business name/phone/history), revokes the stored token, marks `DISCONNECTED`. |
+| POST | `/v1/settings/whatsapp/test-send` | `SETTINGS_MANAGE` | Body: `toMobileNo`. Throws immediately (never a fake success) if not connected. |
+| POST | `/v1/invoices/{id}/share/whatsapp` | `INVOICE_VIEW` | Manual resend of the invoice-created message, distinct from the automatic on-create send. |
+| POST | `/v1/invoices/{id}/payments/{paymentId}/share/whatsapp` | `PAYMENT_MANAGE` | Manual only - no auto-send toggle exists, so "do not automatically send" is satisfied by this never firing on its own. |
+| POST | `/v1/invoices/{id}/remind` | `INVOICE_VIEW` | Pre-existing (Task 05 / superseded CR-055) - now sends through the tenant's own connection instead of a shared one. |
+| POST | `/v1/inventory/low-stock/send-alert` | `INVENTORY_VIEW` | Manual trigger for the same digest `ReminderSchedulerService` already sends daily at 8am - to the shop's own contact number, never a customer. |
+| GET | `/v1/notifications/log` | `SETTINGS_VIEW` | Pre-existing, gained an optional `channel` query param for the Message History page. |
+| GET / POST | `/v1/webhooks/whatsapp` | public, self-verified | Meta's one callback URL for this whole app. GET is the one-time `hub.verify_token` handshake; POST is inbound delivery-status events, HMAC-verified (`X-Hub-Signature-256` against `WHATSAPP_APP_SECRET`), routed to a tenant by `phone_number_id`, idempotent (only advances a `notification_log` row's status forward). See `WhatsAppWebhookController`'s own javadoc for the real limitation this carries for a tenant connected through a different Meta app than this one's. |
+
+Customer create/update (`POST`/`PUT /v1/customers`) gained an optional
+`whatsappOptIn` field, defaulting to `true` when omitted.

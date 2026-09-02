@@ -15,6 +15,12 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     List<Payment> findByInvoiceIdOrderByPaymentDateAsc(Long invoiceId);
 
+    /** Platform Admin tenant usage summary. */
+    long countByTenantId(Long tenantId);
+
+    /** Platform Admin overview KPI - "payments today" across every tenant, not scoped to one. */
+    long countByPaymentDateBetween(LocalDateTime from, LocalDateTime to);
+
     @Query("""
            select p from Payment p
            where p.tenant.id = :tenantId

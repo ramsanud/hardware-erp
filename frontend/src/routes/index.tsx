@@ -34,6 +34,8 @@ import { PurchaseCreatePage } from '@/modules/purchase/pages/PurchaseCreatePage'
 import { DashboardPage } from '@/modules/dashboard/pages/DashboardPage';
 import { SETTINGS_ROUTES } from '@/modules/settings/constants';
 import { ShopSettingsPage } from '@/modules/settings/pages/ShopSettingsPage';
+import { WhatsAppSettingsPage } from '@/modules/settings/pages/WhatsAppSettingsPage';
+import { NotificationHistoryPage } from '@/modules/notification/pages/NotificationHistoryPage';
 import { AppearancePage } from '@/modules/settings/pages/AppearancePage';
 import { QUOTATION_ROUTES } from '@/modules/quotation/constants';
 import { QuotationListPage } from '@/modules/quotation/pages/QuotationListPage';
@@ -69,6 +71,20 @@ import { PlatformAdminLoginPage } from '@/modules/platform-admin/pages/PlatformA
 import { PlatformAdminMfaVerifyPage } from '@/modules/platform-admin/pages/PlatformAdminMfaVerifyPage';
 import { PlatformAdminMfaEnrollPage } from '@/modules/platform-admin/pages/PlatformAdminMfaEnrollPage';
 import { PlatformAdminDashboardPage } from '@/modules/platform-admin/pages/PlatformAdminDashboardPage';
+import { PlatformAdminTenantListPage } from '@/modules/platform-admin/pages/PlatformAdminTenantListPage';
+import { PlatformAdminTenantDetailPage } from '@/modules/platform-admin/pages/PlatformAdminTenantDetailPage';
+import { PlatformAdminSystemHealthPage } from '@/modules/platform-admin/pages/PlatformAdminSystemHealthPage';
+import { PlatformAdminIncidentsPage } from '@/modules/platform-admin/pages/PlatformAdminIncidentsPage';
+import { PlatformAdminSupportListPage } from '@/modules/platform-admin/pages/PlatformAdminSupportListPage';
+import { PlatformAdminSupportDetailPage } from '@/modules/platform-admin/pages/PlatformAdminSupportDetailPage';
+import { PlatformAdminAuditLogPage } from '@/modules/platform-admin/pages/PlatformAdminAuditLogPage';
+import { PlatformAdminDeveloperToolsPage } from '@/modules/platform-admin/pages/PlatformAdminDeveloperToolsPage';
+import { PlatformAdminSecurityPage } from '@/modules/platform-admin/pages/PlatformAdminSecurityPage';
+import { PlatformAdminFeatureFlagsPage } from '@/modules/platform-admin/pages/PlatformAdminFeatureFlagsPage';
+import { SUPPORT_ROUTES } from '@/modules/support/constants';
+import { SupportTicketListPage } from '@/modules/support/pages/SupportTicketListPage';
+import { SupportTicketDetailPage } from '@/modules/support/pages/SupportTicketDetailPage';
+import { PlatformAdminLayout } from '@/modules/platform-admin/layouts/PlatformAdminLayout';
 import { PlatformAdminProtectedRoute } from '@/modules/platform-admin/routes/PlatformAdminProtectedRoute';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RequirePermission } from './RequirePermission';
@@ -94,7 +110,19 @@ export function AppRoutes() {
         <Route path="mfa" element={<PlatformAdminMfaVerifyPage />} />
         <Route path="enroll" element={<PlatformAdminMfaEnrollPage />} />
         <Route element={<PlatformAdminProtectedRoute />}>
-          <Route path="dashboard" element={<PlatformAdminDashboardPage />} />
+          <Route element={<PlatformAdminLayout />}>
+            <Route path="dashboard" element={<PlatformAdminDashboardPage />} />
+            <Route path="tenants" element={<PlatformAdminTenantListPage />} />
+            <Route path="tenants/:id" element={<PlatformAdminTenantDetailPage />} />
+            <Route path="system-health" element={<PlatformAdminSystemHealthPage />} />
+            <Route path="incidents" element={<PlatformAdminIncidentsPage />} />
+            <Route path="support" element={<PlatformAdminSupportListPage />} />
+            <Route path="support/:id" element={<PlatformAdminSupportDetailPage />} />
+            <Route path="audit-logs" element={<PlatformAdminAuditLogPage />} />
+            <Route path="developer-tools" element={<PlatformAdminDeveloperToolsPage />} />
+            <Route path="security" element={<PlatformAdminSecurityPage />} />
+            <Route path="feature-flags" element={<PlatformAdminFeatureFlagsPage />} />
+          </Route>
         </Route>
         <Route index element={<Navigate to="login" replace />} />
       </Route>
@@ -119,6 +147,8 @@ export function AppRoutes() {
         <Route element={<AppLayout />}>
           <Route path={AUTH_ROUTES.profile} element={<ProfilePage />} />
           <Route path={AUTH_ROUTES.appearance} element={<AppearancePage />} />
+          <Route path={SUPPORT_ROUTES.list} element={<SupportTicketListPage />} />
+          <Route path="/support/:id" element={<SupportTicketDetailPage />} />
 
           <Route element={<RequirePermission permission={PERMISSIONS.USER_VIEW} />}>
             <Route path={AUTH_ROUTES.users} element={<UserManagementPage />} />
@@ -211,6 +241,8 @@ export function AppRoutes() {
 
           <Route element={<RequirePermission permission={PERMISSIONS.SETTINGS_VIEW} />}>
             <Route path={SETTINGS_ROUTES.shop} element={<ShopSettingsPage />} />
+            <Route path={SETTINGS_ROUTES.whatsapp} element={<WhatsAppSettingsPage />} />
+            <Route path={SETTINGS_ROUTES.whatsappHistory} element={<NotificationHistoryPage />} />
           </Route>
 
           {/* Developer inspection (CR-045). This gate is convenience only:

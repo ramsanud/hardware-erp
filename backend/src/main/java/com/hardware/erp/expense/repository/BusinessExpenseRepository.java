@@ -15,6 +15,9 @@ public interface BusinessExpenseRepository extends JpaRepository<BusinessExpense
 
     Optional<BusinessExpense> findByIdAndTenantId(Long id, Long tenantId);
 
+    /** Platform Admin tenant usage summary. */
+    long countByTenantId(Long tenantId);
+
     // (:fromDate is null or ...) with a bare, uncast parameter fails at the
     // database with "could not determine data type of parameter" whenever
     // fromDate/toDate is actually null (the "is null" side alone gives

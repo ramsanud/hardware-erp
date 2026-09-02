@@ -147,19 +147,25 @@ app:
   mail:
     log-links-when-unconfigured: false
 
-  # SMS/WhatsApp notifications (CR-027). No real provider account exists yet,
-  # so SmsWhatsAppNotificationProvider always logs instead of sending -
-  # nothing reads these today. They exist so wiring in a real provider
-  # (e.g. an SMS gateway or the WhatsApp Business API) later is a matter of
-  # setting env vars and adding one NotificationProvider bean, not a design
-  # change. Left blank/commented: never set to a real key by default.
+  # SMS/WhatsApp notifications (CR-027, WhatsApp made real under Task 05,
+  # made tenant-scoped under CR-056 - see TenantWhatsAppConnection).
+  # SMS: no real provider account exists yet, so SmsNotificationProvider
+  # always logs instead of sending.
   notifications:
     sms:
       provider: ${SMS_PROVIDER:}
       # api-key: ${SMS_API_KEY:}
+    # WhatsApp (CR-056): app-wide config only - every tenant's own access
+    # token/phone number id live in tenant_whatsapp_connection, connected
+    # from Settings > WhatsApp Business, never here. app-secret/
+    # webhook-verify-token back WhatsAppWebhookController's inbound
+    # handshake and signature check - see that class's own javadoc for the
+    # real limitation this carries for a tenant connected through a
+    # different Meta app than this one's.
     whatsapp:
-      provider: ${WHATSAPP_PROVIDER:}
-      # api-key: ${WHATSAPP_API_KEY:}
+      api-base-url: ${WHATSAPP_API_BASE_URL:https://graph.facebook.com/v19.0}
+      app-secret: ${WHATSAPP_APP_SECRET:}
+      webhook-verify-token: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:}
 
   # AI assistant (CR-027, Max tier only). No key configured by default -
   # AiChatService checks ChatCompletionClient.isConfigured() and returns a

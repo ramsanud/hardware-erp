@@ -95,4 +95,26 @@ public class InvoiceController {
             @PathVariable Long id, @Valid @RequestBody EmailInvoiceRequest request) {
         return ApiResponse.ok(invoiceEmailService.emailInvoicePdf(id, request.toEmail()));
     }
+
+    /** Task 05 (WhatsApp reminders, MUST-HAVE). Synchronous - the caller sees the real Sent/Logged-only status, never an assumed one. */
+    @PostMapping("/{id}/remind")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).INVOICE_VIEW)")
+    public ApiResponse<NotificationStatus> sendPaymentReminder(@PathVariable Long id) {
+        return ApiResponse.ok(invoiceService.sendPaymentReminder(id));
+    }
+
+    /** CR-056 §8 - the Invoice detail page's "Send WhatsApp" action, distinct from the automatic on-create send. */
+    @PostMapping("/{id}/share/whatsapp")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).INVOICE_VIEW)")
+    public ApiResponse<NotificationStatus> sendInvoiceViaWhatsApp(@PathVariable Long id) {
+        return ApiResponse.ok(invoiceService.sendInvoiceViaWhatsApp(id));
+    }
+
+    /** CR-056 §10 - manual "Send WhatsApp Receipt" for one recorded payment. */
+    @PostMapping("/{id}/payments/{paymentId}/share/whatsapp")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).PAYMENT_MANAGE)")
+    public ApiResponse<NotificationStatus> sendPaymentReceiptViaWhatsApp(
+            @PathVariable Long id, @PathVariable Long paymentId) {
+        return ApiResponse.ok(invoiceService.sendPaymentReceiptViaWhatsApp(id, paymentId));
+    }
 }

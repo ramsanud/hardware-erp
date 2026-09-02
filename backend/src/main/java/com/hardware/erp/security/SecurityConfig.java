@@ -113,7 +113,12 @@ public class SecurityConfig {
                             "/v1/auth/forgot-password",
                             "/v1/auth/reset-password",
                             "/v1/tenants/register",
-                            "/v1/tenants/register/slug-available").permitAll()
+                            "/v1/tenants/register/slug-available",
+                            // Meta calls this with no JWT of ours - authenticity is
+                            // enforced inside WhatsAppWebhookController itself (the
+                            // GET handshake's hub.verify_token, the POST's
+                            // X-Hub-Signature-256 HMAC), not by Spring Security.
+                            "/v1/webhooks/whatsapp").permitAll()
                     // /actuator/health is the hosting platform's liveness probe
                     // and must answer before anyone signs in. The API browser is
                     // public only where it is served at all - application-prod.yml

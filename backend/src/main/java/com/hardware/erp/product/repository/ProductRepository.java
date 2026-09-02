@@ -70,4 +70,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
 
     long countByStatusAndTenantId(ProductStatus status, Long tenantId);
+
+    /** Platform Admin tenant usage summary. */
+    long countByTenantId(Long tenantId);
 }

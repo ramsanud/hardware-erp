@@ -70,6 +70,14 @@ public class Customer extends BaseEntity {
     @Builder.Default
     private CustomerStatus status = CustomerStatus.ACTIVE;
 
+    /** CR-056 §16 - see V45's own comment for why this defaults true and what it does/doesn't gate. */
+    @Column(name = "whatsapp_opt_in", nullable = false)
+    @Builder.Default
+    private boolean whatsappOptIn = true;
+
+    @Column(name = "whatsapp_opt_in_at")
+    private java.time.LocalDateTime whatsappOptInAt;
+
     @Version
     @Column(name = "version", nullable = false)
     @Builder.Default
