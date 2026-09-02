@@ -752,3 +752,45 @@ fields on `tenant`. `CLASSIC` as the default means an existing tenant's
 column backfills to the exact skin `InvoicePdfService` always rendered
 before this migration - no visible change until the owner opens Settings.
 No new permission codes - reuses `SETTINGS_MANAGE`.
+
+## CR-054 phase 1: Platform Admin Console identity & auth (V39)
+
+Four new tables, **none carrying `tenant_id`** and none referenced by, or
+referencing, any tenant-owned table - a platform admin is Hardware ERP
+staff, not a shop employee, and this keeps that structurally true rather
+than merely documented. See CR-054's Change Request Registry entry for the
+full "why a disjoint table, not a flag on `app_user`" reasoning.
+
+- **`platform_admin`** - `email` (unique), `password_hash`, `role`
+  (`VARCHAR(30)` + `CHECK`, the 7 fixed spec roles - `SUPER_ADMIN`,
+  `PLATFORM_ADMIN`, `SUPPORT_ADMIN`, `SECURITY_ADMIN`, `FINANCE_ADMIN`,
+  `DEVELOPER`, `READ_ONLY_AUDITOR`), `status` (`ACTIVE`/`INACTIVE`),
+  `mfa_enabled` + `totp_secret` (encrypted via `TotpSecretConverter`,
+  same `FieldEncryptor` AES-256-GCM pattern as `BankAccountNumberConverter`,
+  CR-018) + `mfa_enrolled_at`, `token_version`/`failed_login_attempts`/
+  `locked_until` (identical lockout shape to `app_user`), self-referencing
+  `created_by`/`updated_by` (who provisioned this account - always another
+  platform admin, never a tenant user).
+- **`platform_admin_backup_code`** - one-time MFA recovery codes, only the
+  SHA-256 hash stored (same as a password), `UNIQUE (platform_admin_id,
+  code_hash)`, `used_at` nullable marks consumption.
+- **`platform_admin_refresh_token`** - line-for-line mirror of
+  `refresh_token` (V1), reusing the tenant side's own `RevokedReason` enum
+  (a stateless enum with no FK dependency, safe to share).
+- **`platform_audit_log`** - the platform-wide equivalent of
+  `security_audit_log`, deliberately a separate table so a bug in one audit
+  path can never suppress or corrupt evidence in the other.
+  `platform_admin_id` is **not a foreign key**, exactly like
+  `security_audit_log.user_id` - found the hard way: the audit write runs
+  in its own `Propagation.REQUIRES_NEW` transaction, and for a "platform
+  admin created" event that races the still-uncommitted insert of the row
+  it describes. An enforced FK was tried first and every such write failed
+  with a real constraint violation, caught by `PlatformAdminAuthControllerIT`.
+
+**New backend-only authority codes** (`PlatformPermission`, compile-time
+enum, **no database `permission` table row** - deliberately different from
+the tenant side's `PermissionCode`, since the 7 platform roles are fixed by
+the spec, not tenant-configurable, so a DB-backed system would be overhead
+nobody can use): `PLATFORM_ADMIN_MANAGE`, granted only to `SUPER_ADMIN` in
+Phase 1. `PermissionCodeConsistencyTest`/`RoleGrantDriftTest` do not apply
+to this enum - it is a separate, intentionally simpler authority model.

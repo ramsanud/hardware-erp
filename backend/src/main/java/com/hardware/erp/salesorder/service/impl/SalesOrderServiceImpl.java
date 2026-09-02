@@ -313,7 +313,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             return new InvoiceItemRequest(
                     item.getProduct().getId(), item.getQuantity(),
                     item.getDiscountType(), item.getDiscountPercent(),
-                    item.getLabourPercent());
+                    item.getLabourPercent(), BigDecimal.ZERO);
         }
 
         long gross = BigDecimal.valueOf(item.getUnitPricePaise())
@@ -323,7 +323,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         if (gross <= 0) {
             return new InvoiceItemRequest(
                     item.getProduct().getId(), item.getQuantity(),
-                    LineDiscount.Type.NONE, BigDecimal.ZERO, item.getLabourPercent());
+                    LineDiscount.Type.NONE, BigDecimal.ZERO, item.getLabourPercent(), BigDecimal.ZERO);
         }
 
         BigDecimal labour = item.getLabourPercent() == null
@@ -344,7 +344,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
 
         return new InvoiceItemRequest(
                 item.getProduct().getId(), item.getQuantity(),
-                LineDiscount.Type.PERCENTAGE, effectiveDiscount, labour);
+                LineDiscount.Type.PERCENTAGE, effectiveDiscount, labour, BigDecimal.ZERO);
     }
 
     /** Same allocation technique as QuotationServiceImpl.applyQuotationDiscount() - see its header comment. */

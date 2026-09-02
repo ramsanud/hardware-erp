@@ -99,6 +99,18 @@ export interface UserResponse {
   createdAt?: string | null;
 }
 
+/** CR-053 backlog item 6. One row per business change this user made, newest first. */
+export interface UserActivityResponse {
+  id: number;
+  moduleCode: string;
+  entityType: string;
+  entityId?: number | null;
+  entityLabel?: string | null;
+  action: string;
+  remarks?: string | null;
+  createdAt: string;
+}
+
 export interface LoginResponse {
   accessToken: string;
   /** Null in cookie transport, which is the default. */

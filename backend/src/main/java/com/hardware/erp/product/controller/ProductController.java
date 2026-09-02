@@ -95,6 +95,18 @@ public class ProductController {
         return ResponseEntity.ok(ApiResponse.ok(productService.get(id)));
     }
 
+    @GetMapping("/{id}/price-history")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).PRODUCT_VIEW)")
+    @Operation(
+            summary = "Recent invoice lines for this product",
+            description = "CR-053 backlog item 1. Up to the 20 most recent non-cancelled sales, "
+                        + "newest first. Gated on the frontend by Tenant.showPriceHistory - this "
+                        + "endpoint itself only requires PRODUCT_VIEW.")
+    public ResponseEntity<ApiResponse<java.util.List<ProductPriceHistoryResponse>>> priceHistory(
+            @Parameter(example = "42") @PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(productService.priceHistory(id)));
+    }
+
     @PostMapping
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).PRODUCT_MANAGE)")
     @Operation(

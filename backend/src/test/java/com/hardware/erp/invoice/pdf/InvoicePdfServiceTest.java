@@ -6,6 +6,7 @@ import com.hardware.erp.invoice.entity.InvoiceItem;
 import com.hardware.erp.invoice.entity.InvoiceStatus;
 import com.hardware.erp.product.entity.Product;
 import com.hardware.erp.product.entity.ProductStatus;
+import com.hardware.erp.product.repository.ProductImageRepository;
 import com.hardware.erp.tenant.entity.Tenant;
 import com.hardware.erp.tenant.entity.TenantBankAccount;
 import com.hardware.erp.tenant.entity.TenantBankAccountQr;
@@ -30,7 +31,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class InvoicePdfServiceTest {
 
-    private final InvoicePdfService pdfService = new InvoicePdfService();
+    // showItemImage is false on every Tenant this test builds, so the
+    // repository is never actually queried - see buildHtml()'s `showImage`
+    // guard - a plain mock with no stubbing is sufficient.
+    private final InvoicePdfService pdfService =
+            new InvoicePdfService(org.mockito.Mockito.mock(ProductImageRepository.class));
 
     private Tenant tenant(String stateCode) {
         return Tenant.builder().id(1L).slug("default").name("Default Shop")

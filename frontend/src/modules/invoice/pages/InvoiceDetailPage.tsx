@@ -33,6 +33,7 @@ import { downloadBlob, formatDateTime, previewBlob } from '@/shared/lib/utils';
 import { PermissionGate } from '@/routes/RequirePermission';
 import { PERMISSIONS } from '@/modules/auth/constants';
 import { useToast } from '@/modules/auth/hooks/useToast';
+import { useAppChrome } from '@/layouts/AppChromeProvider';
 import { INVOICE_ROUTES, PAYMENT_METHOD_OPTIONS } from '../constants';
 import { invoiceService } from '../services/invoiceService';
 import { InvoiceStatusBadge } from '../components/InvoiceStatusBadge';
@@ -78,6 +79,7 @@ export function InvoiceDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [previewingPdf, setPreviewingPdf] = useState(false);
+  const { tcsEnabled, tcsRatePercent, einvoiceEnabled } = useAppChrome();
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
   const [emailing, setEmailing] = useState(false);
@@ -335,7 +337,12 @@ export function InvoiceDetailPage() {
                 {invoice.items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.productName}</TableCell>
-                    <TableCell className="tabular">{item.quantity}</TableCell>
+                    <TableCell className="tabular">
+                      {item.quantity}
+                      {item.freeQuantity > 0 ? (
+                        <span className="ml-1 text-xs text-muted-foreground">+{item.freeQuantity} free</span>
+                      ) : null}
+                    </TableCell>
                     <TableCell className="tabular">₹{item.unitPriceDisplay}</TableCell>
                     <TableCell className="tabular text-right">₹{item.lineTotalDisplay}</TableCell>
                   </TableRow>
@@ -366,6 +373,50 @@ export function InvoiceDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {tcsEnabled ? (
+            <Card>
+              <CardHeader><CardTitle className="text-base">TCS (informational)</CardTitle></CardHeader>
+              <CardContent className="space-y-1.5 text-sm">
+                <p className="text-muted-foreground">
+                  Not added to the total above - a reminder of what you would collect from this customer in addition to it.
+                </p>
+                <div className="flex justify-between pt-1">
+                  <span className="text-muted-foreground">TCS @ {tcsRatePercent}%</span>
+                  <span className="tabular">
+                    ₹{(Number(invoice.subtotalDisplay.replace(/,/g, '')) * (tcsRatePercent / 100))
+                      .toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {einvoiceEnabled ? (
+            <Card>
+              <CardHeader><CardTitle className="text-base">e-Invoice (IRN) - not yet live</CardTitle></CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <div><p className="text-muted-foreground">Document no.</p><p>{invoice.invoiceNumber}</p></div>
+                  <div><p className="text-muted-foreground">Document date</p><p>{invoice.invoiceDate}</p></div>
+                  <div><p className="text-muted-foreground">Buyer</p><p>{invoice.customerName}</p></div>
+                  <div><p className="text-muted-foreground">Total value</p><p className="tabular">₹{invoice.totalDisplay}</p></div>
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground">IRN</p>
+                    <p className="text-muted-foreground">Not generated</p>
+                  </div>
+                </div>
+                <Button type="button" variant="outline" disabled className="w-full"
+                        title="Needs a GSP/NIC account, which is not configured in this environment">
+                  Generate e-Invoice (IRN)
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Generating a real IRN needs a GSP/NIC account, which is not configured. This
+                  section only reviews the document details that would be sent.
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
 
           {invoice.payments.length > 0 ? (
             <Card>

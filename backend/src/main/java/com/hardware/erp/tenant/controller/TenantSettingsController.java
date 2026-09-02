@@ -25,7 +25,10 @@ public class TenantSettingsController {
     @GetMapping("/brand")
     public ApiResponse<TenantBrandResponse> brand() {
         TenantSettingsResponse settings = settingsService.get();
-        return ApiResponse.ok(new TenantBrandResponse(settings.name(), settings.hasLogo(), settings.subscriptionTier()));
+        return ApiResponse.ok(new TenantBrandResponse(settings.name(), settings.hasLogo(), settings.subscriptionTier(),
+                settings.showPriceHistory(), settings.enableFreeQuantity(),
+                settings.tdsEnabled(), settings.tdsRatePercent(), settings.tcsEnabled(), settings.tcsRatePercent(),
+                settings.einvoiceEnabled()));
     }
 
     @GetMapping

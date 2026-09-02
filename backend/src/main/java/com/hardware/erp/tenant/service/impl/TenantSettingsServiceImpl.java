@@ -84,6 +84,22 @@ public class TenantSettingsServiceImpl implements TenantSettingsService {
         if (request.invoiceTheme() != null) {
             tenant.setInvoiceTheme(request.invoiceTheme());
         }
+        tenant.setShowItemDescription(request.showItemDescription());
+        tenant.setShowAlternateUnit(request.showAlternateUnit());
+        tenant.setShowPriceHistory(request.showPriceHistory());
+        tenant.setEnableFreeQuantity(request.enableFreeQuantity());
+        tenant.setShowInvoiceTime(request.showInvoiceTime());
+        tenant.setShowItemImage(request.showItemImage());
+        tenant.setInvoiceTagline(blankToNull(request.invoiceTagline()));
+        tenant.setTdsEnabled(request.tdsEnabled());
+        tenant.setTdsSectionCode(blankToNull(request.tdsSectionCode()));
+        tenant.setTdsRatePercent(request.tdsRatePercent() == null ? java.math.BigDecimal.ZERO : request.tdsRatePercent());
+        tenant.setTcsEnabled(request.tcsEnabled());
+        tenant.setTcsSectionCode(blankToNull(request.tcsSectionCode()));
+        tenant.setTcsRatePercent(request.tcsRatePercent() == null ? java.math.BigDecimal.ZERO : request.tcsRatePercent());
+        tenant.setEinvoiceEnabled(request.einvoiceEnabled());
+        tenant.setPaymentDueReminderEnabled(request.paymentDueReminderEnabled());
+        tenant.setLowStockAlertEnabled(request.lowStockAlertEnabled());
 
         Tenant saved = tenantRepository.save(tenant);
 
@@ -119,6 +135,22 @@ public class TenantSettingsServiceImpl implements TenantSettingsService {
         values.put("upiId", tenant.getUpiId());
         values.put("subscriptionTier", tenant.getSubscriptionTier());
         values.put("invoiceTheme", tenant.getInvoiceTheme());
+        values.put("showItemDescription", tenant.isShowItemDescription());
+        values.put("showAlternateUnit", tenant.isShowAlternateUnit());
+        values.put("showPriceHistory", tenant.isShowPriceHistory());
+        values.put("enableFreeQuantity", tenant.isEnableFreeQuantity());
+        values.put("showInvoiceTime", tenant.isShowInvoiceTime());
+        values.put("showItemImage", tenant.isShowItemImage());
+        values.put("invoiceTagline", tenant.getInvoiceTagline());
+        values.put("tdsEnabled", tenant.isTdsEnabled());
+        values.put("tdsSectionCode", tenant.getTdsSectionCode());
+        values.put("tdsRatePercent", tenant.getTdsRatePercent());
+        values.put("tcsEnabled", tenant.isTcsEnabled());
+        values.put("tcsSectionCode", tenant.getTcsSectionCode());
+        values.put("tcsRatePercent", tenant.getTcsRatePercent());
+        values.put("einvoiceEnabled", tenant.isEinvoiceEnabled());
+        values.put("paymentDueReminderEnabled", tenant.isPaymentDueReminderEnabled());
+        values.put("lowStockAlertEnabled", tenant.isLowStockAlertEnabled());
         return values;
     }
 
@@ -133,6 +165,13 @@ public class TenantSettingsServiceImpl implements TenantSettingsService {
                 tenant.getPanNo(), tenant.getPhone(), tenant.getEmail(),
                 tenant.getBankAccountName(), tenant.getBankAccountNo(), tenant.getBankIfsc(),
                 tenant.getBankName(), tenant.getUpiId(), tenant.getSubscriptionTier(),
-                tenant.getSubscriptionTrialExpiresAt(), tenant.getInvoiceTheme());
+                tenant.getSubscriptionTrialExpiresAt(), tenant.getInvoiceTheme(),
+                tenant.isShowItemDescription(), tenant.isShowAlternateUnit(), tenant.isShowPriceHistory(),
+                tenant.isEnableFreeQuantity(), tenant.isShowInvoiceTime(), tenant.isShowItemImage(),
+                tenant.getInvoiceTagline(),
+                tenant.isTdsEnabled(), tenant.getTdsSectionCode(), tenant.getTdsRatePercent(),
+                tenant.isTcsEnabled(), tenant.getTcsSectionCode(), tenant.getTcsRatePercent(),
+                tenant.isEinvoiceEnabled(),
+                tenant.isPaymentDueReminderEnabled(), tenant.isLowStockAlertEnabled());
     }
 }

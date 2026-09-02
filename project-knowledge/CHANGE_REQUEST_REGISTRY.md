@@ -1441,3 +1441,219 @@ is available in this environment (a constraint noted repeatedly elsewhere
 in this project's history) - the visual result has not been screenshotted
 or clicked through, only typechecked and build-verified. Stated plainly
 rather than claimed.
+
+## CR-054 phase 1 — Platform Admin Console: identity & auth foundation (APPLIED, 2026-09-01)
+
+### What
+
+The first phase of the Platform Admin / Developer Admin Console: a second,
+structurally separate login system for Hardware ERP *staff* (not shop
+owners), with mandatory TOTP MFA and its own audit trail. Every later phase
+(tenant management, support tools, security center, ...) builds on this
+foundation and was deliberately deferred - see "Explicitly not done" below.
+
+### Why a disjoint system, not a flag on `app_user`
+
+A platform admin is not a tenant. `app_user` is defined entirely in terms
+of `tenant_id` (CR-016) - every column, every query, every permission is
+scoped to one shop. Bolting "is this a platform staff row" onto that table
+would mean every tenant-facing query written from now on needs an extra
+"and not a platform admin" guard to stay safe, forever, with no compiler or
+test able to catch the one place someone forgets it. A disjoint table with
+its own JWT signing key, its own Spring Security filter chain and its own
+audit log makes that class of mistake structurally impossible instead of
+merely discouraged.
+
+### What was built
+
+**Database** (`V39__platform_admin.sql`): `platform_admin`,
+`platform_admin_backup_code`, `platform_admin_refresh_token`,
+`platform_audit_log` - none carry `tenant_id`, and `platform_audit_log`
+also holds no foreign key on `platform_admin_id` (mirrors
+`security_audit_log.user_id` exactly): the audit write runs in its own
+`REQUIRES_NEW` transaction, which for a "platform admin created" event
+races the still-uncommitted insert of the row it is describing. An enforced
+FK there was tried first and rejected the audit row outright with a
+constraint violation - caught by `PlatformAdminAuthControllerIT`, not by
+inspection.
+
+**Backend** (`com.hardware.erp.platformadmin`): a full mirror of the
+tenant auth stack, kept deliberately duplicate rather than shared -
+`PlatformAdminJwtService`/`PlatformAdminJwtProperties` (own secret, own
+issuer, `app.platform-admin.jwt.*`), `PlatformAdminUserDetails`/`Service`,
+`PlatformAdminAuthenticationFilter`, a second `@Order(0)`
+`PlatformAdminSecurityConfig` with `.securityMatcher("/v1/platform-admin/**")`
+(the existing tenant `SecurityConfig.filterChain` moved to `@Order(1)` so it
+never shadows it), a dedicated `PlatformAdminRateLimitFilter` (per-IP only -
+see its javadoc for why a per-identifier bucket was skipped for Phase 1),
+and `PlatformAdminBootstrapInitializer` (mirrors `BootstrapOwnerInitializer`,
+gated by `PLATFORM_ADMIN_BOOTSTRAP_ENABLED`, always leaves `mfaEnabled=false`
+since a TOTP secret cannot be bootstrapped from an env var).
+
+Login is always exactly two factors, with no opt-out: `POST
+/v1/platform-admin/auth/login` checks the password and returns a short-lived
+`mfaToken` (a JWT with a `purpose` claim, `LOGIN` or `ENROLL`), never a
+session. An unenrolled account is routed through `/mfa/enroll` (generates a
+TOTP secret + QR, stored encrypted but `mfaEnabled` stays false) then
+`/mfa/enroll/confirm` (proves the code was actually captured, then issues
+the first real session plus 10 one-time backup codes). `TotpService` is a
+hand-rolled RFC 6238 implementation (HMAC-SHA1 via `javax.crypto.Mac`, plus
+a from-scratch Base32 codec) rather than a new Maven dependency. The TOTP
+secret reuses `FieldEncryptor`/`TotpSecretConverter` (same AES-256-GCM
+pattern as `BankAccountNumberConverter`, CR-018); the QR reuses
+`QrCodeGenerator`, widened from UPI-only to a generic `pngBytes(String)`.
+Refresh-token rotation and reuse detection (`PlatformAdminAuthService.refresh`)
+is a line-for-line mirror of `AuthServiceImpl.refresh`, including the
+`noRollbackFor = AuthException.class` fix from BUG-AUTH-009.
+
+`PlatformAdminUserController` (`POST`/`GET /v1/platform-admin/admins`,
+`@PreAuthorize("hasAuthority('PLATFORM_ADMIN_MANAGE')")`) is intentionally
+the only business endpoint in this phase - just enough to prove the 7-role
+RBAC model (`PlatformAdminRole` → `PlatformPermission`, both compile-time
+enums, no database permission table: the 7 roles are fixed by the spec, not
+tenant-configurable, so a `PermissionCode`-style DB-backed system would be
+overhead with no one able to use the extra flexibility).
+
+**Frontend** (`frontend/src/modules/platform-admin`, `frontend/src/services
+/platformAdminApiClient.ts` + `platformAdminTokenStorage.ts`): a second axios
+instance and a second in-memory token store, never shared with
+`services/apiClient.ts` - same reasoning as the backend's two filter chains.
+Both the access token and the refresh token live in memory only for this
+console (no HttpOnly cookie transport was built for it in Phase 1), so a
+page reload signs a platform admin out; accepted deliberately rather than
+building the cookie service now. Four pages
+(`PlatformAdminLoginPage`/`MfaVerifyPage`/`MfaEnrollPage`/`DashboardPage`)
+mounted at `/platform-admin/*`, wrapped in their own `PlatformAdminAuthProvider`
+at the route level in `routes/index.tsx` - never inside the tenant
+`AuthProvider`, `AuthLayout` or `AppLayout`. The dashboard shows only the
+signed-in admin's own identity/role/permissions and says plainly that
+tenant management, support tools, security center and analytics are "not
+available yet" - Section 37 of the spec forbids fabricated metrics, and
+Phase 1 computes none.
+
+### Explicitly not done (proposed phases, awaiting selection - see the
+`AskUserQuestion` phase-ordering answer that started this CR)
+
+Tenant management (list/detail/status control), support-session
+impersonation, support tickets, announcements, subscription/plan/feature
+control, system health/error/incident monitoring, security center, global
+platform audit *log viewer* (the log itself is written starting now),
+developer tools, backup management, maintenance mode, feature flags, tenant
+usage analytics, the tenant data-access-request workflow, synthetic demo
+data (3 tenants × 5 roles), the 20-step admin dashboard test scenario, and
+`docs/PLATFORM_ADMIN_GUIDE.md`/`docs/PLATFORM_ADMIN_SECURITY.md` (both
+require enough of the console to exist to document truthfully - premature
+before Phase 2).
+
+### Verified
+
+`mvn clean compile` and `mvn clean verify` both clean (full existing suite,
+298 unit + 100 Testcontainers integration tests, unaffected). New
+`PlatformAdminAuthControllerIT` (10 tests, real PostgreSQL via
+Testcontainers, real filter chain): full enroll→confirm→session flow with a
+genuine RFC 6238 code (`TotpService.currentCode`, added for this), login
+with an already-enrolled account, wrong-code rejection, backup-code
+single-use, login enumeration-resistance, refresh rotation + reuse
+detection, SUPER_ADMIN-only RBAC (403 for another role), and - the
+guarantee the spec cared about most - a tenant access token is refused on
+`/v1/platform-admin/**` and a platform-admin access token is refused on
+`/v1/auth/**`, both with a real token exchanged through the real login flow
+of the other side, not a forged claim. `tsc -b --force` and `vite build`
+both clean. **Not performed**: no browser automation tool is available in
+this environment - the frontend has not been clicked through, only
+typechecked and build-verified.
+
+## CR-053 backlog items 2-7 (APPLIED, 2026-09-02)
+
+Six more items from the myBillBook backlog (`RESUME_POINT.md`'s own queue),
+built one after another following the same rhythm as every other CR this
+session - migration → entity → DTO → service → controller → frontend →
+`mvn clean compile`/`tsc -b --force` after each, full `mvn clean verify`
++ `vite build` as a final checkpoint. Migrations V41-V43.
+
+**Real bug found and fixed along the way, not part of the ask**:
+`AdditionalSettingsCard` (built last turn, CR-053 backlog item 1) was
+rendered on the **read-only** Settings view but missing entirely from the
+**edit-mode** view - a real, user-visible instance of "I built the option
+but it doesn't show up," caught while extending that same card for this
+round's toggles. Fixed by adding it (and the new `TdsTcsCard`) to both
+render paths.
+
+**Item 2 - Tally export** (`backend/export` package, no new tables).
+`GET /v1/exports/tally?fromDate&toDate` (`REPORT_FINANCIAL`) returns a
+Tally-importable XML envelope: party ledgers (Sundry Debtors/Creditors),
+stock-item masters, and **ledger-level** Sales/Purchase vouchers (party +
+Sales or Purchase Account + CGST/SGST/IGST) - deliberately not "Invoice
+mode" vouchers with per-line inventory allocations; see
+`TallyXmlBuilder`'s own javadoc for the exact scope and for why the
+debit/credit sign convention has not been verified against real Tally
+software (none exists in this environment - it matches the convention in
+Tally's own published samples, and `TallyXmlBuilderTest` proves every
+voucher's ledger entries sum to zero, which is the one thing a real
+import would reject outright if wrong).
+
+**Item 3 - TDS/TCS settings**. Six new `tenant` columns (V41), all
+**informational only** - the computed figure is shown on the Purchase/
+Invoice detail page, never added to or subtracted from that document's
+own stored `total_paise`/`balance_paise`. Folding a real statutory tax
+deduction into core financial totals is its own separately-reviewed
+change, not a drive-by extension of a settings toggle - stated on the
+Settings card itself, not just in code.
+
+**Item 4 - e-Invoice (IRN) UI shell**. One `tenant.einvoice_enabled`
+toggle (V42), no IRN/acknowledgement columns anywhere - there is nothing
+to store until a real GSP/NIC integration exists. When on, Invoice detail
+shows a review card (document/buyer/total already on the invoice) and a
+permanently-disabled "Generate e-Invoice (IRN)" button with an honest
+"needs a GSP/NIC account" message, matching the user's own answer to the
+original scoping question.
+
+**Item 5 - reminder settings, 2 of 5 reminder types**. `tenant.payment_due_reminder_enabled`
+and `tenant.low_stock_alert_enabled` (V43), plus a genuinely new
+`@Scheduled` job - `ReminderSchedulerService`, cron `0 0 8 * * *`
+Asia/Kolkata, same shape as the existing `TokenCleanupJob`. Iterates
+active tenants with a reminder on, and for each, logs a summary SMS (via
+the existing `SmsWhatsAppNotificationProvider` stub - no real SMS account
+configured, exactly like every other SMS/WhatsApp touchpoint in this
+codebase) to the tenant's own contact number. SMS-on-transaction, a daily
+sales-summary digest, and WhatsApp-specific alerts are deferred - same
+"one bounded piece at a time" reasoning as everything else in this list.
+
+**Item 6 - named roles + activity feed**. `RoleForm`'s existing free-text
+"Display name" field already let a system role be renamed (an audit
+finding, not new work - `RoleServiceImpl.update()` only ever locked
+`code` for a system role, never `name`) - added a `<datalist>` of common
+labels (Partner, Salesman, Stock Manager, Delivery Boy, CA, Cashier,
+Godown Staff) as suggestions, not a fixed enum. Separately, `GET
+/v1/users/{id}/activity` (new, `USER_VIEW`) surfaces `activity_log` rows
+for one user on the User Management page's new "Activity" action.
+**Security finding recorded, not fixed**: `activity_log` carries no
+`tenant_id` of its own (pre-existing, not introduced here - see
+`SECURITY_REGISTRY.md`). This endpoint is safe only because it verifies
+the target user belongs to the caller's own tenant *before* it is ever
+used to filter `activity_log` by `user_id` - `ActivityLogRepository`'s
+own javadoc warns against building a second endpoint that skips that
+check.
+
+**Item 7 - GST/margin calculator**. `/tools/gst-calculator`, no
+permission gate (pure client-side arithmetic, no tenant data touched).
+Cost price + profit margin % + GST slab → selling price, GST amount,
+final price, and a donut breakdown of what the final price is made of.
+
+**Item 8 - the rest of the premium-plan list** (barcode/warehouse,
+scan-to-invoice, online store, foreign-currency invoicing, "Add your CA"
+access, GSTR JSON export, remove-branding toggle, recover deleted
+invoices, bulk-edit items) is **explicitly not started**. Per this
+session's own earlier note, several of these overlap with Master Prompt
+phases the user has not yet picked (barcode/warehouse in particular) -
+resolving that overlap needs the user's own answer, not a guess, before
+any of item 8 begins.
+
+**Verified**: `mvn clean compile` after every file, full `mvn clean
+verify` clean (existing suite unaffected, plus the new
+`TallyXmlBuilderTest`). `tsc -b --force` and `vite build` both clean.
+Live-verified: the local dev backend (real PostgreSQL, real Flyway) boots
+cleanly through V41-V43. **Not performed**: no browser automation tool in
+this environment - every page built this round has been typechecked and
+build-verified, and the backend endpoints compile/test-pass, but none of
+it has been clicked through in a real browser.

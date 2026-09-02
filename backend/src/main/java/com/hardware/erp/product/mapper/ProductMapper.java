@@ -41,7 +41,9 @@ public class ProductMapper {
                 product.getStatus(),
                 product.getCreatedAt(),
                 product.getUpdatedAt(),
-                hasImage);
+                hasImage,
+                product.getAltUnitLabel(),
+                product.getAltUnitConversionFactor());
     }
 
     public ProductSummaryResponse toSummary(Product product, boolean hasImage) {

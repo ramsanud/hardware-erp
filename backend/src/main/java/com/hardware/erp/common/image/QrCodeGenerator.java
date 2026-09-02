@@ -39,7 +39,8 @@ public final class QrCodeGenerator {
         return pngBytes(upiUri.toString());
     }
 
-    private static byte[] pngBytes(String content) {
+    /** Generic PNG-encoded QR for any content string, e.g. an otpauth:// TOTP provisioning URI. */
+    public static byte[] pngBytes(String content) {
         try {
             Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
             hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.M);

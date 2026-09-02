@@ -30,5 +30,29 @@ public record TenantSettingsResponse(
         /** CR-032 - null means subscriptionTier (whatever it is) is permanent, not from a trial coupon. */
         LocalDateTime subscriptionTrialExpiresAt,
         /** CR-053. Shop-wide default skin for the generated invoice PDF. */
-        InvoiceTheme invoiceTheme
+        InvoiceTheme invoiceTheme,
+
+        /** CR-053 backlog item 1 - see TenantSettingsRequest. */
+        boolean showItemDescription,
+        boolean showAlternateUnit,
+        boolean showPriceHistory,
+        boolean enableFreeQuantity,
+        boolean showInvoiceTime,
+        boolean showItemImage,
+        String invoiceTagline,
+
+        /** CR-053 backlog item 3. Informational only - see V41's migration comment. */
+        boolean tdsEnabled,
+        String tdsSectionCode,
+        java.math.BigDecimal tdsRatePercent,
+        boolean tcsEnabled,
+        String tcsSectionCode,
+        java.math.BigDecimal tcsRatePercent,
+
+        /** CR-053 backlog item 4. */
+        boolean einvoiceEnabled,
+
+        /** CR-053 backlog item 5. */
+        boolean paymentDueReminderEnabled,
+        boolean lowStockAlertEnabled
 ) {}

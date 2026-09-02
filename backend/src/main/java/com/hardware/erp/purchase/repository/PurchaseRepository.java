@@ -53,4 +53,15 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
            where p.tenant.id = :tenantId and p.status <> 'CANCELLED'
            """)
     List<Object[]> tenantPurchaseSummary(@Param("tenantId") Long tenantId);
+
+    /** CR-053 backlog item 2 (Tally export). Cancelled purchases excluded - a cancelled bill never really happened. */
+    @Query("""
+           select p from Purchase p
+           where p.tenant.id = :tenantId and p.status <> 'CANCELLED'
+             and p.purchaseDate >= :fromDate and p.purchaseDate <= :toDate
+           order by p.purchaseDate asc, p.id asc
+           """)
+    List<Purchase> findForExport(@Param("tenantId") Long tenantId,
+                                 @Param("fromDate") LocalDate fromDate,
+                                 @Param("toDate") LocalDate toDate);
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { KeyRound, MoreHorizontal, Pencil, Trash2, UserPlus, Users } from 'lucide-react';
+import { History, KeyRound, Loader2, MoreHorizontal, Pencil, Trash2, UserPlus, Users } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Card } from '@/shared/components/ui/card';
 import {
@@ -34,7 +34,7 @@ import { roleService } from '../services/roleService';
 import { UserForm, type UserFormValues } from '../forms/UserForm';
 import { ResetUserPasswordForm } from '../forms/ResetUserPasswordForm';
 import { UserStatusBadge } from '../components/StatusBadge';
-import type { RoleResponse, UserResponse, UserStatus } from '../types';
+import type { RoleResponse, UserActivityResponse, UserResponse, UserStatus } from '../types';
 
 const ALL = '__all__';
 
@@ -53,6 +53,7 @@ export function UserManagementPage() {
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState<UserResponse | null>(null);
   const [deleting, setDeleting] = useState<UserResponse | null>(null);
+  const [viewingActivity, setViewingActivity] = useState<UserResponse | null>(null);
 
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
 
@@ -235,6 +236,10 @@ export function UserManagementPage() {
                                 <KeyRound className="h-4 w-4" />
                                 Reset password
                               </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setViewingActivity(row)}>
+                                <History className="h-4 w-4" />
+                                Activity
+                              </DropdownMenuItem>
                               <DropdownMenuItem
                                 destructive
                                 disabled={row.id === currentUser?.id}
@@ -313,6 +318,18 @@ export function UserManagementPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={viewingActivity !== null} onOpenChange={(open) => !open && setViewingActivity(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Activity</DialogTitle>
+            <DialogDescription>
+              {viewingActivity?.fullName} - recent business-record changes, newest first.
+            </DialogDescription>
+          </DialogHeader>
+          {viewingActivity ? <UserActivityList userId={viewingActivity.id} /> : null}
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
@@ -323,5 +340,52 @@ export function UserManagementPage() {
         onConfirm={handleDelete}
       />
     </>
+  );
+}
+
+/** CR-053 backlog item 6. Fetches once on mount - the most recent 20 changes, no pagination UI for this first cut. */
+function UserActivityList({ userId }: { userId: number }) {
+  const [rows, setRows] = useState<UserActivityResponse[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRows(null);
+    setFailed(false);
+    userService.activity(userId, 0, 20)
+      .then((result) => { if (!cancelled) setRows(result.content); })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  if (failed) {
+    return <p className="py-6 text-center text-sm text-muted-foreground">Could not load this user&apos;s activity.</p>;
+  }
+  if (rows === null) {
+    return (
+      <div className="flex justify-center py-6">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading" />
+      </div>
+    );
+  }
+  if (rows.length === 0) {
+    return <p className="py-6 text-center text-sm text-muted-foreground">No activity recorded for this user yet.</p>;
+  }
+
+  return (
+    <ul className="max-h-[60dvh] divide-y overflow-y-auto text-sm">
+      {rows.map((row) => (
+        <li key={row.id} className="py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-medium">
+              {row.action} {row.entityType}
+              {row.entityLabel ? ` - ${row.entityLabel}` : ''}
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground">{formatDateTime(row.createdAt)}</span>
+          </div>
+          {row.remarks ? <p className="mt-0.5 text-xs text-muted-foreground">{row.remarks}</p> : null}
+        </li>
+      ))}
+    </ul>
   );
 }

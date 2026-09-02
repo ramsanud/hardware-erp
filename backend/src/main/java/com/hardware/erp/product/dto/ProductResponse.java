@@ -43,5 +43,8 @@ public record ProductResponse(
 
         @Schema(example = "2026-08-22T09:14:22.331") LocalDateTime createdAt,
         @Schema(example = "2026-08-22T09:14:22.331") LocalDateTime updatedAt,
-        boolean hasImage
+        boolean hasImage,
+
+        @Schema(description = "CR-053 backlog item 1", example = "BOX") String altUnitLabel,
+        @Schema(example = "12") BigDecimal altUnitConversionFactor
 ) {}

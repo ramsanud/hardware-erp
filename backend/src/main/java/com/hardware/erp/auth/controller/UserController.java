@@ -147,6 +147,21 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.ok(userService.get(id)));
     }
 
+    @GetMapping("/{id}/activity")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).USER_VIEW)")
+    @Operation(
+            summary = "Recent business-record changes made by this user",
+            description = "CR-053 backlog item 6. Newest first. Security events (login, "
+                        + "password changes) are not included - see the Security log page.")
+    public ResponseEntity<ApiResponse<PageResponse<UserActivityResponse>>> activity(
+            @Parameter(example = "11") @PathVariable Long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        var pageable = PageRequest.of(Math.max(page, 0), safeSize);
+        return ResponseEntity.ok(ApiResponse.ok(userService.activity(id, pageable)));
+    }
+
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).USER_MANAGE)")
     @Operation(

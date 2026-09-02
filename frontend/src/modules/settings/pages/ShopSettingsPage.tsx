@@ -13,6 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/shared/components/ui/select';
 import { Badge } from '@/shared/components/ui/badge';
+import { Checkbox } from '@/shared/components/ui/checkbox';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { ErrorState } from '@/shared/components/ErrorState';
 import { FormField } from '@/shared/components/FormField';
@@ -151,6 +152,11 @@ export function ShopSettingsPage() {
   useEffect(() => { void reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = handleSubmit(async (values) => {
+    // The form only renders once `settings` has loaded (see the early
+    // return above), but that guarantee is not visible to TypeScript across
+    // this closure - the six Additional Settings fields below need a
+    // narrowed `settings` to read their current, unedited values from.
+    if (!settings) return;
     try {
       const updated = await settingsService.update({
         name: values.name,
@@ -169,6 +175,22 @@ export function ShopSettingsPage() {
         bankIfsc: values.bankIfsc || null,
         bankName: values.bankName || null,
         upiId: values.upiId || null,
+        showItemDescription: settings.showItemDescription,
+        showAlternateUnit: settings.showAlternateUnit,
+        showPriceHistory: settings.showPriceHistory,
+        enableFreeQuantity: settings.enableFreeQuantity,
+        showInvoiceTime: settings.showInvoiceTime,
+        showItemImage: settings.showItemImage,
+        invoiceTagline: settings.invoiceTagline,
+        tdsEnabled: settings.tdsEnabled,
+        tdsSectionCode: settings.tdsSectionCode,
+        tdsRatePercent: settings.tdsRatePercent,
+        tcsEnabled: settings.tcsEnabled,
+        tcsSectionCode: settings.tcsSectionCode,
+        tcsRatePercent: settings.tcsRatePercent,
+        einvoiceEnabled: settings.einvoiceEnabled,
+        paymentDueReminderEnabled: settings.paymentDueReminderEnabled,
+        lowStockAlertEnabled: settings.lowStockAlertEnabled,
       });
       setSettings(updated);
       reset(toFormValues(updated));
@@ -230,6 +252,22 @@ export function ShopSettingsPage() {
         bankName: settings.bankName,
         upiId: settings.upiId,
         subscriptionTier: tier,
+        showItemDescription: settings.showItemDescription,
+        showAlternateUnit: settings.showAlternateUnit,
+        showPriceHistory: settings.showPriceHistory,
+        enableFreeQuantity: settings.enableFreeQuantity,
+        showInvoiceTime: settings.showInvoiceTime,
+        showItemImage: settings.showItemImage,
+        invoiceTagline: settings.invoiceTagline,
+        tdsEnabled: settings.tdsEnabled,
+        tdsSectionCode: settings.tdsSectionCode,
+        tdsRatePercent: settings.tdsRatePercent,
+        tcsEnabled: settings.tcsEnabled,
+        tcsSectionCode: settings.tcsSectionCode,
+        tcsRatePercent: settings.tcsRatePercent,
+        einvoiceEnabled: settings.einvoiceEnabled,
+        paymentDueReminderEnabled: settings.paymentDueReminderEnabled,
+        lowStockAlertEnabled: settings.lowStockAlertEnabled,
       });
       setSettings(updated);
       settingsService.usage().then(setUsage).catch(() => setUsage(null));
@@ -265,11 +303,140 @@ export function ShopSettingsPage() {
         bankName: settings.bankName,
         upiId: settings.upiId,
         invoiceTheme: theme,
+        showItemDescription: settings.showItemDescription,
+        showAlternateUnit: settings.showAlternateUnit,
+        showPriceHistory: settings.showPriceHistory,
+        enableFreeQuantity: settings.enableFreeQuantity,
+        showInvoiceTime: settings.showInvoiceTime,
+        showItemImage: settings.showItemImage,
+        invoiceTagline: settings.invoiceTagline,
+        tdsEnabled: settings.tdsEnabled,
+        tdsSectionCode: settings.tdsSectionCode,
+        tdsRatePercent: settings.tdsRatePercent,
+        tcsEnabled: settings.tcsEnabled,
+        tcsSectionCode: settings.tcsSectionCode,
+        tcsRatePercent: settings.tcsRatePercent,
+        einvoiceEnabled: settings.einvoiceEnabled,
+        paymentDueReminderEnabled: settings.paymentDueReminderEnabled,
+        lowStockAlertEnabled: settings.lowStockAlertEnabled,
       });
       setSettings(updated);
       toast.success(`Invoice theme changed to ${INVOICE_THEMES[theme].label}.`);
     } catch (caught) {
       toast.error(caught, 'Could not change the invoice theme.');
+    }
+  };
+
+  /**
+   * CR-053 backlog item 1. Same "own instant-apply action, outside the main
+   * form" shape as changeTier/changeInvoiceTheme above - takes a partial
+   * patch of just the Additional Settings fields and layers it over the
+   * last-saved settings, so toggling one checkbox never touches anything
+   * else on the form (including an in-progress unsaved edit elsewhere,
+   * since this reads from `settings`, not the form's live values).
+   */
+  const changeAdditionalSettings = async (
+    patch: Partial<Pick<TenantSettingsResponse,
+      'showItemDescription' | 'showAlternateUnit' | 'showPriceHistory' | 'enableFreeQuantity'
+      | 'showInvoiceTime' | 'showItemImage' | 'invoiceTagline' | 'einvoiceEnabled'
+      | 'paymentDueReminderEnabled' | 'lowStockAlertEnabled'>>,
+  ) => {
+    if (!settings) return;
+    try {
+      const updated = await settingsService.update({
+        name: settings.name,
+        gstNo: settings.gstNo,
+        addressLine1: settings.addressLine1,
+        addressLine2: settings.addressLine2,
+        city: settings.city,
+        stateCode: settings.stateCode,
+        pincode: settings.pincode,
+        signatoryName: settings.signatoryName,
+        panNo: settings.panNo,
+        phone: settings.phone,
+        email: settings.email,
+        bankAccountName: settings.bankAccountName,
+        bankAccountNo: settings.bankAccountNo,
+        bankIfsc: settings.bankIfsc,
+        bankName: settings.bankName,
+        upiId: settings.upiId,
+        showItemDescription: settings.showItemDescription,
+        showAlternateUnit: settings.showAlternateUnit,
+        showPriceHistory: settings.showPriceHistory,
+        enableFreeQuantity: settings.enableFreeQuantity,
+        showInvoiceTime: settings.showInvoiceTime,
+        showItemImage: settings.showItemImage,
+        invoiceTagline: settings.invoiceTagline,
+        tdsEnabled: settings.tdsEnabled,
+        tdsSectionCode: settings.tdsSectionCode,
+        tdsRatePercent: settings.tdsRatePercent,
+        tcsEnabled: settings.tcsEnabled,
+        tcsSectionCode: settings.tcsSectionCode,
+        tcsRatePercent: settings.tcsRatePercent,
+        einvoiceEnabled: settings.einvoiceEnabled,
+        paymentDueReminderEnabled: settings.paymentDueReminderEnabled,
+        lowStockAlertEnabled: settings.lowStockAlertEnabled,
+        ...patch,
+      });
+      setSettings(updated);
+      // showPriceHistory/enableFreeQuantity are also cached in AppChromeProvider
+      // (ProductDetailPage and InvoiceWizard read them from there, not from a
+      // fresh fetch of their own) - without this, a toggle flipped here would
+      // not take effect anywhere else until a full page reload.
+      void refreshBrand();
+      toast.success('Additional settings saved.');
+    } catch (caught) {
+      toast.error(caught, 'Could not save additional settings.');
+    }
+  };
+
+  /** CR-053 backlog item 3. Same instant-apply shape as changeAdditionalSettings above. */
+  const changeTdsTcs = async (
+    patch: Partial<Pick<TenantSettingsResponse,
+      'tdsEnabled' | 'tdsSectionCode' | 'tdsRatePercent' | 'tcsEnabled' | 'tcsSectionCode' | 'tcsRatePercent'>>,
+  ) => {
+    if (!settings) return;
+    try {
+      const updated = await settingsService.update({
+        name: settings.name,
+        gstNo: settings.gstNo,
+        addressLine1: settings.addressLine1,
+        addressLine2: settings.addressLine2,
+        city: settings.city,
+        stateCode: settings.stateCode,
+        pincode: settings.pincode,
+        signatoryName: settings.signatoryName,
+        panNo: settings.panNo,
+        phone: settings.phone,
+        email: settings.email,
+        bankAccountName: settings.bankAccountName,
+        bankAccountNo: settings.bankAccountNo,
+        bankIfsc: settings.bankIfsc,
+        bankName: settings.bankName,
+        upiId: settings.upiId,
+        showItemDescription: settings.showItemDescription,
+        showAlternateUnit: settings.showAlternateUnit,
+        showPriceHistory: settings.showPriceHistory,
+        enableFreeQuantity: settings.enableFreeQuantity,
+        showInvoiceTime: settings.showInvoiceTime,
+        showItemImage: settings.showItemImage,
+        invoiceTagline: settings.invoiceTagline,
+        tdsEnabled: settings.tdsEnabled,
+        tdsSectionCode: settings.tdsSectionCode,
+        tdsRatePercent: settings.tdsRatePercent,
+        tcsEnabled: settings.tcsEnabled,
+        tcsSectionCode: settings.tcsSectionCode,
+        tcsRatePercent: settings.tcsRatePercent,
+        einvoiceEnabled: settings.einvoiceEnabled,
+        paymentDueReminderEnabled: settings.paymentDueReminderEnabled,
+        lowStockAlertEnabled: settings.lowStockAlertEnabled,
+        ...patch,
+      });
+      setSettings(updated);
+      void refreshBrand();
+      toast.success('TDS/TCS settings saved.');
+    } catch (caught) {
+      toast.error(caught, 'Could not save TDS/TCS settings.');
     }
   };
 
@@ -316,6 +483,8 @@ export function ShopSettingsPage() {
           {usage ? <UsageCard usage={usage} /> : null}
           <SubscriptionCouponsCard onRedeemed={handleCouponRedeemed} />
           <InvoiceThemeCard currentTheme={settings.invoiceTheme} onChangeTheme={changeInvoiceTheme} />
+          <AdditionalSettingsCard settings={settings} onChange={changeAdditionalSettings} />
+          <TdsTcsCard settings={settings} onChange={changeTdsTcs} />
           <AppearanceCard />
 
           <Card>
@@ -403,6 +572,8 @@ export function ShopSettingsPage() {
         {usage ? <UsageCard usage={usage} /> : null}
         <SubscriptionCouponsCard onRedeemed={handleCouponRedeemed} />
         <InvoiceThemeCard currentTheme={settings.invoiceTheme} onChangeTheme={changeInvoiceTheme} />
+        <AdditionalSettingsCard settings={settings} onChange={changeAdditionalSettings} />
+        <TdsTcsCard settings={settings} onChange={changeTdsTcs} />
       </div>
 
       <form id={SETTINGS_FORM_ID} onSubmit={submit} noValidate className="max-w-2xl space-y-5">
@@ -732,6 +903,266 @@ function InvoiceThemeCard({
           {changing ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Changing theme" /> : null}
         </div>
         <p className="text-sm text-muted-foreground">{INVOICE_THEMES[currentTheme].description}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * CR-053 backlog item 1 - myBillBook's "Additional Settings" panel. Each
+ * checkbox saves instantly on toggle, the same "own instant-apply action"
+ * shape as InvoiceThemeCard right above - these are shop-wide print/display
+ * preferences, not part of the Branding/GST/Bank form below. The tagline
+ * text field is the one exception: it saves on blur, not per keystroke.
+ */
+function AdditionalSettingsCard({
+  settings, onChange,
+}: {
+  settings: TenantSettingsResponse;
+  onChange: (patch: Partial<Pick<TenantSettingsResponse,
+    'showItemDescription' | 'showAlternateUnit' | 'showPriceHistory' | 'enableFreeQuantity'
+    | 'showInvoiceTime' | 'showItemImage' | 'invoiceTagline' | 'einvoiceEnabled'
+      | 'paymentDueReminderEnabled' | 'lowStockAlertEnabled'>>) => Promise<void>;
+}) {
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [tagline, setTagline] = useState(settings.invoiceTagline ?? '');
+  useEffect(() => setTagline(settings.invoiceTagline ?? ''), [settings.invoiceTagline]);
+
+  const toggle = async (
+    key: 'showItemDescription' | 'showAlternateUnit' | 'showPriceHistory'
+      | 'enableFreeQuantity' | 'showInvoiceTime' | 'showItemImage' | 'einvoiceEnabled'
+      | 'paymentDueReminderEnabled' | 'lowStockAlertEnabled',
+    value: boolean,
+  ) => {
+    setSavingKey(key);
+    try {
+      await onChange({ [key]: value });
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const saveTagline = async () => {
+    const trimmed = tagline.trim();
+    if (trimmed === (settings.invoiceTagline ?? '')) return;
+    setSavingKey('invoiceTagline');
+    try {
+      await onChange({ invoiceTagline: trimmed || null });
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const toggles: { key: 'showItemDescription' | 'showAlternateUnit' | 'showPriceHistory'
+    | 'enableFreeQuantity' | 'showInvoiceTime' | 'showItemImage' | 'einvoiceEnabled'
+    | 'paymentDueReminderEnabled' | 'lowStockAlertEnabled';
+    label: string; hint: string }[] = [
+    { key: 'showItemDescription', label: 'Show item description',
+      hint: 'Print each product\'s description under its name on the invoice.' },
+    { key: 'showAlternateUnit', label: 'Show alternate unit',
+      hint: 'Print a product\'s secondary unit (set on the product itself), e.g. "1 BOX = 12 PCS".' },
+    { key: 'showPriceHistory', label: 'Show price history',
+      hint: 'Show a Price History section on each product\'s detail page.' },
+    { key: 'enableFreeQuantity', label: 'Enable free quantity',
+      hint: 'Add a "Free Qty" field when billing an item, for bonus units given with a sale.' },
+    { key: 'showInvoiceTime', label: 'Show time on invoices',
+      hint: 'Print the time alongside the date on the invoice PDF.' },
+    { key: 'showItemImage', label: 'Show item image',
+      hint: 'Print a small product photo on each invoice line, where one is uploaded.' },
+    { key: 'einvoiceEnabled', label: 'e-Invoice (GST IRN) review section - not yet live',
+      hint: 'Show an e-Invoice review card on each invoice. Generating a real IRN needs a '
+          + 'GSP/NIC account, which is not configured - the Generate button stays disabled '
+          + 'with an honest message.' },
+    { key: 'paymentDueReminderEnabled', label: 'Payment-due reminder',
+      hint: 'Once a day, log an SMS reminder to your own shop number about outstanding invoice balances.' },
+    { key: 'lowStockAlertEnabled', label: 'Low-stock alert',
+      hint: 'Once a day, log an SMS alert to your own shop number when products are at or below reorder level.' },
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" aria-hidden />
+          <CardTitle className="text-base">Additional settings</CardTitle>
+        </div>
+        <CardDescription>
+          Optional invoice and product display preferences. Each change saves immediately.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {toggles.map(({ key, label, hint }) => (
+          <div key={key} className="flex items-start gap-3">
+            <Checkbox
+              id={key}
+              checked={settings[key]}
+              disabled={savingKey === key}
+              onCheckedChange={(checked) => void toggle(key, checked === true)}
+              className="mt-0.5"
+            />
+            <label htmlFor={key} className="flex-1 cursor-pointer text-sm">
+              <span className="font-medium">{label}</span>
+              <p className="text-muted-foreground">{hint}</p>
+            </label>
+            {savingKey === key ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-label="Saving" />
+            ) : null}
+          </div>
+        ))}
+        <div className="space-y-1.5 pt-1">
+          <label htmlFor="invoiceTagline" className="text-sm font-medium">Invoice tagline</label>
+          <p className="text-sm text-muted-foreground">A short line printed under your shop name, e.g. a motto.</p>
+          <div className="flex items-center gap-2">
+            <Input
+              id="invoiceTagline"
+              value={tagline}
+              maxLength={255}
+              placeholder="e.g. Trusted by builders since 1998"
+              onChange={(e) => setTagline(e.target.value)}
+              onBlur={() => void saveTagline()}
+              disabled={savingKey === 'invoiceTagline'}
+            />
+            {savingKey === 'invoiceTagline' ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-label="Saving" />
+            ) : null}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * CR-053 backlog item 3. Informational only, stated on the card itself as
+ * well as in code - the computed TDS/TCS figure shown on a Purchase/
+ * Invoice is never subtracted from or added to that document's own stored
+ * total. Applying a statutory tax calculation to real financial totals is
+ * its own separately-reviewed change, not a drive-by extension of this one.
+ */
+function TdsTcsCard({
+  settings, onChange,
+}: {
+  settings: TenantSettingsResponse;
+  onChange: (patch: Partial<Pick<TenantSettingsResponse,
+    'tdsEnabled' | 'tdsSectionCode' | 'tdsRatePercent' | 'tcsEnabled' | 'tcsSectionCode' | 'tcsRatePercent'>>)
+    => Promise<void>;
+}) {
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [tdsSection, setTdsSection] = useState(settings.tdsSectionCode ?? '');
+  const [tdsRate, setTdsRate] = useState(String(settings.tdsRatePercent));
+  const [tcsSection, setTcsSection] = useState(settings.tcsSectionCode ?? '');
+  const [tcsRate, setTcsRate] = useState(String(settings.tcsRatePercent));
+
+  useEffect(() => setTdsSection(settings.tdsSectionCode ?? ''), [settings.tdsSectionCode]);
+  useEffect(() => setTdsRate(String(settings.tdsRatePercent)), [settings.tdsRatePercent]);
+  useEffect(() => setTcsSection(settings.tcsSectionCode ?? ''), [settings.tcsSectionCode]);
+  useEffect(() => setTcsRate(String(settings.tcsRatePercent)), [settings.tcsRatePercent]);
+
+  const toggle = async (key: 'tdsEnabled' | 'tcsEnabled', value: boolean) => {
+    setSavingKey(key);
+    try {
+      await onChange({ [key]: value });
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const saveTds = async () => {
+    const rate = Number(tdsRate) || 0;
+    const section = tdsSection.trim();
+    if (section === (settings.tdsSectionCode ?? '') && rate === settings.tdsRatePercent) return;
+    setSavingKey('tds');
+    try {
+      await onChange({ tdsSectionCode: section || null, tdsRatePercent: rate });
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const saveTcs = async () => {
+    const rate = Number(tcsRate) || 0;
+    const section = tcsSection.trim();
+    if (section === (settings.tcsSectionCode ?? '') && rate === settings.tcsRatePercent) return;
+    setSavingKey('tcs');
+    try {
+      await onChange({ tcsSectionCode: section || null, tcsRatePercent: rate });
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">TDS / TCS</CardTitle>
+        <CardDescription>
+          Informational only - the figure is shown on the Purchase/Invoice detail page and PDF, but
+          is never added to or deducted from that document&apos;s own total. You remain responsible
+          for actually depositing and filing it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="space-y-3 rounded-md border p-3">
+          <div className="flex items-start gap-3">
+            <Checkbox
+              id="tdsEnabled"
+              checked={settings.tdsEnabled}
+              disabled={savingKey === 'tdsEnabled'}
+              onCheckedChange={(checked) => void toggle('tdsEnabled', checked === true)}
+              className="mt-0.5"
+            />
+            <label htmlFor="tdsEnabled" className="flex-1 cursor-pointer text-sm">
+              <span className="font-medium">TDS on purchases</span>
+              <p className="text-muted-foreground">Show how much you would withhold before paying a supplier.</p>
+            </label>
+            {savingKey === 'tdsEnabled' ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-label="Saving" />
+            ) : null}
+          </div>
+          {settings.tdsEnabled ? (
+            <div className="grid grid-cols-2 gap-3 pl-7">
+              <FormField id="tdsSectionCode" label="Section (e.g. 194Q)">
+                <Input id="tdsSectionCode" value={tdsSection} maxLength={20}
+                       onChange={(e) => setTdsSection(e.target.value)} onBlur={() => void saveTds()} />
+              </FormField>
+              <FormField id="tdsRatePercent" label="Rate (%)">
+                <Input id="tdsRatePercent" inputMode="decimal" value={tdsRate}
+                       onChange={(e) => setTdsRate(e.target.value)} onBlur={() => void saveTds()} />
+              </FormField>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="space-y-3 rounded-md border p-3">
+          <div className="flex items-start gap-3">
+            <Checkbox
+              id="tcsEnabled"
+              checked={settings.tcsEnabled}
+              disabled={savingKey === 'tcsEnabled'}
+              onCheckedChange={(checked) => void toggle('tcsEnabled', checked === true)}
+              className="mt-0.5"
+            />
+            <label htmlFor="tcsEnabled" className="flex-1 cursor-pointer text-sm">
+              <span className="font-medium">TCS on sales</span>
+              <p className="text-muted-foreground">Show how much extra you would collect from a customer.</p>
+            </label>
+            {savingKey === 'tcsEnabled' ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-label="Saving" />
+            ) : null}
+          </div>
+          {settings.tcsEnabled ? (
+            <div className="grid grid-cols-2 gap-3 pl-7">
+              <FormField id="tcsSectionCode" label="Section (e.g. 206C(1H))">
+                <Input id="tcsSectionCode" value={tcsSection} maxLength={20}
+                       onChange={(e) => setTcsSection(e.target.value)} onBlur={() => void saveTcs()} />
+              </FormField>
+              <FormField id="tcsRatePercent" label="Rate (%)">
+                <Input id="tcsRatePercent" inputMode="decimal" value={tcsRate}
+                       onChange={(e) => setTcsRate(e.target.value)} onBlur={() => void saveTcs()} />
+              </FormField>
+            </div>
+          ) : null}
+        </div>
       </CardContent>
     </Card>
   );

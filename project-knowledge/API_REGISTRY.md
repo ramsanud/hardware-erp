@@ -469,3 +469,30 @@ unchanged, same convention `subscriptionTier` already uses on this DTO.
 `GET /v1/settings` echoes the current value back. `GET /v1/invoices/{id}/pdf`
 is unchanged in shape — it now simply renders using whichever theme the
 tenant has set.
+
+---
+
+## CR-054 phase 1 — Platform Admin Console: identity & auth
+
+A completely separate base path, `/v1/platform-admin/**`, matched by its
+own `@Order(0)` Spring Security filter chain (`PlatformAdminSecurityConfig`)
+before the tenant chain ever sees the request. A tenant access token is
+refused here and a platform-admin access token is refused on every
+`/v1/auth/**` path — both directions live-verified in
+`PlatformAdminAuthControllerIT`, not assumed from the code.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/v1/platform-admin/auth/login` | public | body `{email, password}`. Never returns a session — returns a short-lived `mfaToken` + `enrollmentRequired`. Rate limited per IP (`PLATFORM_ADMIN_LOGIN_PER_IP`, 10/min). Identical response for unknown email, wrong password, and a locked/inactive account. |
+| POST | `/v1/platform-admin/auth/mfa/verify` | `mfaToken` in body | 6-digit TOTP code or a 10-digit backup code. Exchanges the challenge for a real session. |
+| POST | `/v1/platform-admin/auth/mfa/enroll` | `mfaToken` in body | Only for an account with `enrollmentRequired: true`. Generates a new TOTP secret (stored encrypted, `mfaEnabled` stays false) and returns `{otpAuthUri, qrCodePngBase64, secretBase32}`. Calling again before confirming replaces the pending secret. |
+| POST | `/v1/platform-admin/auth/mfa/enroll/confirm` | `mfaToken` in body | Proves the code was captured. On success: `mfaEnabled` flips true, 10 backup codes are issued (shown once, in the response), and a real session is returned immediately. |
+| POST | `/v1/platform-admin/auth/refresh` | refresh token in body | No HttpOnly-cookie transport in Phase 1 — the raw refresh token travels in the JSON body both ways. Rotation + reuse detection mirrors `/v1/auth/refresh` exactly. |
+| POST | `/v1/platform-admin/auth/logout` | authenticated | This device/token only. |
+| POST | `/v1/platform-admin/auth/logout-all` | authenticated | All sessions, bumps `token_version`. |
+| GET | `/v1/platform-admin/auth/me` | authenticated | Identity + role + effective permissions from the security context. |
+| POST | `/v1/platform-admin/admins` | `PLATFORM_ADMIN_MANAGE` (SUPER_ADMIN only) | Creates another platform admin. Starts with `mfaEnabled: false` — enrolls on its own first login, same as every account. |
+| GET | `/v1/platform-admin/admins` | `PLATFORM_ADMIN_MANAGE` (SUPER_ADMIN only) | Lists all platform admin accounts. |
+
+No tenant-facing endpoint changed. No endpoint here accepts or reads a
+`tenant_id` in any form.

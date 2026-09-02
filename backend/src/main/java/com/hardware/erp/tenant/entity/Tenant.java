@@ -106,6 +106,92 @@ public class Tenant extends BaseEntity {
     @Builder.Default
     private InvoiceTheme invoiceTheme = InvoiceTheme.CLASSIC;
 
+    // ---------------------------------------------------------------
+    // CR-053 backlog item 1: invoice "Additional Settings" toggles
+    // (myBillBook parity). All default false/null - see V40's migration
+    // comment for why that keeps every existing tenant's PDF unchanged.
+    // ---------------------------------------------------------------
+
+    @Column(name = "show_item_description", nullable = false)
+    @Builder.Default
+    private boolean showItemDescription = false;
+
+    @Column(name = "show_alternate_unit", nullable = false)
+    @Builder.Default
+    private boolean showAlternateUnit = false;
+
+    /** Gates the Price History section on the Product Detail page - not an invoice PDF toggle. */
+    @Column(name = "show_price_history", nullable = false)
+    @Builder.Default
+    private boolean showPriceHistory = false;
+
+    /** Gates whether the "Free Qty" field appears at all on invoice line entry - avoids clutter for shops that never give free units. */
+    @Column(name = "enable_free_quantity", nullable = false)
+    @Builder.Default
+    private boolean enableFreeQuantity = false;
+
+    @Column(name = "show_invoice_time", nullable = false)
+    @Builder.Default
+    private boolean showInvoiceTime = false;
+
+    @Column(name = "show_item_image", nullable = false)
+    @Builder.Default
+    private boolean showItemImage = false;
+
+    /** Presence is the toggle - null/blank prints nothing, same convention as signatoryName. */
+    @Column(name = "invoice_tagline", length = 255)
+    private String invoiceTagline;
+
+    // ---------------------------------------------------------------
+    // CR-053 backlog item 3: TDS/TCS settings. Informational only - see
+    // V41's migration comment for why this never touches a document's own
+    // stored totalPaise/balancePaise.
+    // ---------------------------------------------------------------
+
+    @Column(name = "tds_enabled", nullable = false)
+    @Builder.Default
+    private boolean tdsEnabled = false;
+
+    @Column(name = "tds_section_code", length = 20)
+    private String tdsSectionCode;
+
+    @Column(name = "tds_rate_percent", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private java.math.BigDecimal tdsRatePercent = java.math.BigDecimal.ZERO;
+
+    @Column(name = "tcs_enabled", nullable = false)
+    @Builder.Default
+    private boolean tcsEnabled = false;
+
+    @Column(name = "tcs_section_code", length = 20)
+    private String tcsSectionCode;
+
+    @Column(name = "tcs_rate_percent", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private java.math.BigDecimal tcsRatePercent = java.math.BigDecimal.ZERO;
+
+    /**
+     * CR-053 backlog item 4. Shows the e-Invoice (IRN) review section on
+     * the Invoice detail page - generation itself always stays disabled,
+     * see V42's migration comment for why no IRN/acknowledgement columns
+     * exist anywhere in this schema.
+     */
+    @Column(name = "einvoice_enabled", nullable = false)
+    @Builder.Default
+    private boolean einvoiceEnabled = false;
+
+    /**
+     * CR-053 backlog item 5. Read once a day by ReminderSchedulerService -
+     * see its own javadoc for exactly what each toggle triggers.
+     */
+    @Column(name = "payment_due_reminder_enabled", nullable = false)
+    @Builder.Default
+    private boolean paymentDueReminderEnabled = false;
+
+    @Column(name = "low_stock_alert_enabled", nullable = false)
+    @Builder.Default
+    private boolean lowStockAlertEnabled = false;
+
     public boolean isActive() {
         return status == TenantStatus.ACTIVE;
     }

@@ -21,4 +21,7 @@ public interface UserService {
     void resetPassword(Long id, ResetUserPasswordRequest request);
 
     void softDelete(Long id, Long actingUserId);
+
+    /** CR-053 backlog item 6. Verifies id belongs to the caller's own tenant before reading any activity - see ActivityLogRepository's own javadoc for why that matters. */
+    PageResponse<UserActivityResponse> activity(Long id, Pageable pageable);
 }

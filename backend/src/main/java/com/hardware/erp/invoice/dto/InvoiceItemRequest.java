@@ -44,10 +44,19 @@ public record InvoiceItemRequest(
          */
         @PositiveOrZero(message = "Labour percentage cannot be negative")
         @DecimalMax(value = "100.00", message = "Labour cannot be more than 100%")
-        BigDecimal labourPercent
+        BigDecimal labourPercent,
+
+        /**
+         * CR-053 backlog item 1. Bonus units given free, over and above
+         * quantity - never priced, but deducted from stock alongside
+         * quantity (see InvoiceServiceImpl). Null is read as zero, same
+         * convention as the discount fields.
+         */
+        @PositiveOrZero(message = "Free quantity cannot be negative")
+        BigDecimal freeQuantity
 ) {
     /** Convenience for callers that never set a discount - keeps existing construction sites short. */
     public InvoiceItemRequest(Long productId, BigDecimal quantity) {
-        this(productId, quantity, LineDiscount.Type.NONE, BigDecimal.ZERO, BigDecimal.ZERO);
+        this(productId, quantity, LineDiscount.Type.NONE, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
     }
 }

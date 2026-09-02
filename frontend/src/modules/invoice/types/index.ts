@@ -22,6 +22,8 @@ export interface InvoiceItemRequest {
   discountPercent?: number | null;
   /** Only sent for AMOUNT. Paise, never rupees - matches the backend's money rule. */
   discountAmountPaise?: number | null;
+  /** CR-053 backlog item 1. Bonus units given free - never priced, but deducted from stock alongside quantity. */
+  freeQuantity?: number | null;
 }
 
 export interface InvoiceRequest {
@@ -58,6 +60,8 @@ export interface InvoiceItemResponse {
   discountDisplay: string;
   /** Before discount. lineSubtotalDisplay is already net of it. */
   lineGrossDisplay: string;
+  /** CR-053 backlog item 1. Zero when the shop does not use free quantities. */
+  freeQuantity: number;
 }
 
 export interface PaymentResponse {

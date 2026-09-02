@@ -161,9 +161,11 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
 
         // Stock leaves after the invoice has an id, so the movement's
-        // reference_id points at a row that already exists.
+        // reference_id points at a row that already exists. Free units leave
+        // the shelf exactly like billed ones - the movement covers quantity
+        // PLUS freeQuantity, even though only quantity was ever priced.
         for (InvoiceItem item : saved.getItems()) {
-            stockService.applyMovement(item.getProduct().getId(), item.getQuantity().negate(),
+            stockService.applyMovement(item.getProduct().getId(), totalUnits(item).negate(),
                     MovementType.SALE, "INVOICE", saved.getId(), null);
         }
 
@@ -337,10 +339,11 @@ public class InvoiceServiceImpl implements InvoiceService {
         before.put("totalPaise", invoice.getTotalPaise());
         before.put("itemCount", invoice.getItems().size());
 
-        // Quantity per product as it stands now, to diff against the new basket.
+        // Units per product as it stands now (quantity + freeQuantity - both
+        // leave the shelf), to diff against the new basket.
         Map<Long, BigDecimal> previousQty = new LinkedHashMap<>();
         for (InvoiceItem item : invoice.getItems()) {
-            previousQty.merge(item.getProduct().getId(), item.getQuantity(), BigDecimal::add);
+            previousQty.merge(item.getProduct().getId(), totalUnits(item), BigDecimal::add);
         }
 
         Customer customer = customerLookupService.findOrCreate(
@@ -365,7 +368,7 @@ public class InvoiceServiceImpl implements InvoiceService {
             invoice.getItems().add(item);
             subtotal += item.getLineSubtotalPaise();
             gstTotal += item.getLineGstPaise();
-            newQty.merge(item.getProduct().getId(), item.getQuantity(), BigDecimal::add);
+            newQty.merge(item.getProduct().getId(), totalUnits(item), BigDecimal::add);
         }
 
         invoice.setSubtotalPaise(subtotal);
@@ -415,7 +418,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
 
         for (InvoiceItem item : invoice.getItems()) {
-            stockService.applyMovement(item.getProduct().getId(), item.getQuantity(),
+            stockService.applyMovement(item.getProduct().getId(), totalUnits(item),
                     MovementType.SALE_REVERSAL, "INVOICE", invoice.getId(),
                     "Invoice " + invoice.getInvoiceNumber() + " cancelled");
         }
@@ -499,6 +502,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .product(product)
                 .productNameSnapshot(product.getProductName())
                 .quantity(quantity)
+                .freeQuantity(request.freeQuantity() == null ? BigDecimal.ZERO : request.freeQuantity())
                 .unit(product.getUnit())
                 .unitPricePaise(unitPricePaise)
                 .gstRatePercent(gstRate)
@@ -514,6 +518,12 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .lineGstPaise(priced.gstPaise())
                 .lineTotalPaise(priced.totalPaise())
                 .build();
+    }
+
+    /** CR-053 backlog item 1. What actually leaves the shelf for one line - billed quantity plus any free units. */
+    private static BigDecimal totalUnits(InvoiceItem item) {
+        BigDecimal free = item.getFreeQuantity() == null ? BigDecimal.ZERO : item.getFreeQuantity();
+        return item.getQuantity().add(free);
     }
 
     private static String blankToNull(String value) {

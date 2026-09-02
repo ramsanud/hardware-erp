@@ -29,6 +29,33 @@ export interface TenantSettingsResponse {
   subscriptionTrialExpiresAt?: string | null;
   /** CR-053 phase 1. */
   invoiceTheme: InvoiceTheme;
+
+  /** CR-053 backlog item 1 - "Additional Settings" (myBillBook parity). */
+  showItemDescription: boolean;
+  showAlternateUnit: boolean;
+  /** Gates the Price History section on the Product Detail page, not the invoice PDF. */
+  showPriceHistory: boolean;
+  /** Gates whether the "Free Qty" field appears at all on invoice line entry. */
+  enableFreeQuantity: boolean;
+  showInvoiceTime: boolean;
+  showItemImage: boolean;
+  /** Presence is the toggle - blank prints nothing on the invoice. */
+  invoiceTagline?: string | null;
+
+  /** CR-053 backlog item 3. Informational only - never applied to a stored total. */
+  tdsEnabled: boolean;
+  tdsSectionCode?: string | null;
+  tdsRatePercent: number;
+  tcsEnabled: boolean;
+  tcsSectionCode?: string | null;
+  tcsRatePercent: number;
+
+  /** CR-053 backlog item 4. Shows the e-Invoice review section on Invoice detail - generation itself always stays disabled. */
+  einvoiceEnabled: boolean;
+
+  /** CR-053 backlog item 5. Read once a day by the backend's ReminderSchedulerService. */
+  paymentDueReminderEnabled: boolean;
+  lowStockAlertEnabled: boolean;
 }
 
 export type SubscriptionCouponStatus = 'ACTIVE' | 'INACTIVE';
@@ -128,4 +155,28 @@ export interface TenantSettingsRequest {
   subscriptionTier?: SubscriptionTier | null;
   /** CR-053 phase 1. Null means "leave unchanged", same convention as subscriptionTier above. */
   invoiceTheme?: InvoiceTheme | null;
+
+  /** CR-053 backlog item 1. Unlike invoiceTheme, plain booleans with no "leave unchanged" state - always sent. */
+  showItemDescription: boolean;
+  showAlternateUnit: boolean;
+  showPriceHistory: boolean;
+  enableFreeQuantity: boolean;
+  showInvoiceTime: boolean;
+  showItemImage: boolean;
+  invoiceTagline?: string | null;
+
+  /** CR-053 backlog item 3. */
+  tdsEnabled: boolean;
+  tdsSectionCode?: string | null;
+  tdsRatePercent: number;
+  tcsEnabled: boolean;
+  tcsSectionCode?: string | null;
+  tcsRatePercent: number;
+
+  /** CR-053 backlog item 4. */
+  einvoiceEnabled: boolean;
+
+  /** CR-053 backlog item 5. */
+  paymentDueReminderEnabled: boolean;
+  lowStockAlertEnabled: boolean;
 }

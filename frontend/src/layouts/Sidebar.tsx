@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
-  Boxes, CalendarCheck, ChevronDown, ClipboardList, Coins, FileClock, FileText, HardHat, KeyRound, Landmark,
+  Boxes, Calculator, CalendarCheck, ChevronDown, ClipboardList, Coins, FileClock, FileDown, FileText, HardHat, KeyRound, Landmark,
   LayoutDashboard, Layers, Package, PackageSearch, Settings,
   ShieldCheck, ShoppingBag, ShoppingCart, Tags, TerminalSquare, Ticket, TrendingUp, Truck,
   UserCheck, UserCircle, Users, Wallet, Wrench,
@@ -99,6 +99,10 @@ const NAV_SECTIONS: NavSection[] = [
       { to: '/expenses', label: 'Expenses', icon: Coins, permission: PERMISSIONS.EXPENSE_VIEW, available: true },
       { to: '/ledgers', label: 'Ledgers', icon: Landmark, permission: PERMISSIONS.REPORT_FINANCIAL, available: false },
       { to: '/reports', label: 'Reports', icon: TrendingUp, permission: PERMISSIONS.REPORT_VIEW, available: false },
+      // CR-053 backlog item 7 - pure client-side arithmetic, no permission
+      // gate: it reads no tenant data, so there is nothing to protect.
+      { to: '/tools/gst-calculator', label: 'GST calculator', icon: Calculator, available: true },
+      { to: '/tools/tally-export', label: 'Tally export', icon: FileDown, permission: PERMISSIONS.REPORT_FINANCIAL, available: true },
     ],
   },
   {

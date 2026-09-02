@@ -2,7 +2,7 @@ import { apiDelete, apiGet, apiPost, apiPut } from '@/services/apiClient';
 import type { PageResponse } from '@/shared/types/api';
 import type {
   CreateUserRequest, ResetUserPasswordRequest, UpdateUserRequest,
-  UserResponse, UserSearchParams,
+  UserActivityResponse, UserResponse, UserSearchParams,
 } from '../types';
 
 /**
@@ -27,4 +27,8 @@ export const userService = {
 
   /** Soft delete. The row survives so historical created_by still resolves. */
   remove: (id: number) => apiDelete(`/v1/users/${id}`),
+
+  /** CR-053 backlog item 6. Business-record changes only - security events live on the Security log page instead. */
+  activity: (id: number, page: number, size: number) =>
+    apiGet<PageResponse<UserActivityResponse>>(`/v1/users/${id}/activity`, { params: { page, size } }),
 };

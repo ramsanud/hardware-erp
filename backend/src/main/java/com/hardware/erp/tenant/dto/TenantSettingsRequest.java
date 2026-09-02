@@ -47,5 +47,36 @@ public record TenantSettingsRequest(
         /** Null means "leave unchanged" - not every settings save is also a plan change. Self-declared, see CR-027: no payment gateway exists yet. */
         SubscriptionTier subscriptionTier,
         /** CR-053. Null means "leave unchanged", same convention as subscriptionTier above. */
-        InvoiceTheme invoiceTheme
+        InvoiceTheme invoiceTheme,
+
+        /**
+         * CR-053 backlog item 1. Unlike invoiceTheme, these are plain
+         * booleans with no "leave unchanged" state - every settings save
+         * writes all six, exactly like every other boolean-shaped field on
+         * this form. The frontend always sends the current toggle state.
+         */
+        boolean showItemDescription,
+        boolean showAlternateUnit,
+        boolean showPriceHistory,
+        boolean enableFreeQuantity,
+        boolean showInvoiceTime,
+        boolean showItemImage,
+        @Size(max = 255) String invoiceTagline,
+
+        /** CR-053 backlog item 3. Informational only - see V41's migration comment. */
+        boolean tdsEnabled,
+        @Size(max = 20) String tdsSectionCode,
+        @jakarta.validation.constraints.PositiveOrZero @jakarta.validation.constraints.DecimalMax("100.00")
+        java.math.BigDecimal tdsRatePercent,
+        boolean tcsEnabled,
+        @Size(max = 20) String tcsSectionCode,
+        @jakarta.validation.constraints.PositiveOrZero @jakarta.validation.constraints.DecimalMax("100.00")
+        java.math.BigDecimal tcsRatePercent,
+
+        /** CR-053 backlog item 4. Shows the e-Invoice review section on Invoice detail - generation itself always stays disabled. */
+        boolean einvoiceEnabled,
+
+        /** CR-053 backlog item 5. Read once a day by ReminderSchedulerService. */
+        boolean paymentDueReminderEnabled,
+        boolean lowStockAlertEnabled
 ) {}

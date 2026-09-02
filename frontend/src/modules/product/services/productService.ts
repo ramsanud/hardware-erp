@@ -4,7 +4,7 @@ import {
 import type { ApiResponse, PageResponse } from '@/shared/types/api';
 import type {
   ProductImportConfirmRequest, ProductImportPreviewResponse, ProductImportResultResponse,
-  ProductRequest, ProductResponse, ProductSearchParams, ProductSummaryResponse,
+  ProductPriceHistoryResponse, ProductRequest, ProductResponse, ProductSearchParams, ProductSummaryResponse,
 } from '../types';
 
 /** Backend: product/controller/ProductController.java, ProductImageController.java, ProductImportController.java */
@@ -21,6 +21,9 @@ export const productService = {
 
   /** Soft delete. Purchase and invoice history will reference product_id permanently. */
   remove: (id: number) => apiDelete(`/v1/products/${id}`),
+
+  /** CR-053 backlog item 1. Up to the 20 most recent non-cancelled sales, newest first. */
+  priceHistory: (id: number) => apiGet<ProductPriceHistoryResponse[]>(`/v1/products/${id}/price-history`),
 
   imageUrl: (id: number) => `/v1/products/${id}/image`,
   uploadImage: (id: number, file: File) => apiUploadFile(`/v1/products/${id}/image`, file),

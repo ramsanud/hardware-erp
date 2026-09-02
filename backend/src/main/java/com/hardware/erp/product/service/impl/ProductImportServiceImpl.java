@@ -150,7 +150,7 @@ public class ProductImportServiceImpl implements ProductImportService {
                     toPaise(row.purchasePriceRupees()), toPaise(row.sellingPriceRupees()), toPaise(row.mrpRupees()),
                     row.minimumStock() != null ? row.minimumStock() : BigDecimal.ZERO,
                     row.reorderLevel() != null ? row.reorderLevel() : BigDecimal.ZERO,
-                    ProductStatus.ACTIVE);
+                    ProductStatus.ACTIVE, null, null);
             try {
                 productService.create(productRequest);
                 created++;

@@ -7,6 +7,7 @@ import com.hardware.erp.security.ratelimit.RateLimitService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -67,7 +68,15 @@ public class SecurityConfig {
         return new RateLimitFilter(rateLimitService, objectMapper);
     }
 
+    /**
+     * @Order(1): PlatformAdminSecurityConfig's chain is @Order(0) and
+     * securityMatcher-scoped to /v1/platform-admin/**, so it is evaluated
+     * first for that prefix. This chain's anyRequest().authenticated() would
+     * otherwise also match a platform-admin path and authenticate it with
+     * the tenant JwtService - wrong signing key, wrong principal type.
+     */
     @Bean
+    @Order(1)
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
             // Stateless bearer API: no cookie-backed session for a forged form

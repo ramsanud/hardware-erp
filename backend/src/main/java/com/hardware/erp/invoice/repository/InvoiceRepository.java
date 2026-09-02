@@ -94,4 +94,23 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
            where i.tenant.id = :tenantId and i.status <> 'CANCELLED' and i.invoiceDate = :today
            """)
     long todaySales(@Param("tenantId") Long tenantId, @Param("today") LocalDate today);
+
+    /** CR-053 backlog item 2 (Tally export). Cancelled invoices excluded - a cancelled sale never really happened. */
+    @Query("""
+           select i from Invoice i
+           where i.tenant.id = :tenantId and i.status <> 'CANCELLED'
+             and i.invoiceDate >= :fromDate and i.invoiceDate <= :toDate
+           order by i.invoiceDate asc, i.id asc
+           """)
+    List<Invoice> findForExport(@Param("tenantId") Long tenantId,
+                                @Param("fromDate") LocalDate fromDate,
+                                @Param("toDate") LocalDate toDate);
+
+    /** CR-053 backlog item 5 (payment-due reminder job). */
+    @Query("""
+           select count(i), coalesce(sum(i.balancePaise), 0)
+           from Invoice i
+           where i.tenant.id = :tenantId and i.status <> 'CANCELLED' and i.balancePaise > 0
+           """)
+    List<Object[]> outstandingSummary(@Param("tenantId") Long tenantId);
 }

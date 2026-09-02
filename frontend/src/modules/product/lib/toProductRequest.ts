@@ -30,5 +30,9 @@ export function toProductRequest(values: ProductValues): ProductRequest {
     minimumStock: values.minimumStock,
     reorderLevel: values.reorderLevel,
     status: values.status,
+    // CR-053 backlog item 1. 0 means "not applicable" for the factor - the
+    // form's own refine() guarantees the label is blank exactly when this is.
+    altUnitLabel: blankToNull(values.altUnitLabel),
+    altUnitConversionFactor: values.altUnitConversionFactor > 0 ? values.altUnitConversionFactor : null,
   };
 }

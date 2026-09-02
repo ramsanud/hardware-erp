@@ -1,22 +1,85 @@
 # RESUME POINT
 
-**Updated:** 2026-08-31 (CR-051 + CR-052 done and live-verified locally. CR-053 phase 1 — invoice PDF themes — also done and live-verified. Neither is committed yet. A second, separate multi-phase backlog (CR-053 phases 2+) is queued from a screenshot-driven request — see below.)
+**Updated:** 2026-09-02 (CR-053 backlog items 2-7 — Tally export, TDS/TCS settings, e-Invoice UI shell, reminder settings (2 of 5 types + a real scheduled job), named roles + activity feed, GST calculator — all done, tested, live-verified against the real local backend, not yet committed. Item 8 explicitly deferred, needs scoping. See CHANGE_REQUEST_REGISTRY.md's own entry for full detail. CR-054 phase 1 section below is unchanged from 2026-09-01.)
 
 ---
 
 ## Next file to work on
 
-**Uncommitted work sitting on `main` right now — commit it first, following CLAUDE.md's branch workflow, before starting anything else.** `main` and `develop` both exist; this work was built directly against `main`'s working tree, same as every other change this session, but per CLAUDE.md it belongs on a feature branch merged back with `--no-ff`. Everything below is one working tree's worth of uncommitted diff (CR-051, CR-052, CR-053 phase 1 together) — commit as one or split per CR, reviewer's call. Suggested: `git switch -c feature/sales-order-delivery-challan-credit-note-invoice-themes`, commit, merge into `develop`, then into `main`. Not yet done because committing was not explicitly requested this round.
+**CR-053 backlog item 8 — not started, needs scoping before any of it begins.** The rest of the myBillBook premium-plan list (barcode/warehouse, scan-to-invoice, online store, foreign-currency invoicing, "Add your CA" access, GSTR JSON export, remove-branding toggle, recover deleted invoices, bulk-edit items). Several overlap with Master Prompt phases the user has not yet picked (barcode/warehouse in particular) - resolve that overlap with the user before guessing which backlog takes priority.
 
-**CR-053, phases 3+ — a live backlog, being worked one item at a time on explicit "add all features one by one" authorization.** Phase 1 (invoice PDF themes) and phase 2 (registration-form scroll fix + auth-page icon polish) are both done. The queue, roughly in the order raised, none of the rest started yet - pick the next one using judgement, no need to re-ask before each (already authorized), but keep doing them one at a time and verify each before moving on:
+**CR-054, phase 2 — not started, needs a phase selection first.** Phase 1
+(identity/auth/MFA foundation - see the dedicated section directly below)
+is done, tested, and live-verified via `PlatformAdminAuthControllerIT`, but
+**not committed to git yet** - same uncommitted-on-`main` situation as
+everything else below. The Platform Admin spec's remaining phases (tenant
+management, support tickets/impersonation, announcements, subscriptions,
+system health/incidents, security center, developer tools, backup/
+maintenance/feature-flags/analytics) were proposed to the user but none
+selected yet - do not silently start one. Natural next candidate given
+what phase 1 already built: **tenant management** (list/detail/status
+control: activate/suspend/disable/reactivate/archive) - it is the first
+thing a `PLATFORM_ADMIN`-role account would actually use, and needs no new
+infrastructure beyond what phase 1 already has (its own JWT stack, its own
+audit log, its own RBAC enums to extend with a `TENANT_VIEW`/`TENANT_MANAGE`
+permission pair).
 
-1. **Invoice "Additional Settings" toggles** — Show Item Description, Show Alternate Unit, Price History, Free Quantity, Show Time on Invoices, Show Item Image, Tagline. Small, bounded, same shape as `Tenant.invoiceTheme` (CR-053 phase 1) - most likely more `tenant` columns read by `InvoicePdfService`.
-2. **Tally export** — a Tally-compatible XML export of sales/purchases/parties/items for a date range. Real, bounded, no external credential needed.
-3. **TDS/TCS settings** — under Business & GST Settings, affecting invoice/purchase tax calculation. Bounded, no external dependency.
-4. **e-Invoice (IRN) — UI-only, explicitly not-yet-live.** User's own decision when asked: build the seller/buyer/voucher/HSN-code review screens and wire them to save data, but the final "Generate e-Invoice" action must stay disabled with an honest "needs a GSP/NIC account" message - same degrade-gracefully pattern CR-036 phase 1 used for WhatsApp sharing. **Never** fabricate a real IRN or claim generation succeeded - no GSP/NIC credential exists anywhere in this environment. If real credentials are ever supplied, this becomes a different, bigger piece of work (a real GSP/NIC API integration), not an extension of the UI shell.
-5. **Reminder settings page** — SMS-to-party on transaction, payment-due reminders, daily outstanding-payments/sales-summary digest, low-stock alert, WhatsApp alerts. Needs a scheduled job (nothing in this codebase currently runs one). WhatsApp alerts hit the same no-credential gap as e-Invoice above - default to the same UI-present-but-disabled or browser-share-fallback treatment rather than asking again, unless something below changes that.
-6. **Named user roles + activity feed** — preset display names (Partner, Salesman, Stock Manager, Delivery Boy, CA) over the existing four system roles, plus a per-user activity timeline on the Manage User page. The RBAC/permission engine underneath already exists in full (`PermissionGate`, `PermissionCode`, `@PreAuthorize`) — this is a presentation layer, not new authorization.
-7. **GST/margin calculator tool** — a standalone cost-price + GST% → selling-price calculator with a profit-ratio donut chart. Not tied to any existing document; a small new page, likely with no backend at all (pure arithmetic).
+**Uncommitted work sitting on `main` right now — commit it first, following CLAUDE.md's branch workflow, before starting anything else.** `main` and `develop` both exist; this work was built directly against `main`'s working tree, same as every other change this session, but per CLAUDE.md it belongs on a feature branch merged back with `--no-ff`. Everything below is one working tree's worth of uncommitted diff (CR-051, CR-052, CR-053 phase 1, CR-054 phase 1 together) — commit as one or split per CR, reviewer's call. Suggested: `git switch -c feature/sales-order-delivery-challan-credit-note-invoice-themes`, commit, merge into `develop`, then into `main`. Not yet done because committing was not explicitly requested this round.
+
+---
+
+## CR-054 phase 1 — Platform Admin Console: identity & auth foundation (DONE 2026-09-01)
+
+Full detail in `project-knowledge/CHANGE_REQUEST_REGISTRY.md`'s CR-054
+entry - this is the summary. A second, structurally separate login system
+for Hardware ERP *staff* (`platform_admin` table, V39, no `tenant_id`
+anywhere), never a flag on `app_user`: its own JWT signing key/issuer
+(`PlatformAdminJwtService`), its own `@Order(0)` Spring Security filter
+chain (`PlatformAdminSecurityConfig`, `.securityMatcher("/v1/platform-admin/**")`),
+its own rate limiter, its own audit log (`platform_audit_log`, deliberately
+no FK on `platform_admin_id` - see the CR entry for the `REQUIRES_NEW`
+transaction-ordering bug that taught this). MFA is mandatory for every
+account, no opt-out: a hand-rolled RFC 6238 `TotpService` (no new Maven
+dependency), QR enrollment (reused/widened `QrCodeGenerator`), 10 one-time
+backup codes issued once enrollment is confirmed. `PlatformAdminUserController`
+(SUPER_ADMIN-only create/list) is the only business endpoint - just enough
+to prove the 7-role RBAC model end to end. Frontend: `/platform-admin/{login,mfa,enroll,dashboard}`,
+its own axios client and in-memory token store (`platformAdminApiClient.ts`/
+`platformAdminTokenStorage.ts`), its own `PlatformAdminAuthProvider`, wired
+into `routes/index.tsx` as a fully isolated subtree - never inside the
+tenant `AuthProvider`/`AuthLayout`/`AppLayout`.
+
+**Verified**: `mvn clean compile` + `mvn clean verify` clean (existing 298
+unit + 100 Testcontainers integration tests unaffected). New
+`PlatformAdminAuthControllerIT` - 10 tests, real PostgreSQL - covers the
+full enroll→confirm→session flow with a genuine computed TOTP code,
+already-enrolled login, wrong-code rejection, backup-code single-use,
+enumeration resistance, refresh rotation + reuse detection, SUPER_ADMIN-only
+RBAC, and cross-boundary isolation in both directions (a real tenant token
+refused on `/v1/platform-admin/**`, a real platform-admin token refused on
+`/v1/auth/**`). `tsc -b --force` and `vite build` both clean. **Not
+performed**: no browser automation tool in this environment - the frontend
+pages have not been clicked through, only typechecked and build-verified.
+
+**Explicitly not done, needs selection before starting**: every phase
+after identity/auth - tenant management, support tools, announcements,
+subscriptions, system health, security center, developer tools, backup/
+maintenance/analytics - plus the two doc files
+(`docs/PLATFORM_ADMIN_GUIDE.md`/`PLATFORM_ADMIN_SECURITY.md`, premature
+before more of the console exists to document truthfully) and the
+synthetic demo data / 20-step test scenario from the original spec.
+
+---
+
+**CR-053, phases 3+ — a live backlog, being worked one item at a time on explicit "add all features one by one" authorization.** Phase 1 (invoice PDF themes) and phase 2 (registration-form scroll fix + auth-page icon polish) are both done. Items 1-7 below are now all **DONE** (2026-09-02) - see CHANGE_REQUEST_REGISTRY.md's "CR-053 backlog items 2-7" entry for full detail. Only item 8 remains, and it explicitly needs scoping first:
+
+1. ~~**Invoice "Additional Settings" toggles**~~ — DONE.
+2. ~~**Tally export**~~ — DONE. `GET /v1/exports/tally`, ledger-level vouchers only (not item-wise inventory), sign convention unverified against real Tally software (none in this environment) but every voucher provably sums to zero (`TallyXmlBuilderTest` + live-verified against real seeded invoice data).
+3. ~~**TDS/TCS settings**~~ — DONE, informational only (never touches a document's own stored total).
+4. ~~**e-Invoice (IRN) UI shell**~~ — DONE, review-only, Generate button permanently disabled with the honest GSP/NIC message.
+5. **Reminder settings page** — PARTIALLY DONE: payment-due reminder and low-stock alert are live, with a real daily `@Scheduled` job (`ReminderSchedulerService`) that logs an SMS via the existing stub provider. SMS-on-transaction, the daily sales-summary digest, and WhatsApp-specific alerts are still not built - pick this up again if wanted.
+6. ~~**Named user roles + activity feed**~~ — DONE. Also found+fixed a real bug while extending this area: `AdditionalSettingsCard` (item 1) was never rendered in Settings' edit-mode view, only the read-only view.
+7. ~~**GST/margin calculator tool**~~ — DONE. `/tools/gst-calculator`.
 8. The rest of the screenshotted premium-plan list, not yet scoped in detail: barcode generation/printing, scan-to-create-invoice, an online store, foreign-currency invoicing, "Add your CA" access, GSTR JSON export, remove-branding toggle, recover deleted invoices, bulk-edit items. Several of these overlap with Master Prompt phases already known to be missing (barcode/warehouse was one of the three Master Prompt phases the user has not yet picked) — resolve that overlap before starting rather than guessing which backlog takes priority.
 
 **A defect noticed in passing, not fixed (out of scope for CR-053 phase 2):** `SupplierWizard`'s submit button shows two overlapping loading spinners - it passes `loading={submitting}` to `Button` *and* separately renders its own `<Loader2 className="animate-spin" />`, but `Button`'s own `loading` prop already renders that spinner internally. `RegisterPage`'s new wizard (phase 2) deliberately does not repeat this. Worth a one-line fix whenever `SupplierWizard` is next touched.

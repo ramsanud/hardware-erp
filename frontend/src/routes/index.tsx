@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { AppLayout } from '@/layouts/AppLayout';
 import { AUTH_ROUTES, PERMISSIONS } from '@/modules/auth/constants';
@@ -60,7 +60,16 @@ import { AttendancePage } from '@/modules/labour/pages/AttendancePage';
 import { RegisterPage } from '@/modules/tenant/pages/RegisterPage';
 import { DEVELOPER_ROUTES } from '@/modules/developer/constants';
 import { DeveloperInspectionPage } from '@/modules/developer/pages/DeveloperInspectionPage';
+import { TOOLS_ROUTES } from '@/modules/tools/constants';
+import { GstCalculatorPage } from '@/modules/tools/pages/GstCalculatorPage';
+import { TallyExportPage } from '@/modules/tools/pages/TallyExportPage';
 import { NotFoundPage } from '@/shared/components/NotFoundPage';
+import { PlatformAdminAuthProvider } from '@/modules/platform-admin/hooks/PlatformAdminAuthProvider';
+import { PlatformAdminLoginPage } from '@/modules/platform-admin/pages/PlatformAdminLoginPage';
+import { PlatformAdminMfaVerifyPage } from '@/modules/platform-admin/pages/PlatformAdminMfaVerifyPage';
+import { PlatformAdminMfaEnrollPage } from '@/modules/platform-admin/pages/PlatformAdminMfaEnrollPage';
+import { PlatformAdminDashboardPage } from '@/modules/platform-admin/pages/PlatformAdminDashboardPage';
+import { PlatformAdminProtectedRoute } from '@/modules/platform-admin/routes/PlatformAdminProtectedRoute';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RequirePermission } from './RequirePermission';
 
@@ -71,6 +80,25 @@ import { RequirePermission } from './RequirePermission';
 export function AppRoutes() {
   return (
     <Routes>
+      {/*
+        Platform Admin Console (CR-054) - deliberately outside AuthLayout/
+        AppLayout and the tenant AuthProvider entirely. Its own provider
+        wraps just this subtree, so a tenant session and a platform-admin
+        session never share state even if both are open in the same browser.
+      */}
+      <Route
+        path="/platform-admin/*"
+        element={<PlatformAdminAuthProvider><Outlet /></PlatformAdminAuthProvider>}
+      >
+        <Route path="login" element={<PlatformAdminLoginPage />} />
+        <Route path="mfa" element={<PlatformAdminMfaVerifyPage />} />
+        <Route path="enroll" element={<PlatformAdminMfaEnrollPage />} />
+        <Route element={<PlatformAdminProtectedRoute />}>
+          <Route path="dashboard" element={<PlatformAdminDashboardPage />} />
+        </Route>
+        <Route index element={<Navigate to="login" replace />} />
+      </Route>
+
       {/* Public */}
       <Route element={<AuthLayout />}>
         <Route path={AUTH_ROUTES.login} element={<LoginPage />} />
@@ -190,6 +218,14 @@ export function AppRoutes() {
               DEVELOPER_INSPECT, and refuse everyone in production. */}
           <Route element={<RequirePermission permission={PERMISSIONS.DEVELOPER_INSPECT} />}>
             <Route path={DEVELOPER_ROUTES.inspection} element={<DeveloperInspectionPage />} />
+          </Route>
+
+          {/* CR-053 backlog item 7 - no permission gate, same reasoning as
+              its sidebar entry: pure client-side arithmetic, no tenant data. */}
+          <Route path={TOOLS_ROUTES.gstCalculator} element={<GstCalculatorPage />} />
+
+          <Route element={<RequirePermission permission={PERMISSIONS.REPORT_FINANCIAL} />}>
+            <Route path={TOOLS_ROUTES.tallyExport} element={<TallyExportPage />} />
           </Route>
 
           {/* Every role can reach the dashboard - it only renders the cards

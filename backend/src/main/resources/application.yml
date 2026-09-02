@@ -86,6 +86,24 @@ app:
     access-token-minutes: 15
     refresh-token-days: 7
 
+  # Platform Admin Console (CR-054). Its own secret and issuer, deliberately
+  # different from app.jwt above - see PlatformAdminJwtProperties. Must be a
+  # DIFFERENT value in every real deployment; the default below is only for a
+  # fresh local clone and is exactly as throwaway as app.jwt's own default.
+  platform-admin:
+    jwt:
+      secret: ${PLATFORM_ADMIN_JWT_SECRET:UGxhdGZvcm0tQWRtaW4tZGV2LW9ubHktMzJieXRlcy1taW4h}
+      issuer: hardware-erp-platform-admin
+      access-token-minutes: 15
+      refresh-token-days: 7
+      mfa-token-minutes: 10
+    bootstrap:
+      # Must be set deliberately. Production never creates an account silently.
+      enabled: ${PLATFORM_ADMIN_BOOTSTRAP_ENABLED:false}
+      email: ${PLATFORM_ADMIN_BOOTSTRAP_EMAIL:}
+      password: ${PLATFORM_ADMIN_BOOTSTRAP_PASSWORD:}
+      full-name: ${PLATFORM_ADMIN_BOOTSTRAP_NAME:Platform Super Admin}
+
   security:
     refresh-token-transport: ${REFRESH_TOKEN_TRANSPORT:COOKIE}
     cookie-name: erp_refresh_token
@@ -112,6 +130,7 @@ app:
     reset-password-per-ip-per-hour: 10
     refresh-per-ip-per-minute: 30
     register-per-ip-per-hour: 5
+    platform-admin-login-per-ip-per-minute: 10
 
   password-reset:
     token-validity-minutes: 30

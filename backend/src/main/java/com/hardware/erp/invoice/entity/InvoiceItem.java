@@ -40,6 +40,16 @@ public class InvoiceItem {
     @Column(name = "quantity", nullable = false, precision = 18, scale = 4)
     private BigDecimal quantity;
 
+    /**
+     * CR-053 backlog item 1. Bonus units given free, over and above quantity -
+     * printed as "10 + 2 Free" when Tenant.enableFreeQuantity is on, and
+     * deducted from stock alongside quantity (see InvoiceServiceImpl), but
+     * never priced - LineDiscount never sees this field.
+     */
+    @Column(name = "free_quantity", nullable = false, precision = 18, scale = 4)
+    @Builder.Default
+    private BigDecimal freeQuantity = BigDecimal.ZERO;
+
     /** UQC - snapshotted alongside quantity for the same reason as unitPricePaise. */
     @Column(name = "unit", nullable = false, length = 20)
     private String unit;

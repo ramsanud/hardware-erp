@@ -36,6 +36,7 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
     private final SecurityAuditService auditService;
     private final EntitlementService entitlementService;
+    private final com.hardware.erp.common.activity.ActivityLogRepository activityLogRepository;
 
     @Override
     @Transactional
@@ -180,6 +181,20 @@ public class UserServiceImpl implements UserService {
                 userRepository.search(SecurityUtils.requireCurrentTenantId(),
                         blankToNull(search), status, roleId, pageable),
                 userMapper::toUserResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<com.hardware.erp.auth.dto.UserActivityResponse> activity(Long id, Pageable pageable) {
+        // requireUser confirms id belongs to the caller's own tenant BEFORE
+        // it is ever used to filter activity_log, which carries no
+        // tenant_id of its own - see ActivityLogRepository's javadoc.
+        User user = requireUser(id, SecurityUtils.requireCurrentTenantId());
+        return PageResponse.from(
+                activityLogRepository.findByUserIdOrderByCreatedAtDesc(user.getId(), pageable),
+                log -> new com.hardware.erp.auth.dto.UserActivityResponse(
+                        log.getId(), log.getModuleCode(), log.getEntityType(), log.getEntityId(),
+                        log.getEntityLabel(), log.getAction().name(), log.getRemarks(), log.getCreatedAt()));
     }
 
     @Override
