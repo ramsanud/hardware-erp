@@ -15,6 +15,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     Optional<Product> findByIdAndTenantId(Long id, Long tenantId);
 
+    /** Platform Admin tenant data export (CR-057 phase 11). */
+    List<Product> findByTenantId(Long tenantId);
+
     /** Batch lookup for a client-supplied id list (e.g. a coupon's product restriction) - every id must resolve within this, or it doesn't belong to the caller's tenant (CR-016). */
     List<Product> findAllByIdInAndTenantId(List<Long> ids, Long tenantId);
 

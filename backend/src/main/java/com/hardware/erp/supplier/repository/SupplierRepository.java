@@ -22,6 +22,9 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
 
     Optional<Supplier> findByIdAndTenantId(Long id, Long tenantId);
 
+    /** Platform Admin tenant data export (CR-057 phase 11). */
+    List<Supplier> findByTenantId(Long tenantId);
+
     boolean existsBySupplierCodeAndTenantId(String supplierCode, Long tenantId);
 
     boolean existsBySupplierCodeAndTenantIdAndIdNot(String supplierCode, Long tenantId, Long id);

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  ActivitySquare, AlertTriangle, Building2, FileClock, Flag, LayoutGrid, LifeBuoy, LogOut, Menu, ShieldAlert, ShieldCheck, TerminalSquare,
+  ActivitySquare, AlertTriangle, BarChart3, Building2, FileClock, Flag, LayoutGrid, LifeBuoy, LogOut, Menu, Settings, ShieldAlert, ShieldCheck, TerminalSquare,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
@@ -26,6 +26,7 @@ import { PLATFORM_ADMIN_ROUTES } from '../constants';
 const NAV_ITEMS = [
   { to: PLATFORM_ADMIN_ROUTES.dashboard, label: 'Overview', icon: LayoutGrid, permission: null },
   { to: PLATFORM_ADMIN_ROUTES.tenants, label: 'Tenants', icon: Building2, permission: 'TENANT_VIEW' },
+  { to: PLATFORM_ADMIN_ROUTES.analytics, label: 'Analytics', icon: BarChart3, permission: 'ANALYTICS_VIEW' },
   { to: PLATFORM_ADMIN_ROUTES.systemHealth, label: 'System Health', icon: ActivitySquare, permission: 'SYSTEM_HEALTH_VIEW' },
   { to: PLATFORM_ADMIN_ROUTES.incidents, label: 'Incidents', icon: AlertTriangle, permission: 'SYSTEM_HEALTH_VIEW' },
   { to: PLATFORM_ADMIN_ROUTES.support, label: 'Support Center', icon: LifeBuoy, permission: 'SUPPORT_VIEW' },
@@ -33,6 +34,7 @@ const NAV_ITEMS = [
   { to: PLATFORM_ADMIN_ROUTES.developerTools, label: 'Developer Tools', icon: TerminalSquare, permission: 'DEVELOPER_TOOLS_VIEW' },
   { to: PLATFORM_ADMIN_ROUTES.security, label: 'Security Center', icon: ShieldAlert, permission: null },
   { to: PLATFORM_ADMIN_ROUTES.featureFlags, label: 'Feature Flags', icon: Flag, permission: 'FEATURE_FLAG_VIEW' },
+  { to: PLATFORM_ADMIN_ROUTES.settings, label: 'Platform Settings', icon: Settings, permission: 'BILLING_VIEW' },
 ] as const;
 
 export function PlatformAdminLayout() {

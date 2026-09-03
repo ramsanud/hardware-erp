@@ -12,6 +12,7 @@ import { formatDateTime } from '@/shared/lib/utils';
 import { ApiError } from '@/shared/types/api';
 import { PLATFORM_ADMIN_ROUTES } from '../constants';
 import { platformAdminDashboardService } from '../services/platformAdminTenantService';
+import { PlatformRevenueChart } from '../components/PlatformRevenueChart';
 import type { PlatformDashboardResponse } from '../types';
 
 /**
@@ -123,11 +124,16 @@ export function PlatformAdminDashboardPage() {
               </div>
             </div>
             <p className="mt-4 text-xs text-muted-foreground">
-              Self-declared tiers - no billing gateway is connected yet, so this is plan mix,
-              not verified paid revenue. See the Subscriptions &amp; Billing phase for real MRR.
+              Plan mix reflects every tenant's current tier, however they got there - a self-declared
+              pick or a real paid upgrade. See Revenue below for verified paid amounts.
             </p>
           </CardContent>
         </Card>
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-semibold text-muted-foreground">Billing</h2>
+        <PlatformRevenueChart />
       </section>
     </>
   );

@@ -1721,3 +1721,61 @@ produced a false sense of "374/374 green" that never touched roughly a
 third of the suite. A "full suite" checkmark is only as good as the command
 that produced it; when a comment in the build file explains a footgun by
 name, read it before trusting a green result.
+
+## BUG-SET-001 — self-declared plan picker was a free checkout bypass once billing existed
+
+**Module:** Settings / Subscriptions & Billing
+**Severity:** MEDIUM (no production impact - no environment in this repo has
+ever had real Razorpay credentials configured, so the bypass was never
+exploitable in practice; caught while building the feature that would have
+made it exploitable, not after)
+**Layer:** BACKEND ONLY
+**Status:** Fixed (CR-057 phase 9)
+**Found:** 2026-09-03, while wiring real Razorpay checkout - not from a bug
+report.
+
+### Symptom (would-be)
+
+Once Razorpay billing is configured, an OWNER could still call
+`PUT /v1/settings` with `subscriptionTier: "MAX"` directly - the same
+self-declared picker CR-027 shipped before any payment gateway existed -
+and receive the paid tier with no payment, no order, no Razorpay
+involvement at all.
+
+### Root cause
+
+`TenantSettingsServiceImpl.update()` applied `request.subscriptionTier()`
+to the tenant unconditionally (`tenant.setSubscriptionTier(...)`, no
+gating) since CR-027. That was correct at the time - there was nothing to
+bypass. CR-057 phase 9 added a real paid path (`SubscriptionBillingService`)
+without touching this pre-existing unconditional setter, which would have
+left it live as a silent alternate route to the same field.
+
+### Fix
+
+`TenantSettingsServiceImpl.update()` now checks
+`RazorpayProperties.active()` before applying a tier change: if billing is
+configured **and** the requested tier is a genuine upgrade (higher ordinal
+than the tenant's current tier), it rejects with
+`422 UPGRADE_REQUIRES_CHECKOUT` naming the real Billing card. A downgrade
+(including to `FREE`) is never gated - it needs no payment either way, in
+both configurations. With no gateway configured (every environment in this
+repo today), behaviour is unchanged from CR-027.
+
+### Regression test
+
+`TenantSettingsServiceImplTest` (new file - this service had none before):
+`upgradeRejectedWhenBillingActive`, `downgradeStillAllowedWhenBillingActive`,
+`upgradeStillAllowedWhenBillingNotConfigured` - pins both the fix and the
+"unchanged when unconfigured" guarantee explicitly, so a future change
+cannot silently reopen the bypass or silently start blocking downgrades.
+
+### Lesson
+
+**A "self-declared, no gateway exists yet" escape hatch is a liability the
+moment a real gateway is added elsewhere in the same tenant field** - the
+same field having two writers (a free picker and a paid checkout) is a
+structural risk independent of whether either writer is individually
+correct. When adding a real paid/privileged path to a field that already
+had an honest placeholder writer, always re-check that placeholder's own
+gating in the same change, not as a follow-up.

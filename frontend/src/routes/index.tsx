@@ -81,6 +81,8 @@ import { PlatformAdminAuditLogPage } from '@/modules/platform-admin/pages/Platfo
 import { PlatformAdminDeveloperToolsPage } from '@/modules/platform-admin/pages/PlatformAdminDeveloperToolsPage';
 import { PlatformAdminSecurityPage } from '@/modules/platform-admin/pages/PlatformAdminSecurityPage';
 import { PlatformAdminFeatureFlagsPage } from '@/modules/platform-admin/pages/PlatformAdminFeatureFlagsPage';
+import { PlatformAdminAnalyticsPage } from '@/modules/platform-admin/pages/PlatformAdminAnalyticsPage';
+import { PlatformAdminSettingsPage } from '@/modules/platform-admin/pages/PlatformAdminSettingsPage';
 import { SUPPORT_ROUTES } from '@/modules/support/constants';
 import { SupportTicketListPage } from '@/modules/support/pages/SupportTicketListPage';
 import { SupportTicketDetailPage } from '@/modules/support/pages/SupportTicketDetailPage';
@@ -122,6 +124,8 @@ export function AppRoutes() {
             <Route path="developer-tools" element={<PlatformAdminDeveloperToolsPage />} />
             <Route path="security" element={<PlatformAdminSecurityPage />} />
             <Route path="feature-flags" element={<PlatformAdminFeatureFlagsPage />} />
+            <Route path="analytics" element={<PlatformAdminAnalyticsPage />} />
+            <Route path="settings" element={<PlatformAdminSettingsPage />} />
           </Route>
         </Route>
         <Route index element={<Navigate to="login" replace />} />

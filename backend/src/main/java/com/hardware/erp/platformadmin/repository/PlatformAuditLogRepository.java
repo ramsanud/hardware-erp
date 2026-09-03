@@ -41,4 +41,7 @@ public interface PlatformAuditLogRepository extends JpaRepository<PlatformAuditL
            """)
     java.util.List<PlatformAuditLog> findRecentByActionIn(@Param("actions") java.util.List<PlatformAuditAction> actions,
                                                             org.springframework.data.domain.Pageable pageable);
+
+    /** Tenant Analytics churn (CR-057 phase 10) - a real suspend event count, not inferred from tenant.status (which carries no history). */
+    long countByActionAndSuccessTrueAndCreatedAtBetween(PlatformAuditAction action, LocalDateTime from, LocalDateTime to);
 }

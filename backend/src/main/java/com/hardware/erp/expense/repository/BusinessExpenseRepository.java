@@ -9,11 +9,15 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 public interface BusinessExpenseRepository extends JpaRepository<BusinessExpense, Long> {
 
     Optional<BusinessExpense> findByIdAndTenantId(Long id, Long tenantId);
+
+    /** Platform Admin tenant data export (CR-057 phase 11). */
+    List<BusinessExpense> findByTenantId(Long tenantId);
 
     /** Platform Admin tenant usage summary. */
     long countByTenantId(Long tenantId);

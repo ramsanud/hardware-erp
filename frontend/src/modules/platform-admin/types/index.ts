@@ -103,6 +103,124 @@ export interface PlatformDashboardResponse {
   generatedAt: string;
 }
 
+// ---------------------------------------------------------------
+// Phase 9 - Subscriptions & Billing. Mirrors
+// com.hardware.erp.billing.dto.{PlatformBillingOverviewResponse,TenantBillingHistoryResponse}.
+// ---------------------------------------------------------------
+
+export type SubscriptionOrderStatus = 'CREATED' | 'PAID' | 'FAILED' | 'CANCELLED';
+export type SubscriptionPaymentStatus = 'CAPTURED' | 'FAILED';
+export type PaymentSource = 'CLIENT_VERIFY' | 'WEBHOOK';
+
+export interface MonthlyRevenuePoint {
+  month: string;
+  revenuePaise: number;
+  successfulCount: number;
+  failedCount: number;
+}
+
+export interface PlatformBillingOverviewResponse {
+  razorpayConfigured: boolean;
+  totalRevenuePaiseLast12Months: number;
+  successfulPaymentsLast12Months: number;
+  failedPaymentsLast12Months: number;
+  monthly: MonthlyRevenuePoint[];
+}
+
+export interface SubscriptionPaymentResponse {
+  paymentId: number;
+  orderId: number;
+  requestedTier: SubscriptionTier;
+  amountPaise: number;
+  currency: string;
+  status: SubscriptionPaymentStatus;
+  source: PaymentSource;
+  capturedAt?: string | null;
+}
+
+export interface TenantBillingHistoryResponse {
+  currentTier: SubscriptionTier;
+  payments: SubscriptionPaymentResponse[];
+}
+
+// ---------------------------------------------------------------
+// Phase 10 - Tenant Analytics. Mirrors
+// com.hardware.erp.platformadmin.dto.TenantAnalyticsResponse.
+// ---------------------------------------------------------------
+
+export interface GrowthPoint {
+  month: string;
+  newTenants: number;
+  newUsers: number;
+  activeUsers: number;
+}
+
+export interface ModuleUsagePoint {
+  module: string;
+  tenantsUsing: number;
+  adoptionPercent: number;
+}
+
+export interface ChurnPoint {
+  month: string;
+  tenantsSuspended: number;
+  totalTenantsByMonthEnd: number;
+  churnRatePercent: number | null;
+}
+
+// ---------------------------------------------------------------
+// Phase 11 - Backup Center. Mirrors
+// com.hardware.erp.platformadmin.dto.TenantExportLogResponse.
+// ---------------------------------------------------------------
+
+export type TenantExportFormat = 'JSON' | 'CSV';
+export type TenantExportStatus = 'COMPLETED' | 'FAILED';
+
+// ---------------------------------------------------------------
+// Phase 12 - Platform Settings (Razorpay). Mirrors
+// com.hardware.erp.platformadmin.dto.{RazorpayConfigResponse,UpdateRazorpayConfigRequest}.
+// ---------------------------------------------------------------
+
+export type RazorpayConfigSource = 'DATABASE' | 'ENVIRONMENT' | 'NOT_CONFIGURED';
+
+export interface RazorpayConfigResponse {
+  enabled: boolean;
+  keyId: string | null;
+  keySecretConfigured: boolean;
+  webhookSecretConfigured: boolean;
+  proPlanAmountPaise: number;
+  maxPlanAmountPaise: number;
+  source: RazorpayConfigSource;
+  updatedAt: string | null;
+}
+
+export interface UpdateRazorpayConfigRequest {
+  enabled: boolean;
+  keyId?: string | null;
+  /** Omit/undefined = leave unchanged; "" = deliberately clear. Never round-tripped from the response, which never carries the secret. */
+  keySecret?: string;
+  webhookSecret?: string;
+  proPlanAmountPaise?: number;
+  maxPlanAmountPaise?: number;
+}
+
+export interface TenantExportLogResponse {
+  id: number;
+  format: TenantExportFormat;
+  status: TenantExportStatus;
+  recordCount: number | null;
+  fileSizeBytes: number | null;
+  errorDetail: string | null;
+  createdAt: string;
+}
+
+export interface TenantAnalyticsResponse {
+  activeTenantsNow: number;
+  growth: GrowthPoint[];
+  moduleUsage: ModuleUsagePoint[];
+  churn: ChurnPoint[];
+}
+
 export interface PlatformTenantSummaryResponse {
   id: number;
   name: string;

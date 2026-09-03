@@ -33,6 +33,7 @@ import { SETTINGS_ROUTES } from '../constants';
 import { SUBSCRIPTION_TIER_OPTIONS, SUBSCRIPTION_TIERS } from '../constants/subscriptionTiers';
 import { INVOICE_THEME_OPTIONS, INVOICE_THEMES } from '../constants/invoiceThemes';
 import { SubscriptionCouponsCard } from '../components/SubscriptionCouponsCard';
+import { BillingUpgradeCard } from '../components/BillingUpgradeCard';
 import { BankAccountsCard } from '../components/BankAccountsCard';
 import type { InvoiceTheme, SubscriptionTier, TenantSettingsResponse, UsageSummaryResponse } from '../types';
 
@@ -456,6 +457,15 @@ export function ShopSettingsPage() {
     void refreshBrand();
   };
 
+  /** Same "patch in place, don't reload()" reasoning as handleCouponRedeemed above. */
+  const handleUpgraded = (tier: SubscriptionTier) => {
+    setSettings((current) => (current
+      ? { ...current, subscriptionTier: tier, subscriptionTrialExpiresAt: null }
+      : current));
+    settingsService.usage().then(setUsage).catch(() => setUsage(null));
+    void refreshBrand();
+  };
+
   if (error) return <Card><ErrorState error={error} onRetry={reload} /></Card>;
   if (loading || !settings) {
     return (
@@ -481,6 +491,8 @@ export function ShopSettingsPage() {
 
         <div className="max-w-2xl space-y-5">
           <SubscriptionPlanCard currentTier={settings.subscriptionTier} trialExpiresAt={settings.subscriptionTrialExpiresAt} onChangeTier={changeTier} />
+          <BillingUpgradeCard currentTier={settings.subscriptionTier} tenantName={settings.name}
+                               ownerEmail={settings.email} ownerPhone={settings.phone} onUpgraded={handleUpgraded} />
           {usage ? <UsageCard usage={usage} /> : null}
           <SubscriptionCouponsCard onRedeemed={handleCouponRedeemed} />
           <InvoiceThemeCard currentTheme={settings.invoiceTheme} onChangeTheme={changeInvoiceTheme} />
@@ -571,6 +583,8 @@ export function ShopSettingsPage() {
 
       <div className="max-w-2xl mb-5 space-y-5">
         <SubscriptionPlanCard currentTier={settings.subscriptionTier} trialExpiresAt={settings.subscriptionTrialExpiresAt} onChangeTier={changeTier} />
+        <BillingUpgradeCard currentTier={settings.subscriptionTier} tenantName={settings.name}
+                             ownerEmail={settings.email} ownerPhone={settings.phone} onUpgraded={handleUpgraded} />
         {usage ? <UsageCard usage={usage} /> : null}
         <SubscriptionCouponsCard onRedeemed={handleCouponRedeemed} />
         <InvoiceThemeCard currentTheme={settings.invoiceTheme} onChangeTheme={changeInvoiceTheme} />
@@ -788,9 +802,11 @@ export function ShopSettingsPage() {
 }
 
 /**
- * No payment gateway is wired into this app (CR-027) - a plan "change" here
- * is a self-declared feature-gating flag, never a real charge. Said plainly
- * in the UI so it never reads as a working checkout.
+ * Self-declared feature-gating flag (CR-027) - downgrades always apply
+ * instantly, no charge. Once real billing is configured (CR-057 phase 9),
+ * an upgrade attempted here is rejected server-side with a message pointing
+ * at BillingUpgradeCard's real Razorpay checkout instead; with no gateway
+ * configured, this remains the only way to change plan, exactly as before.
  */
 function SubscriptionPlanCard({
   currentTier, trialExpiresAt, onChangeTier,
@@ -820,8 +836,8 @@ function SubscriptionPlanCard({
           {trialExpiresAt ? <Badge variant="warning">Trial</Badge> : null}
         </div>
         <CardDescription>
-          No payment is collected here - this only turns on features for your shop. Billing isn't
-          connected yet, so pick whichever plan matches what you want to use.
+          Move to a lower plan any time, free. Moving to a higher plan may need real checkout below,
+          under "Upgrade plan", if billing is configured for this shop.
           {trialExpiresAt ? (
             <span className="mt-1 block text-warning">
               This plan is a trial from a coupon - it reverts to Free on{' '}

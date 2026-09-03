@@ -121,6 +121,20 @@ app:
     site-key: ${CAPTCHA_SITE_KEY:}
     secret-key: ${CAPTCHA_SECRET_KEY:}
 
+  # Razorpay checkout for tenant plan upgrades (CR-057 phase 9). Off by
+  # default and treated as off whenever key-id/key-secret are blank - the
+  # checkout endpoint then returns an honest 503 BILLING_NOT_CONFIGURED
+  # rather than a fake success. Webhook signature verification is gated
+  # independently by webhook-secret, since Razorpay issues that separately
+  # from the order-creation API keys. Get real keys at dashboard.razorpay.com.
+  razorpay:
+    enabled: ${RAZORPAY_ENABLED:false}
+    key-id: ${RAZORPAY_KEY_ID:}
+    key-secret: ${RAZORPAY_KEY_SECRET:}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}
+    pro-plan-amount-paise: ${RAZORPAY_PRO_AMOUNT_PAISE:99900}
+    max-plan-amount-paise: ${RAZORPAY_MAX_AMOUNT_PAISE:299900}
+
   rate-limit:
     enabled: true
     login-per-ip-per-minute: 10

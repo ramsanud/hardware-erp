@@ -44,7 +44,13 @@ public record TenantSettingsRequest(
         String bankIfsc,
         @Size(max = 200) String bankName,
         @Size(max = 100) String upiId,
-        /** Null means "leave unchanged" - not every settings save is also a plan change. Self-declared, see CR-027: no payment gateway exists yet. */
+        /**
+         * Null means "leave unchanged" - not every settings save is also a
+         * plan change. Self-declared (CR-027). Once real billing is
+         * configured (CR-057 phase 9), TenantSettingsServiceImpl rejects an
+         * upgrade here as a checkout bypass - only a downgrade (including to
+         * FREE) stays self-service. With no gateway configured, unchanged.
+         */
         SubscriptionTier subscriptionTier,
         /** CR-053. Null means "leave unchanged", same convention as subscriptionTier above. */
         InvoiceTheme invoiceTheme,

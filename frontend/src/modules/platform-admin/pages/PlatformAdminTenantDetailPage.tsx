@@ -20,7 +20,9 @@ import { useToast } from '@/modules/auth/hooks/useToast';
 import { usePlatformAdminAuth } from '../hooks/PlatformAdminAuthProvider';
 import { PLATFORM_ADMIN_ROUTES } from '../constants';
 import { platformAdminTenantService } from '../services/platformAdminTenantService';
-import type { PlatformTenantDetailResponse } from '../types';
+import { platformAdminBillingService } from '../services/platformAdminBillingService';
+import { TenantBackupCard } from '../components/TenantBackupCard';
+import type { PlatformTenantDetailResponse, TenantBillingHistoryResponse } from '../types';
 import { ApiError } from '@/shared/types/api';
 
 const suspendSchema = z.object({
@@ -63,12 +65,21 @@ export function PlatformAdminTenantDetailPage() {
   const toast = useToast();
   const { admin } = usePlatformAdminAuth();
   const canManage = admin?.permissions.includes('TENANT_MANAGE') ?? false;
+  const canViewBilling = admin?.permissions.includes('BILLING_VIEW') ?? false;
+  const canViewBackups = admin?.permissions.includes('BACKUP_VIEW') ?? false;
+  const canExportBackups = admin?.permissions.includes('BACKUP_MANAGE') ?? false;
 
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [suspending, setSuspending] = useState(false);
   const [reactivateOpen, setReactivateOpen] = useState(false);
+  const [billing, setBilling] = useState<TenantBillingHistoryResponse | null>(null);
 
   const { tenant, loading, error, reload } = useTenantDetail(id);
+
+  useEffect(() => {
+    if (!canViewBilling || Number.isNaN(id)) return;
+    platformAdminBillingService.tenantHistory(id).then(setBilling).catch(() => setBilling(null));
+  }, [id, canViewBilling]);
 
   const {
     register, handleSubmit, reset, formState: { errors },
@@ -167,10 +178,24 @@ export function PlatformAdminTenantDetailPage() {
             {tenant.subscriptionTrialExpiresAt ? (
               <Row label="Trial expires" value={formatDateTime(tenant.subscriptionTrialExpiresAt)} />
             ) : null}
-            <p className="pt-2 text-xs text-muted-foreground">
-              Self-declared - no billing gateway is connected yet, so this reflects the tier the
-              owner picked, not a paid, verified subscription.
-            </p>
+            {canViewBilling && billing && billing.payments.length > 0 ? (
+              <div className="space-y-1.5 pt-2">
+                <p className="text-xs font-medium text-muted-foreground">Payment history</p>
+                {billing.payments.slice(0, 5).map((payment) => (
+                  <div key={payment.paymentId} className="flex items-center justify-between text-xs">
+                    <span>{TIER_LABEL[payment.requestedTier]} · ₹{(payment.amountPaise / 100).toLocaleString('en-IN')}</span>
+                    <Badge variant={payment.status === 'CAPTURED' ? 'success' : 'destructive'} className="text-[10px]">
+                      {payment.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="pt-2 text-xs text-muted-foreground">
+                The plan may have been self-declared by the owner, or genuinely paid via checkout -
+                see payment history above once billing is configured.
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -189,6 +214,10 @@ export function PlatformAdminTenantDetailPage() {
             </div>
           </CardContent>
         </Card>
+
+        {canViewBackups || canExportBackups ? (
+          <TenantBackupCard tenantId={id} canView={canViewBackups} canExport={canExportBackups} />
+        ) : null}
 
         <Card className="lg:col-span-3">
           <CardHeader><CardTitle className="text-base">Usage</CardTitle></CardHeader>

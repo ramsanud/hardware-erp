@@ -118,7 +118,11 @@ public class SecurityConfig {
                             // enforced inside WhatsAppWebhookController itself (the
                             // GET handshake's hub.verify_token, the POST's
                             // X-Hub-Signature-256 HMAC), not by Spring Security.
-                            "/v1/webhooks/whatsapp").permitAll()
+                            "/v1/webhooks/whatsapp",
+                            // Razorpay calls this with no JWT of ours either -
+                            // authenticity is the X-Razorpay-Signature HMAC check
+                            // inside SubscriptionBillingService.handleWebhook().
+                            "/v1/webhooks/razorpay").permitAll()
                     // /actuator/health is the hosting platform's liveness probe
                     // and must answer before anyone signs in. The API browser is
                     // public only where it is served at all - application-prod.yml

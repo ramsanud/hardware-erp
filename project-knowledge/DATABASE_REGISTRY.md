@@ -834,3 +834,63 @@ connection (same pair `tenant_bank_account`, CR-022, already uses) and
 each business module's own existing permission (`INVOICE_VIEW`,
 `PAYMENT_MANAGE`, `INVENTORY_VIEW`) for the send actions built on top of
 it.
+
+## CR-057 phase 9: Subscriptions & Billing (V49)
+
+Real Razorpay Orders-API architecture - see `CHANGE_REQUEST_REGISTRY.md`'s
+own CR-057 phase 9 entry for the full design, including the two
+independent HMAC-SHA256 signature checks and the deliberate scope
+boundary (one-time upgrade checkout, not a recurring subscriptions/
+auto-renewal engine).
+
+**`platform_subscription_order`** - one row per Razorpay order created to
+move a tenant up a tier: `tenant_id` (FK), `requested_tier`
+(`FREE`/`PRO`/`MAX`, CHECK-constrained, mirrors `SubscriptionTier`),
+`amount_paise`, `currency` (default `INR`), `razorpay_order_id`
+(`UNIQUE`), `status` (`CREATED`/`PAID`/`FAILED`/`CANCELLED`). Never
+mutates `tenant.subscription_tier` itself - only a captured payment
+against it does.
+
+**`platform_subscription_payment`** - one row per Razorpay payment
+actually applied: `subscription_order_id` (FK), `razorpay_payment_id`
+(`UNIQUE` - the idempotency guard against webhook redelivery and the
+client-side `/verify` call racing each other for the same payment),
+`razorpay_signature`, `amount_paise`, `status`
+(`CAPTURED`/`FAILED`), `source` (`CLIENT_VERIFY`/`WEBHOOK` - which path
+recorded it first), `captured_at`.
+
+No new permission codes on the platform-admin side - `BILLING_VIEW`/
+`BILLING_MANAGE` were already reserved in `PlatformPermission` back in
+phase 2 (`BILLING_MANAGE` is still not wired to any endpoint - see the CR
+entry). Tenant-side reuses `SETTINGS_VIEW`/`SETTINGS_MANAGE`, same pair
+`tenant_bank_account` and the WhatsApp connection above use.
+
+**`tenant.subscription_tier` self-declared picker gap, fixed in the same
+migration's application code (no schema change needed)**: once
+`RazorpayProperties.active()`, `TenantSettingsServiceImpl.update()`
+rejects a self-declared *upgrade* (checkout bypass) but still allows a
+self-declared *downgrade* freely - see the CR entry for the full
+reasoning and the regression test that pins both directions.
+
+## CR-057 phase 11: Backup Center (V50)
+
+**`platform_tenant_export`** - a log of on-demand tenant data exports, not
+a blob store (the file is regenerated fresh on every request, never
+persisted - see the migration's own comment for why this is not a real
+"backup" claim). `tenant_id` (FK), `admin_id` (not a FK, same pattern as
+`platform_audit_log.admin_id`), `format` (`JSON`/`CSV`), `status`
+(`COMPLETED`/`FAILED`), `record_count`, `file_size_bytes`,
+`error_detail`.
+
+## CR-057 phase 12: Platform Settings - Razorpay (V51)
+
+**`platform_razorpay_config`** - singleton row (`platform_razorpay_config_id`
+always `1`, DB `CHECK`-constrained: one Razorpay account for the whole
+platform). `enabled`, `key_id` (plain - it's the public key),
+`key_secret_encrypted`/`webhook_secret_encrypted` (AES-256-GCM via the
+new `EncryptedSecretConverter`, CR-018's `FieldEncryptor` scheme reused
+exactly as `WhatsAppAccessTokenConverter` already does), `pro_plan_amount_paise`/
+`max_plan_amount_paise`, `updated_at`/`updated_by`. Precedence against
+the `RAZORPAY_*` environment variables (V49) lives entirely in
+application code (`RazorpayConfigResolver`), not the schema - see the CR
+entry.

@@ -163,7 +163,28 @@ export async function platformAdminPost<T>(
   return data.data;
 }
 
+export async function platformAdminPut<T>(
+  url: string,
+  body?: unknown,
+  config?: AxiosRequestConfig,
+): Promise<T> {
+  const { data } = await platformAdminHttp.put<ApiResponse<T>>(url, body ?? {}, config);
+  return data.data;
+}
+
 export async function platformAdminDelete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
   const { data } = await platformAdminHttp.delete<ApiResponse<T>>(url, config);
   return data.data;
+}
+
+/** For endpoints that return a raw binary body (CSV/XLSX/PDF export) rather than the ApiResponse envelope. */
+export async function platformAdminGetBlob(url: string, config?: AxiosRequestConfig): Promise<Blob> {
+  const { data } = await platformAdminHttp.get<Blob>(url, { ...config, responseType: 'blob' });
+  return data;
+}
+
+/** Same as platformAdminGetBlob, for an export endpoint that is a POST because it also logs the export as a side effect. */
+export async function platformAdminPostBlob(url: string, config?: AxiosRequestConfig): Promise<Blob> {
+  const { data } = await platformAdminHttp.post<Blob>(url, undefined, { ...config, responseType: 'blob' });
+  return data;
 }

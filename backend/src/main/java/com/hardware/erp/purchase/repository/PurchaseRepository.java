@@ -16,6 +16,9 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
 
     Optional<Purchase> findByIdAndTenantId(Long id, Long tenantId);
 
+    /** Platform Admin tenant data export (CR-057 phase 11). */
+    List<Purchase> findByTenantId(Long tenantId);
+
     /** Platform Admin tenant usage summary. */
     long countByTenantId(Long tenantId);
 

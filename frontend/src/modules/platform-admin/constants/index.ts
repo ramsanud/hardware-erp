@@ -13,4 +13,6 @@ export const PLATFORM_ADMIN_ROUTES = {
   developerTools: '/platform-admin/developer-tools',
   security: '/platform-admin/security',
   featureFlags: '/platform-admin/feature-flags',
+  analytics: '/platform-admin/analytics',
+  settings: '/platform-admin/settings',
 } as const;

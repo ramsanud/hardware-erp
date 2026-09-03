@@ -2275,3 +2275,315 @@ business logic, and the full backend suite (every pre-existing test, not
 just new ones) was re-run and green after every phase boundary - but that
 is evidence of no regression, not a substitute for the dedicated security/
 regression pass the spec's own section 74 asks for as a final step.
+
+---
+
+## CR-057 phase 9 - Subscriptions & Billing (APPLIED, 2026-09-03)
+
+Real Razorpay Orders-API architecture, built to the letter of the spec's own
+instruction to build the full architecture even without live credentials
+(order creation, client-side payment-signature verification, webhook
+signature verification, idempotent payment persistence) rather than skip
+it. Deliberately scoped to **one-time "pay to move `tenant.subscription_tier`
+up" checkout**, not a recurring Razorpay Subscriptions/auto-renewal engine -
+that is a materially different, separately-sized build (proration, dunning,
+renewal scheduling) and would be its own CR.
+
+**New** (`backend/billing` package, `V49__platform_billing.sql`):
+`platform_subscription_order` (one row per Razorpay order created to
+upgrade a tenant; never mutates `tenant.subscription_tier` itself - only a
+captured payment against it does, so an abandoned checkout has zero
+effect) and `platform_subscription_payment` (`UNIQUE (razorpay_payment_id)`
+is the idempotency guard - Razorpay redelivers webhooks, and the same
+payment can also arrive via the client-side `/verify` call before the
+webhook lands; whichever writes first wins, the second attempt finds the
+row already there and is a no-op, proven by
+`SubscriptionBillingServiceImplTest.webhookAppliesCapturedPaymentIdempotently`
+delivering the same webhook body twice).
+
+**Two independent HMAC-SHA256 checks**, mirroring the two Razorpay
+verification contracts exactly (both proven against a genuinely computed
+HMAC in tests, not mocked away):
+- Client-side: `HMAC(order_id + "|" + payment_id, key_secret)` must match
+  the signature Razorpay Checkout's own `handler` callback hands back -
+  `SubscriptionBillingService.verifyPayment()`.
+- Webhook: `HMAC(raw request body, webhook_secret)` must match
+  `X-Razorpay-Signature` - `SubscriptionBillingService.handleWebhook()`,
+  reachable at the new `/v1/webhooks/razorpay` (added to `SecurityConfig`'s
+  permitAll list next to the existing `/v1/webhooks/whatsapp`, same
+  "authenticity is the HMAC check inside the controller, not Spring
+  Security" pattern).
+
+**Fail-closed exactly like `TurnstileCaptchaService`/`WhatsAppProperties`**:
+`RazorpayProperties.active()` requires `enabled` + both key-id/key-secret;
+`webhookActive()` is independent (requires only the webhook secret, since
+Razorpay issues it separately). With no credentials configured - the
+default in every environment here - `POST /v1/billing/checkout` returns an
+honest `503 BILLING_NOT_CONFIGURED`, never a fake order.
+
+**Endpoints**: tenant-side `POST /v1/billing/checkout` (SETTINGS_MANAGE),
+`POST /v1/billing/verify` (SETTINGS_MANAGE), `GET /v1/billing/history`
+(SETTINGS_VIEW); platform-admin `GET /v1/platform-admin/billing/overview`
+and `GET /v1/platform-admin/billing/tenants/{id}` (both `BILLING_VIEW`,
+already reserved in `PlatformPermission` back in phase 2's own enum - no
+new platform permission constants needed, they were speculatively added
+before this phase existed the same way `PURCHASE_VIEW` was seeded before
+Purchase existed).
+
+**Frontend**: `BillingUpgradeCard` (settings module) - real Razorpay
+Checkout.js loaded on demand (never eagerly, same principle as the
+Turnstile widget), shows an honest "Billing is not configured" banner
+rather than a broken button when checkout 503s. `PlatformRevenueChart`
+(platform-admin module) replaces the Admin Overview page's previous "no
+billing gateway connected yet" placeholder text with a real monthly
+revenue bar chart, aggregated server-side
+(`PlatformBillingQueryService.overview()` - 12 small per-month
+COUNT/SUM queries, not raw payment rows shipped to the browser, per the
+spec's own "aggregated data, never 500,000 raw rows" rule) - shows the
+same honest "not configured" state when `razorpayConfigured` is false,
+never a chart of real zeros that would misread as "no revenue this
+month." Tenant Detail page gained a payment-history list inside its
+existing Subscription card, gated by `BILLING_VIEW`.
+
+**A real gap found while wiring this in, fixed in the same commit, not a
+separate bug report**: CR-027's self-declared plan picker
+(`SubscriptionPlanCard`, `PUT /v1/settings`) has always let an OWNER set
+`subscriptionTier` directly with zero gating, because until this phase no
+payment gateway existed to bypass. Once one is configured, that endpoint
+is a free checkout bypass - self-declare MAX, pay nothing. Fixed in
+`TenantSettingsServiceImpl.update()`: when `RazorpayProperties.active()`
+and the requested tier is a genuine upgrade (higher ordinal than the
+tenant's current tier), the request is rejected with
+`422 UPGRADE_REQUIRES_CHECKOUT` pointing at the real Billing card. A
+downgrade (including to FREE) stays fully self-service in both cases - it
+never needs a payment, so gating it would only be friction. With no
+gateway configured (every environment in this repo today), behaviour is
+byte-for-byte unchanged from before this phase - proven by
+`TenantSettingsServiceImplTest.upgradeStillAllowedWhenBillingNotConfigured`.
+
+**Verified**: backend `mvn -o test` **378/378** (up from 375 immediately
+before this phase; same 2 pre-existing BUG-ENV-002 Docker-only failures,
+unrelated - +8 `SubscriptionBillingServiceImplTest`, +3
+`TenantSettingsServiceImplTest`, the first dedicated test file for that
+service). `tsc -b --force` and `vite build` both clean. **Not performed**:
+no live Razorpay test-mode credentials exist in this environment, so the
+real order-creation HTTP call and the Checkout.js widget itself have not
+been exercised end to end against Razorpay's actual servers - only the
+fail-closed "not configured" path, the HMAC math (both directions, against
+genuinely computed signatures), and the idempotency guarantee are
+verified. A Testcontainers/Docker-backed integration test exercising the
+full `/v1/billing/**` + `/v1/webhooks/razorpay` flow through real
+PostgreSQL was not added this round, matching every other Docker-gated gap
+already noted throughout this repo (BUG-ENV-002).
+
+**Explicitly not built, stated plainly rather than silently skipped**: a
+recurring Razorpay Subscriptions/auto-renewal engine, plan proration,
+invoices/GST for the SaaS billing itself (as opposed to the ERP's own
+GST invoicing for tenants' customers, which is unrelated), refunds, and a
+platform-admin "change a tenant's plan directly" action distinct from
+`BILLING_MANAGE`'s existing reservation in `PlatformPermission` (the
+enum constant exists from phase 2 but nothing calls it yet - CR-057's
+remaining backlog, next below, still does not include it; flagged here so
+a future session does not assume `BILLING_MANAGE` is wired to anything).
+
+---
+
+## CR-057 phase 10 - Tenant Analytics (APPLIED, 2026-09-03)
+
+Growth, module adoption and churn - distinct from the Tenant *Management*
+list/detail (phase 2) and the Revenue chart (phase 9), and explicitly
+scoped away from duplicating either. Every figure is a real aggregate
+query, run at request time - no new tables, no new migration.
+
+**`TenantAnalyticsService.overview()`** (`platformadmin` package, reusing
+existing repository methods plus two new ones added for this phase -
+`SecurityAuditLogRepository.countDistinctUsersLoggedInBetween()` and
+`PlatformAuditLogRepository.countByActionAndSuccessTrueAndCreatedAtBetween()`):
+
+- **Growth** (12 months): new tenants, new users (both already-existing
+  `countByCreatedAtBetween` queries, same pattern
+  `PlatformAdminDashboardService` already used), and **active users** -
+  a genuine distinct-`LOGIN_SUCCESS`-event count from `security_audit_log`
+  per month, deliberately **not** derived from `app_user.last_login_at`
+  (which holds only the single most recent login per user and would
+  systematically under-count every month except each user's latest -
+  caught while designing this, not after building it wrong first).
+- **Module usage** (snapshot): of currently `ACTIVE` tenants, how many
+  have at least one row in each of 8 core module tables (`product`,
+  `customer`, `supplier`, `invoice`, `quotation`, `purchase`,
+  `business_expense`, `worker`) - one round-trip, 8 scalar subqueries via
+  `JdbcTemplate` (table names are a fixed internal constant list, never
+  user input - not a SQL-injection surface despite the string
+  interpolation). Proven against the real schema by
+  `PlatformAdminAnalyticsControllerIT` - a mocked `JdbcTemplate` unit test
+  cannot catch a wrong table name, an IT against real PostgreSQL can.
+- **Churn** - stated as an approximation in the DTO's own javadoc, not
+  disguised as more precise than it is: tenants suspended a given month
+  (a real `platform_audit_log` `TENANT_SUSPENDED` event count) ÷ total
+  tenants that exist by month end. Not a cohort or usage-based churn
+  measure - `tenant.status` carries no history and there is no
+  session/activity model to derive real engagement churn from; building
+  either would be its own CR, not a "while I'm in here" addition. A month
+  with zero tenants reports `churnRatePercent: null`, never a fabricated
+  `0%` or a divide-by-zero.
+
+**Export** (`TenantAnalyticsExportService`) - CSV (`commons-csv`), XLSX
+(`poi-ooxml`), PDF (`openhtmltopdf`) - all three reuse dependencies
+already on the classpath (Supplier Bill Import and the invoice/quotation
+PDF pipeline), no new library added. All three render from the exact same
+`overview()` call the on-screen charts use, so an exported file can never
+disagree with what an admin just looked at.
+
+**Endpoints**: `GET /v1/platform-admin/analytics/overview`
+(`ANALYTICS_VIEW`), `GET /v1/platform-admin/analytics/export?format=csv|xlsx|pdf`
+(`ANALYTICS_EXPORT`) - both permission constants were already reserved in
+`PlatformPermission` back in phase 2, no new ones needed.
+
+**Frontend**: new `/platform-admin/analytics` page and sidebar entry
+(gated by `ANALYTICS_VIEW`, matching every other nav item's own
+pattern) - a growth line chart, a module-adoption bar chart, a churn bar
+chart, and CSV/XLSX/PDF export buttons (`ANALYTICS_EXPORT`-gated,
+hidden rather than disabled for a role that lacks it, same convention as
+Billing's checkout button).
+
+**Verified**: backend `mvn -o test` **381/381** (up from 378 immediately
+before this phase; same 2 pre-existing BUG-ENV-002 Docker-only failures -
++3 `TenantAnalyticsServiceImplTest`, covering the aggregation shape and
+the null-vs-fabricated-zero churn math with a mocked `JdbcTemplate`).
+`tsc -b --force` and `vite build` both clean. **Docker was briefly
+available partway through this session** (a state change from every
+earlier session, which had documented BUG-ENV-002 as a standing
+environment gap) - one `mvn verify` run during that window confirmed the
+pre-existing 148 integration tests plus all unit tests genuinely green
+against real PostgreSQL, and three new IT files were written to the
+project's established pattern
+(`PlatformAdminAnalyticsControllerIT`, `PlatformAdminBillingControllerIT`,
+`SubscriptionBillingControllerIT` - the last two covering CR-057 phase 9,
+retroactively). Docker then went unavailable again before those three new
+IT files could be run - they compile cleanly (`mvn test-compile`) but are
+**unverified against real PostgreSQL**, stated plainly rather than
+claimed passing. Re-run them (`mvn -o verify`) the next time Docker is up
+in this environment before treating them as proven.
+
+---
+
+## CR-057 phase 11 - Backup Center (APPLIED, 2026-09-03)
+
+The spec's own §15 warns against pretending backup infrastructure exists
+when it does not. This app has no snapshot/blob-storage service - so
+rather than build a fake "last successful backup" dashboard, this phase
+builds the real, honest alternative: an on-demand export of a tenant's
+own core business data, triggered and logged by a platform admin.
+
+**New** (`V50__platform_tenant_export.sql`, `platformadmin` package):
+`platform_tenant_export` - a **log only**, not a blob store (the file
+itself is regenerated fresh on every request, never persisted - see the
+migration's own comment for why this is deliberately not presented as a
+retained backup). `TenantDataExportService.export()` collects flat,
+scalar-only rows (deliberately no nested line-item collections - a full
+relational dump is a materially bigger, separately-scoped feature) from
+8 core tables via a `findByTenantId` added to each of their repositories
+(`Product`, `Customer`, `Supplier`, `Invoice`, `Quotation`, `Purchase`,
+`BusinessExpense`, `Worker`), renders JSON (Jackson) or a CSV-per-module
+zip (`commons-csv` + `java.util.zip`, both already on the classpath - no
+new dependency), and logs a `COMPLETED`/`FAILED` row either way.
+
+**Endpoints**: `GET /v1/platform-admin/tenants/{id}/backups`
+(`BACKUP_VIEW`) - history; `POST /v1/platform-admin/tenants/{id}/backups?format=JSON|CSV`
+(`BACKUP_MANAGE`) - triggers and downloads. Both permission constants
+were already reserved in `PlatformPermission` back in phase 2.
+
+**Frontend**: `TenantBackupCard` on the Tenant Detail page - export
+buttons plus a history list, with copy that says plainly "no automated
+backup infrastructure is configured in this environment."
+
+**A known, stated gap, not silently left broken**: the frontend export
+call uses `responseType: 'blob'`, and axios delivers a non-2xx JSON error
+body as a `Blob` under that response type rather than parsed JSON - so a
+failed export shows a generic toast rather than the server's specific
+error message. This is a **pre-existing** pattern (the tenant-side
+`apiGetBlob`/Tally export has the same limitation) - fixing it properly
+means teaching both API clients' error interceptor to detect and parse a
+JSON-shaped Blob, which is shared infrastructure work worth its own pass,
+not a silent scope-creep addition here.
+
+**Verified**: backend `mvn -o test` **384/384** (up from 381; same 2
+pre-existing BUG-ENV-002 Docker-only failures at the time this phase was
+written - +3 `TenantDataExportServiceImplTest`, covering the JSON shape,
+the real zip structure, and the unknown-tenant refusal). `tsc -b --force`
+and `vite build` both clean.
+
+---
+
+## CR-057 phase 12 - Platform Settings: Razorpay (APPLIED, 2026-09-03)
+
+Lets a platform admin fill in real Razorpay credentials from the console
+itself - a real page, not a placeholder - instead of needing a redeploy
+with new `RAZORPAY_*` environment variables. Built directly from the
+user's own instruction: where a feature needs a value only the user can
+supply (an API key), turn it into a page they can fill in themselves,
+while keeping the whole thing genuinely working end to end.
+
+**New** (`V51__platform_razorpay_config.sql`): `platform_razorpay_config`,
+a **singleton row** (id always `1`, DB `CHECK`-constrained - one Razorpay
+account for the whole platform, never per-tenant). `key_secret`/
+`webhook_secret` are AES-256-GCM encrypted at the entity boundary via a
+new `EncryptedSecretConverter` - the exact same `FieldEncryptor` scheme
+(CR-018) `WhatsAppAccessTokenConverter` already reuses, not a new crypto
+implementation.
+
+**Precedence, not replacement**: the `RAZORPAY_*` environment variables
+(phase 9) are **not removed** - they remain a valid deployment-time
+config path and are now the fallback. New `RazorpayConfigResolver`
+(`billing` package) is the single place that decides which wins: the
+database row when present and enabled, the environment variables
+otherwise. `RazorpayOrderClientImpl`, `SubscriptionBillingServiceImpl`
+and `TenantSettingsServiceImpl` (the phase 9 checkout-bypass guard) all
+now depend on this resolver instead of reading `RazorpayProperties`
+directly - `RazorpayOrderClient.createOrder()`'s signature changed to
+accept `keyId`/`keySecret`/`apiBaseUrl` as parameters, since the caller
+is the one place that already resolved them.
+
+**Never returns a saved secret to the browser.** `RazorpayConfigResponse`
+carries `keySecretConfigured`/`webhookSecretConfigured` booleans only.
+`UpdateRazorpayConfigRequest`'s secret fields are null-means-"leave
+unchanged" (never round-tripped from a response that never carried the
+value) - a blank string is the deliberate way to clear one. The frontend
+form's password fields always start empty, matching that contract
+exactly, and show "already saved" placeholder copy rather than the value.
+
+**Endpoints**: `GET`/`PUT /v1/platform-admin/settings/razorpay`
+(`BILLING_VIEW`/`BILLING_MANAGE` - reused, no new permission constants).
+Every save is audited (`PLATFORM_SETTING_UPDATED`, a new
+`PlatformAuditAction` - the spec's own "production changes need an audit
+record" rule, and this is the one setting in the console that can move
+real money).
+
+**Frontend**: new `/platform-admin/settings` page + sidebar entry -
+enabled toggle, key ID, write-only key/webhook secret fields, pro/max
+plan pricing, and a badge naming which source (`DATABASE`/`ENVIRONMENT`/
+`NOT_CONFIGURED`) is actually in force right now.
+
+**Verified**: backend `mvn -o test` **391/391**, `BUILD SUCCESS`, **0
+Docker-gated errors this run** - Docker became available partway through
+this session (see phase 10's own note) and stayed up for this one, so
+`PermissionCodeConsistencyTest`/`SecurityFilterRegistrationTest` both ran
+and passed for real rather than being skipped. Existing
+`SubscriptionBillingServiceImplTest`/`TenantSettingsServiceImplTest` were
+updated for the `RazorpayConfigResolver` constructor change, not
+rewritten - same assertions, same coverage. `tsc -b --force`/`vite build`
+clean. **Not performed**: no dedicated unit test for
+`PlatformRazorpayConfigServiceImpl`/`RazorpayConfigResolverImpl`
+specifically (both are thin - a repository read/write and a precedence
+`if` - covered indirectly through the consumers' own tests); a Docker/IT
+test proving the DB-configured row actually overrides the environment
+variables end to end was not added this round.
+
+**A note on this session's working conditions**: for part of this phase,
+multiple other Claude Code sessions were active against this same working
+tree concurrently (a separate, unrelated "CR-058" - mandatory tenant-user
+MFA plus a soft-delete recovery feature for Product/Supplier). This
+session's own commit was deliberately held back until that concurrent
+work reached a compiling state, specifically to avoid bundling another
+session's unfinished, unrelated work into this one's commit - see
+`RESUME_POINT.md` for the exact sequence.

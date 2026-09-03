@@ -16,6 +16,9 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     Optional<Invoice> findByIdAndTenantId(Long id, Long tenantId);
 
+    /** Platform Admin tenant data export (CR-057 phase 11). */
+    List<Invoice> findByTenantId(Long tenantId);
+
     @Query("""
            select i from Invoice i
            where i.tenant.id = :tenantId

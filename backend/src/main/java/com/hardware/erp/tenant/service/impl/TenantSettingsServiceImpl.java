@@ -36,6 +36,7 @@ public class TenantSettingsServiceImpl implements TenantSettingsService {
     private final TenantUpiQrRepository upiQrRepository;
     private final ActivityLogService activityLog;
     private final com.hardware.erp.tenant.service.SubscriptionService subscriptionService;
+    private final com.hardware.erp.billing.service.RazorpayConfigResolver razorpayConfigResolver;
 
     @Override
     @Transactional(readOnly = true)
@@ -74,6 +75,20 @@ public class TenantSettingsServiceImpl implements TenantSettingsService {
         tenant.setBankName(blankToNull(request.bankName()));
         tenant.setUpiId(blankToNull(request.upiId()));
         if (request.subscriptionTier() != null) {
+            // CR-057 phase 9 gap, found while wiring real Razorpay billing:
+            // this self-declared picker (CR-027) was originally the ONLY way
+            // to change plan, because no gateway existed. Once one is
+            // actually configured, silently granting a paid tier here would
+            // be a free bypass of checkout. A downgrade (including to FREE)
+            // stays fully self-service in both cases - it never needs a
+            // payment. When billing is not configured, behaviour is
+            // unchanged from before this phase.
+            if (razorpayConfigResolver.resolve().active()
+                    && request.subscriptionTier().ordinal() > tenant.getSubscriptionTier().ordinal()) {
+                throw new com.hardware.erp.common.exception.BusinessException(
+                        "Upgrading to a paid plan needs checkout - use Billing > Upgrade plan.",
+                        org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, "UPGRADE_REQUIRES_CHECKOUT");
+            }
             tenant.setSubscriptionTier(request.subscriptionTier());
             // A manual pick from the dropdown is always permanent (CR-027's
             // original behaviour) - it must clear any trial coupon (CR-032)

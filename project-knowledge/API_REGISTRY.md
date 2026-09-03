@@ -519,3 +519,43 @@ Every endpoint below resolves the tenant from
 
 Customer create/update (`POST`/`PUT /v1/customers`) gained an optional
 `whatsappOptIn` field, defaulting to `true` when omitted.
+
+## CR-057 phase 9 — Subscriptions & Billing
+
+Tenant-side endpoints resolve the tenant from `SecurityUtils.requireCurrentTenantId()` only - no request accepts a `tenantId`.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/v1/billing/checkout` | `SETTINGS_MANAGE` | Body: `requestedTier`. Creates a real Razorpay order for the caller's own tenant; `503 BILLING_NOT_CONFIGURED` if no gateway credentials are set. Rejects `FREE` (nothing to buy). |
+| POST | `/v1/billing/verify` | `SETTINGS_MANAGE` | Body: `razorpayOrderId`/`razorpayPaymentId`/`razorpaySignature` - Razorpay Checkout's own callback shape. Applies the tier upgrade only on a genuine HMAC match against `key_secret`; `400 PAYMENT_SIGNATURE_INVALID` otherwise. |
+| GET | `/v1/billing/history` | `SETTINGS_VIEW` | Current tier + this tenant's own payment history only. |
+| POST | `/v1/webhooks/razorpay` | public, self-verified | Inbound Razorpay webhook - authenticity is the `X-Razorpay-Signature` HMAC against the webhook secret inside `SubscriptionBillingService`, not Spring Security (same pattern as `/v1/webhooks/whatsapp`). Idempotent via `UNIQUE(razorpay_payment_id)`. |
+| GET | `/v1/platform-admin/billing/overview` | `BILLING_VIEW` | Cross-tenant revenue chart data - last 12 months, aggregated server-side, never raw payment rows. |
+| GET | `/v1/platform-admin/billing/tenants/{tenantId}` | `BILLING_VIEW` | One tenant's current plan + payment history, for the Tenant Detail page. |
+
+`PUT /v1/settings` — `subscriptionTier` in the request body now rejects a
+self-declared *upgrade* with `422 UPGRADE_REQUIRES_CHECKOUT` once Razorpay
+billing is configured (a downgrade, including to `FREE`, still applies
+freely in both cases). Unchanged with no gateway configured. See
+`CHANGE_REQUEST_REGISTRY.md`'s CR-057 phase 9 entry.
+
+## CR-057 phase 10 — Tenant Analytics
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/platform-admin/analytics/overview` | `ANALYTICS_VIEW` | 12 months of growth (new tenants/users, real distinct-login active-user count) and churn, plus a module-adoption snapshot - all aggregated server-side. |
+| GET | `/v1/platform-admin/analytics/export?format=csv\|xlsx\|pdf` | `ANALYTICS_EXPORT` | Same data as `overview()`, rendered as a file - never disagrees with the on-screen charts. |
+
+## CR-057 phase 11 — Backup Center
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/platform-admin/tenants/{id}/backups` | `BACKUP_VIEW` | Export history for one tenant - who exported what, when, success/failure. |
+| POST | `/v1/platform-admin/tenants/{id}/backups?format=JSON\|CSV` | `BACKUP_MANAGE` | Generates and downloads a fresh export of the tenant's core data; logs the attempt either way. Never stores the file itself. |
+
+## CR-057 phase 12 — Platform Settings (Razorpay)
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/platform-admin/settings/razorpay` | `BILLING_VIEW` | Current config - `keySecretConfigured`/`webhookSecretConfigured` booleans only, never the secret itself. `source` names whether the database row or the `RAZORPAY_*` env vars are actually in force. |
+| PUT | `/v1/platform-admin/settings/razorpay` | `BILLING_MANAGE` | Body: `enabled`, `keyId`, `keySecret`/`webhookSecret` (omitted = leave unchanged, `""` = clear), `proPlanAmountPaise`, `maxPlanAmountPaise`. Audited (`PLATFORM_SETTING_UPDATED`). |

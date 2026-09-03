@@ -91,6 +91,48 @@ export interface SubscriptionCouponRedemptionResponse {
   trialExpiresAt: string;
 }
 
+// ---------------------------------------------------------------
+// CR-057 phase 9 - Razorpay checkout to move a tenant's own plan up.
+// Mirrors backend/billing/dto/*.java.
+// ---------------------------------------------------------------
+
+export type SubscriptionOrderStatus = 'CREATED' | 'PAID' | 'FAILED' | 'CANCELLED';
+export type SubscriptionPaymentStatus = 'CAPTURED' | 'FAILED';
+export type PaymentSource = 'CLIENT_VERIFY' | 'WEBHOOK';
+
+export interface SubscriptionOrderResponse {
+  orderId: number;
+  razorpayOrderId: string;
+  /** Public key - safe to hand to Razorpay's Checkout.js widget. */
+  razorpayKeyId: string;
+  requestedTier: SubscriptionTier;
+  amountPaise: number;
+  currency: string;
+  status: SubscriptionOrderStatus;
+}
+
+export interface VerifyPaymentRequest {
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+}
+
+export interface SubscriptionPaymentResponse {
+  paymentId: number;
+  orderId: number;
+  requestedTier: SubscriptionTier;
+  amountPaise: number;
+  currency: string;
+  status: SubscriptionPaymentStatus;
+  source: PaymentSource;
+  capturedAt?: string | null;
+}
+
+export interface TenantBillingHistoryResponse {
+  currentTier: SubscriptionTier;
+  payments: SubscriptionPaymentResponse[];
+}
+
 /** CR-031 (Customer 360 §27-40) - usage against the tenant's tier entitlement limits. A limit of -1 means unlimited (MAX tier) - never render it as a 0% bar. */
 export interface UsageSummaryResponse {
   tier: SubscriptionTier;
