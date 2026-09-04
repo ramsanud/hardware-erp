@@ -109,9 +109,19 @@ public class SecurityConfig {
                             // The sign-in page must learn whether to render a
                             // challenge before anyone has signed in.
                             "/v1/auth/captcha-config",
+                            // CR-059 - same reason: the app shell decides
+                            // whether this installation has billing at all
+                            // before a session exists. Serves only the
+                            // deployment mode, never a host or credential.
+                            "/v1/deployment-config",
                             "/v1/auth/refresh",
                             "/v1/auth/forgot-password",
                             "/v1/auth/reset-password",
+                            // CR-058 - carry the MFA challenge token from
+                            // login in the body; there is no session yet.
+                            "/v1/auth/mfa/enroll",
+                            "/v1/auth/mfa/enroll/confirm",
+                            "/v1/auth/mfa/verify",
                             "/v1/tenants/register",
                             "/v1/tenants/register/slug-available",
                             // Meta calls this with no JWT of ours - authenticity is

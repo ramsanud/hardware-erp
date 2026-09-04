@@ -2587,3 +2587,279 @@ session's own commit was deliberately held back until that concurrent
 work reached a compiling state, specifically to avoid bundling another
 session's unfinished, unrelated work into this one's commit - see
 `RESUME_POINT.md` for the exact sequence.
+
+## CR-059 — Deployment mode switch: hosted (Supabase) or self-hosted (Docker) (APPLIED, 2026-09-04)
+
+**Requirement, in the user's own words**: "work with both supabase and
+also in docker, need switch option for this because if the client not
+acquired to get hosted version they can use docker version."
+
+Two products from one codebase: the hosted multi-tenant SaaS, and an
+on-premise install a client runs on their own machine when they will not
+or cannot use a hosted service.
+
+### What was already true, and deliberately left alone
+
+The investigation that opened this CR found the hard part already done.
+**Supabase appears in this repository as a hostname and nothing else.**
+There is no Supabase SDK, no Supabase Auth, no Supabase Storage and no
+`supabase-js` anywhere in `backend/src` or `frontend/src` — the only
+occurrence before this CR was a comment in `application-prod.yml` and the
+`render.yaml` blueprint. Uploads are `bytea` in PostgreSQL, auth is this
+application's own JWT + MFA (CR-008, CR-058), and tenant export is plain
+JDBC (CR-057 phase 11).
+
+So the application layer needed **no** portability work, and none was
+done. Moving from Supabase to Neon, RDS or a self-managed instance is a
+change of `DB_HOST`. This was confirmed with the user before building:
+the alternative — Supabase Storage for uploads in hosted mode, Supabase
+Auth in hosted mode — was offered and **rejected**, because either one
+forks a core subsystem into two implementations that must then both be
+tested forever.
+
+What was actually missing was everything *around* the application: a way
+to say which deployment this is, a Docker image for the frontend, a
+compose file that starts the whole product, and correct behaviour for the
+handful of things that genuinely differ.
+
+### The switch
+
+`app.deployment.mode` — `CLOUD` or `SELF_HOSTED` (`DeploymentMode`,
+`DeploymentProperties`), normally set by activating a profile:
+
+```
+SPRING_PROFILES_ACTIVE=prod,cloud         hosted SaaS
+SPRING_PROFILES_ACTIVE=prod,selfhosted    client's own Docker box
+```
+
+Both new profiles layer **on top of** `prod`, never instead of it — `prod`
+keeps owning the security posture (springdoc off, actuator health only,
+no stack traces, no developer inspection). Being on the client's own
+hardware relaxes none of that: a shop's LAN is not a trusted network.
+
+**Defaults to `CLOUD`**, so dev, local, test and the existing Render
+deployment behave exactly as they did before this CR existed. Self-hosting
+is opt-in; nothing changed silently.
+
+### `DeploymentModeGuard` — the part that makes the switch worth having
+
+A mode property nobody validates is decoration. The guard refuses to start
+on four configurations, each of which otherwise starts happily and is
+wrong in a way nobody notices until it is expensive:
+
+| Refusal | What it prevents |
+|---|---|
+| both `cloud` and `selfhosted` active | opposite defaults, winner decided by profile ordering |
+| `SELF_HOSTED` + a managed DB host | **one client's shop data written into the multi-tenant SaaS database** |
+| `CLOUD` + a container/localhost DB | starts, serves, loses every write on the next redeploy (hosted instances have ephemeral storage) |
+| `CLOUD` + `cookie-secure=false` | a 7-day refresh credential sent over plain HTTP |
+
+All but the first are scoped to the `prod` profile, so no developer's local
+setup is affected. It also logs a startup banner naming the mode, the
+database host and kind, cookie-secure and whether billing applies — the
+username is never logged, since a pooled connection string can carry it.
+
+**It runs as a `BeanFactoryPostProcessor`, not on `ApplicationReadyEvent`** —
+and that difference from `JwtSecretGuard` is the point, not an
+inconsistency. `JwtSecretGuard` checks at application-ready because a weak
+signing key becomes dangerous only once requests are served. This guard
+cannot afford that timing: by `ApplicationReadyEvent`, Flyway has already
+run and Hibernate has already connected, so in the case that matters most
+— a self-hosted install pointed at the multi-tenant SaaS database —
+migrations would have been applied to that database before anything
+objected. A `BeanFactoryPostProcessor` runs after component scanning but
+before any singleton exists, so the refusal lands before the datasource,
+Flyway or the EntityManagerFactory are created. This was **verified in a
+real container**: the refusal appears at "Exception encountered during
+context initialization", with no Hikari pool and no Flyway line before it.
+
+That timing also dictates how it reads configuration. A
+`BeanFactoryPostProcessor` is instantiated before autowiring exists (a
+constructor argument there fails outright with "No default constructor
+found" — caught during this work when nine `@SpringBootTest` contexts
+stopped loading), so it takes the `Environment` from the bean factory and
+binds `app.deployment` with `Binder`, rather than injecting the
+`@ConfigurationProperties` beans, which do not exist yet.
+
+### Billing is off on a self-hosted licence
+
+The user's decision, confirmed before building: a self-hosted client has
+**bought the software outright**, so showing them a monthly upgrade prompt
+is simply wrong.
+
+- `SubscriptionBillingServiceImpl.createOrder`/`verifyPayment` refuse with
+  **503 `BILLING_NOT_APPLICABLE`** — deliberately distinct from the
+  existing `BILLING_NOT_CONFIGURED`, which means "this deployment does
+  bill but has no Razorpay keys", a thing an operator can fix.
+- `handleWebhook` refuses **before parsing**. `/v1/webhooks/razorpay` is
+  `permitAll` by design (Razorpay carries no JWT of ours), so on a
+  self-hosted box it is an internet-reachable path for a feature that
+  install does not have.
+- `EntitlementServiceImpl` enforces **no tier caps** when billing does not
+  apply. This was the defect that would have mattered most: a self-hosted
+  install ships on `FREE`, and without this the client who paid the most
+  would be stopped at their 101st customer and told to "upgrade the plan
+  in Shop Settings" — a dead end, since there is no checkout to reach.
+  `usageSummary()` reports `UNLIMITED` (-1) to match what is actually
+  enforced, rather than showing a ceiling that is never applied. The
+  existing Plan usage card already renders -1 as "Unlimited", so this
+  needed no frontend change.
+- Escape hatch: `app.deployment.billing-enabled=true` re-enables it, for a
+  reseller running self-hosted instances they do bill for.
+
+### Public deployment config
+
+`GET /v1/deployment-config` — public and unauthenticated, for the same
+reason `/v1/auth/captcha-config` is: the app shell renders before anyone
+signs in, and a self-hosted install must not flash a billing prompt while
+the session loads. Serves mode, `selfHosted`, `billingEnabled` and an
+operator-set installation name — **no host, credential, provider key or
+version string**, since those are reconnaissance with no benefit to a shop
+owner (the reasoning that turns springdoc off in production).
+
+The frontend is built **once** and shipped to both deployments, so this
+has to be a runtime question — a Vite env var is baked in at build time
+and would be wrong for one of the two. `useDeploymentConfig` exposes a
+`resolved` flag and Shop Settings gates on `resolved && billingEnabled`,
+so the optimistic hosted fallback cannot flash an upgrade card at a
+self-hosted client for even one frame.
+
+### The self-hosted stack
+
+`docker-compose.selfhosted.yml` — postgres + backend + frontend, one
+command, `.env.selfhosted.example` as the template. New
+`frontend/Dockerfile` (node build → nginx) and `frontend/nginx.conf`.
+
+**Only the frontend publishes a port.** The database and the API are
+reachable on the compose network and nowhere else, so a laptop on the
+shop's wifi cannot connect to PostgreSQL directly even with the password.
+nginx proxies `/api` **same-origin**, which is not a convenience: the
+refresh cookie is `SameSite=Strict`, so a split origin would break sign-in
+persistence in a way that reads as a session bug.
+
+`cookie-secure` defaults to **false** in `selfhosted`, and this is stated
+plainly rather than hidden. The common install is a LAN address with no
+certificate, and a browser never returns a Secure cookie over http — the
+symptom is a login that succeeds and instantly bounces back to the login
+page, with nothing wrong in the logs. The cost is real: the refresh token
+crosses the shop LAN unencrypted. The guard warns whenever self-hosted
+runs with `cookie-secure=true` (the opposite mistake), and both the
+profile and `.env` template say to set it true once HTTPS is in front.
+
+`sslmode` is now explicit in the JDBC URL, because the two deployments
+want opposite answers (`require` managed, `disable` container-to-container
+on a private bridge) and a driver default is the wrong place to decide it.
+
+### Backups work against both
+
+`scripts/db-target.sh` (new) resolves how to reach the database — `docker
+exec` into whichever container is running, or host `pg_dump`/`psql`
+against a managed host with `PGPASSWORD` exported (never passed as an
+argument, which would put it in `ps` output). `backup-db.sh` and
+`restore-db.sh` now share it instead of each hardcoding one container
+name; `restore-db.sh` demands the **host name** typed back, not `yes`,
+when the target is managed — on the hosted deployment that database holds
+every tenant.
+
+### Files
+
+New: `config/DeploymentMode`, `DeploymentProperties`,
+`DeploymentModeGuard`, `DeploymentConfigController`,
+`DeploymentConfigResponse`; `application-cloud.yml`,
+`application-selfhosted.yml`; `docker-compose.selfhosted.yml`,
+`.env.selfhosted.example`; `frontend/Dockerfile`, `frontend/nginx.conf`,
+`frontend/.dockerignore`; `scripts/db-target.sh`;
+`shared/types/deployment.ts`, `services/deploymentConfig.ts`,
+`shared/hooks/useDeploymentConfig.ts`; `DeploymentModeGuardTest`;
+`docs/DEPLOYMENT_MODES.md`.
+
+Modified: `application.yml` (deployment block, explicit sslmode),
+`SecurityConfig` (one public path), `SubscriptionBillingServiceImpl`,
+`EntitlementServiceImpl`, `ShopSettingsPage`, both backup scripts, and the
+two service tests whose constructors gained a parameter.
+
+**No migration.** Nothing here is persisted — the mode is a property of how
+the process was started, not of the data.
+
+### Explicitly rejected
+
+- **Supabase Storage / Supabase Auth in hosted mode** — forks uploads or
+  auth into two implementations. Offered, declined.
+- **A build-time `VITE_DEPLOYMENT_MODE`** — one frontend build serves both
+  deployments; a baked-in value is wrong for one of them.
+- **Inferring the mode from `DB_HOST`** — reads as clever, fails silently
+  the day a self-hosted client points at a managed database on purpose.
+  The mode is declared and then *checked* against the host instead.
+- **Weakening `prod` for self-hosted installs** — the client's own hardware
+  is not a reason to expose actuator, springdoc or stack traces.
+
+### Verified
+
+Everything below was executed, not assumed.
+
+**Backend unit suite**: `mvn -o test` → **430/430, BUILD SUCCESS**. That
+includes 12 new tests: `DeploymentModeGuardTest` (4 refusals, 3
+acceptances, 1 "absent config still boots"), 3 self-hosted billing tests
+in `SubscriptionBillingServiceImplTest`, 2 self-hosted entitlement tests
+in `EntitlementServiceImplTest`.
+
+**Backend integration suite**: `mvn -o verify` → **189/189, BUILD SUCCESS**,
+with the whole run green (430 unit + 189 integration).
+
+The first `verify` run during this CR surfaced one failure —
+`CustomerControllerIT.activateRequiresManage`, expecting 403 and getting
+204 — which was **not** this CR's: an untracked test file from another
+session's CR-058 work, asserting a permission boundary that does not
+exist. It was investigated and fixed on the user's instruction; recorded
+in `BUG_REGISTRY.md` as **BUG-TEST-002**. In short: no seeded role holds
+`CUSTOMER_VIEW` without `CUSTOMER_MANAGE` (V1 grants MANAGER, ACCOUNTANT
+and STAFF all three the MANAGE permission), so the test now provisions its
+own `CUSTOMER_READER` role instead of borrowing ACCOUNTANT. The seeded
+grants were deliberately **not** changed to make the old assertion pass —
+role design is a product decision, not a knob to turn for a test.
+
+**Frontend**: `tsc -b --force` and `vite build` both clean.
+
+**The self-hosted stack was actually built and run**, not just written:
+
+- `docker compose -f docker-compose.selfhosted.yml build` — both images
+  built (backend and the new nginx frontend).
+- `up -d` — all three containers reached **healthy**, in dependency order
+  (db healthy → api healthy → web).
+- `GET /healthz` → `ok`; `GET /api/actuator/health` **through the nginx
+  proxy** → `{"status":"UP"}`, confirming the same-origin `/api` proxy
+  works.
+- `GET /api/v1/deployment-config` →
+  `{"mode":"SELF_HOSTED","selfHosted":true,"billingEnabled":false,...}` —
+  which also confirms the blank `APP_BILLING_ENABLED` binds to null and
+  falls through to the mode default, rather than to `false`-by-accident or
+  a binding error.
+- The startup banner printed the mode, database, cookie-secure and
+  "billing: disabled (not applicable to this deployment)".
+- **The guard's refusal was proven for real**: the backend image run with
+  `SPRING_PROFILES_ACTIVE=prod,selfhosted` and a Supabase `DB_HOST` failed
+  with the REFUSING TO START message at "Exception encountered during
+  context initialization" — with no Hikari pool and no Flyway line ahead
+  of it, which is exactly the timing guarantee this guard exists for.
+- `down -v` removed only this project's containers, network and volume;
+  the developer's `hardware-erp-postgres` container and
+  `hardware-erp-postgres-data` volume were confirmed untouched afterwards.
+
+**Two defects were found and fixed during that verification, both mine:**
+
+1. **The compose project name collided with the development stack.** The
+   file first declared `name: hardware-erp`, which is also what Compose
+   derives for `docker-compose.yml` from the directory name — making the
+   two files two views of one project, so a `down -v` here would have
+   deleted the developer's database volume. Now `hardware-erp-selfhosted`.
+2. **The guard originally ran too late.** It was written as an
+   `ApplicationListener<ApplicationReadyEvent>`, mirroring `JwtSecretGuard`
+   — which meant Flyway would have already migrated the SaaS database
+   before the "self-hosted pointed at a managed database" refusal fired.
+   Moving it to a `BeanFactoryPostProcessor` then broke nine
+   `@SpringBootTest` contexts ("No default constructor found", because
+   BFPPs are instantiated before autowiring); resolved by taking the
+   `Environment` from the bean factory. Both re-verified green.
+
+**Not executed**: `registry/static_check.py` — `python3` is not installed
+on this machine (a standing limitation recorded in `CLAUDE.md`).

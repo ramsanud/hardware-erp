@@ -1,6 +1,7 @@
 package com.hardware.erp.auth.entity;
 
 import com.hardware.erp.common.entity.BaseEntity;
+import com.hardware.erp.security.totp.TotpSecretConverter;
 import com.hardware.erp.tenant.entity.Tenant;
 import jakarta.persistence.*;
 import lombok.*;
@@ -91,6 +92,23 @@ public class User extends BaseEntity {
     @Column(name = "password_changed_at")
     private LocalDateTime passwordChangedAt;
 
+    /** CR-058 - mandatory MFA. Mirrors PlatformAdmin's own mfa_enabled/totp_secret/mfa_enrolled_at exactly. */
+    @Column(name = "mfa_enabled", nullable = false)
+    @Builder.Default
+    private boolean mfaEnabled = false;
+
+    /**
+     * Base32 TOTP seed, encrypted at rest. May be populated before mfaEnabled
+     * flips true - a regenerated, unconfirmed secret from an abandoned
+     * /mfa/enroll call.
+     */
+    @Convert(converter = TotpSecretConverter.class)
+    @Column(name = "totp_secret", length = 255)
+    private String totpSecret;
+
+    @Column(name = "mfa_enrolled_at")
+    private LocalDateTime mfaEnrolledAt;
+
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
@@ -146,6 +164,18 @@ public class User extends BaseEntity {
 
     public void invalidateAllTokens() {
         this.tokenVersion = (tokenVersion == null ? 0 : tokenVersion) + 1;
+    }
+
+    /** CR-058. Mirrors PlatformAdmin.beginMfaEnrollment exactly. */
+    public void beginMfaEnrollment(String base32Secret) {
+        this.totpSecret = base32Secret;
+        this.mfaEnabled = false;
+        this.mfaEnrolledAt = null;
+    }
+
+    public void confirmMfaEnrollment() {
+        this.mfaEnabled = true;
+        this.mfaEnrolledAt = LocalDateTime.now();
     }
 
     public void softDelete(Long actingUserId) {

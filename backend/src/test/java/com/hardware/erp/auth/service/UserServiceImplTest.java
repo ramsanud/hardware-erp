@@ -325,4 +325,82 @@ class UserServiceImplTest {
         assertThat(staff.getTokenVersion()).isEqualTo(1);
         assertThat(passwordEncoder.matches("Temp@2026", staff.getPasswordHash())).isTrue();
     }
+
+    // ---------------------------------------------------------------
+    // CR-058 - restoring a soft-deleted account.
+    //
+    // The whole authorisation check is UserRepository.restoreDeleted's WHERE
+    // clause, so these assert on what the service does with its row count:
+    // 1 means the guarded update matched; 0 means it did not match for ANY
+    // reason (other tenant, never deleted, no such id) and all of those must
+    // be reported identically as 404 so ids cannot be probed.
+    // ---------------------------------------------------------------
+
+    @Test
+    @DisplayName("CR-058: a genuinely deleted account is restored in place and written to the SECURITY audit log")
+    void restoresDeletedUser() {
+        when(userRepository.restoreDeleted(5L, 1L)).thenReturn(1);
+
+        userService.restore(5L);
+
+        verify(userRepository).restoreDeleted(5L, 1L);
+        // Restoring re-enables a login, so it belongs in security_audit_log,
+        // never activity_log (CR-015, hard rule 8).
+        verify(auditService).success(eq(AuditAction.USER_RESTORED), eq(5L),
+                eq(staff.getFullName()), eq("USER"), eq(5L));
+    }
+
+    @Test
+    @DisplayName("CR-058: restore never revives old sessions - token_version is left where softDelete put it")
+    void restoreDoesNotRevivePreviousSessions() {
+        staff.softDelete(1L);
+        int tokenVersionAfterDelete = staff.getTokenVersion();
+        assertThat(tokenVersionAfterDelete).isEqualTo(1);
+        when(userRepository.restoreDeleted(5L, 1L)).thenReturn(1);
+
+        userService.restore(5L);
+
+        // Putting token_version back would hand every access token the account
+        // still had outstanding its permissions again.
+        assertThat(staff.getTokenVersion()).isEqualTo(tokenVersionAfterDelete);
+    }
+
+    @Test
+    @DisplayName("CR-058: an account that was never deleted gives 404 and writes no audit entry")
+    void restoreNotDeletedGives404() {
+        when(userRepository.restoreDeleted(5L, 1L)).thenReturn(0);
+
+        assertThatThrownBy(() -> userService.restore(5L))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        verify(auditService, never()).success(eq(AuditAction.USER_RESTORED), anyLong(),
+                anyString(), anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("CR-058: another tenant's deleted account cannot be restored")
+    void cannotRestoreAnotherTenantsUser() {
+        // The signed-in principal belongs to tenant 1; account 5 here is
+        // tenant 2's, so the guarded UPDATE matches nothing.
+        when(userRepository.restoreDeleted(5L, 1L)).thenReturn(0);
+        when(userRepository.restoreDeleted(5L, 2L)).thenReturn(1);
+
+        assertThatThrownBy(() -> userService.restore(5L))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        // The tenant id is taken from the security context, so no caller-
+        // supplied value can redirect it at another shop's rows.
+        verify(userRepository, never()).restoreDeleted(5L, 2L);
+    }
+
+    @Test
+    @DisplayName("CR-058: listDeleted only ever asks for the caller's own tenant")
+    void listDeletedIsTenantScoped() {
+        when(userRepository.findDeletedByTenantId(1L)).thenReturn(List.of());
+
+        assertThat(userService.listDeleted()).isEmpty();
+
+        verify(userRepository).findDeletedByTenantId(1L);
+        verify(userRepository, never()).findDeletedByTenantId(2L);
+    }
 }

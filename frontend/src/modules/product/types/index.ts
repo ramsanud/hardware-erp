@@ -141,6 +141,16 @@ export interface ProductSummaryResponse {
   hasImage: boolean;
 }
 
+/** CR-058 - the recycle-bin projection. Carries no price at all, cost or selling. */
+export interface ProductDeletedResponse {
+  id: number;
+  productCode: string;
+  productName: string;
+  categoryName?: string | null;
+  brandName?: string | null;
+  deletedAt: string;
+}
+
 // ---- bulk import (CR-036) ----
 
 export interface ProductImportRowPreview {

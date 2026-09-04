@@ -16,6 +16,8 @@ import com.hardware.erp.billing.repository.PlatformSubscriptionOrderRepository;
 import com.hardware.erp.billing.repository.PlatformSubscriptionPaymentRepository;
 import com.hardware.erp.billing.service.impl.SubscriptionBillingServiceImpl;
 import com.hardware.erp.common.exception.BusinessException;
+import com.hardware.erp.config.DeploymentMode;
+import com.hardware.erp.config.DeploymentProperties;
 import com.hardware.erp.security.AppUserDetails;
 import com.hardware.erp.tenant.entity.SubscriptionTier;
 import com.hardware.erp.tenant.entity.Tenant;
@@ -99,10 +101,22 @@ class SubscriptionBillingServiceImplTest {
     }
 
     private SubscriptionBillingServiceImpl serviceWith(EffectiveRazorpayConfig config) {
+        return serviceWith(config, CLOUD_DEPLOYMENT);
+    }
+
+    private SubscriptionBillingServiceImpl serviceWith(EffectiveRazorpayConfig config, DeploymentProperties deployment) {
         when(configResolver.resolve()).thenReturn(config);
         return new SubscriptionBillingServiceImpl(
-                configResolver, razorpayOrderClient, orderRepository, paymentRepository, tenantRepository);
+                deployment, configResolver, razorpayOrderClient, orderRepository, paymentRepository, tenantRepository);
     }
+
+    /** CR-059 - the hosted deployment, where billing applies. What every pre-CR-059 test assumed. */
+    private static final DeploymentProperties CLOUD_DEPLOYMENT =
+            new DeploymentProperties(DeploymentMode.CLOUD, "", null);
+
+    /** CR-059 - a client's own Docker install: nothing to subscribe to. */
+    private static final DeploymentProperties SELF_HOSTED_DEPLOYMENT =
+            new DeploymentProperties(DeploymentMode.SELF_HOSTED, "", null);
 
     private EffectiveRazorpayConfig activeConfig() {
         return new EffectiveRazorpayConfig(
@@ -127,6 +141,53 @@ class SubscriptionBillingServiceImplTest {
                     assertThat(be.getCode()).isEqualTo("BILLING_NOT_CONFIGURED");
                 });
         verifyNoInteractions(razorpayOrderClient);
+    }
+
+    @Test
+    @DisplayName("CR-059 - createOrder() refuses on a self-hosted install even with working Razorpay keys")
+    void createOrderRefusedWhenSelfHosted() {
+        // Deliberately an ACTIVE config: the point is that a self-hosted
+        // install must refuse on deployment grounds, not merely because it
+        // happens to have no credentials. A reseller who configures keys on a
+        // self-hosted box must still not be able to charge the shop through
+        // this endpoint unless they turn billing on explicitly.
+        var service = serviceWith(activeConfig(), SELF_HOSTED_DEPLOYMENT);
+
+        assertThatThrownBy(() -> service.createOrder(SubscriptionTier.PRO))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> {
+                    BusinessException be = (BusinessException) e;
+                    assertThat(be.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+                    assertThat(be.getCode()).isEqualTo("BILLING_NOT_APPLICABLE");
+                });
+        verifyNoInteractions(razorpayOrderClient);
+    }
+
+    @Test
+    @DisplayName("CR-059 - a self-hosted install rejects the public Razorpay webhook before parsing it")
+    void webhookRejectedWhenSelfHosted() {
+        // /v1/webhooks/razorpay is permitAll by design, so on a self-hosted box
+        // it is an internet-reachable path for a feature that install does not
+        // have. A validly signed body must still not move anyone's tier.
+        var service = serviceWith(activeConfig(), SELF_HOSTED_DEPLOYMENT);
+        String body = "{\"event\":\"payment.captured\"}";
+
+        assertThat(service.handleWebhook(body, hmac(body, WEBHOOK_SECRET))).isFalse();
+        verifyNoInteractions(orderRepository);
+        verifyNoInteractions(paymentRepository);
+    }
+
+    @Test
+    @DisplayName("CR-059 - a reseller can opt a self-hosted install back into billing")
+    void selfHostedCanOptIntoBilling() {
+        var service = serviceWith(activeConfig(),
+                new DeploymentProperties(DeploymentMode.SELF_HOSTED, "", true));
+        when(razorpayOrderClient.createOrder(eq(KEY_ID), eq(KEY_SECRET), any(), eq(99_900L), eq("INR"), any()))
+                .thenReturn("order_optin");
+
+        SubscriptionOrderResponse response = service.createOrder(SubscriptionTier.PRO);
+
+        assertThat(response.razorpayOrderId()).isEqualTo("order_optin");
     }
 
     @Test

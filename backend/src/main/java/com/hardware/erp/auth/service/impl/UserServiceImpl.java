@@ -236,6 +236,49 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
+     * CR-058. The only read path that can see a soft-deleted account, and it
+     * is deliberately narrow: this tenant's deleted rows, a reduced projection
+     * that carries no security state, USER_MANAGE only.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserDeletedResponse> listDeleted() {
+        return userRepository.findDeletedByTenantId(SecurityUtils.requireCurrentTenantId())
+                .stream()
+                .map(userMapper::toDeletedResponse)
+                .toList();
+    }
+
+    /**
+     * CR-058, the inverse of softDelete. The guarded UPDATE is the whole
+     * authorisation check (see UserRepository.restoreDeleted): another
+     * tenant's account, an account that was never deleted, and a nonexistent
+     * id all touch zero rows and 404 alike, so this cannot be used to probe
+     * which accounts exist at other shops.
+     *
+     * Logged to security_audit_log rather than activity_log, exactly like
+     * USER_CREATED/USER_DEACTIVATED above: restoring an account re-enables a
+     * login, which is a security event, not a business record change
+     * (CR-015, hard rule 8).
+     *
+     * What restore deliberately does NOT do is revive the old sessions.
+     * token_version stays where softDelete left it and the refresh tokens
+     * revoked then stay revoked, so the account comes back able to sign in
+     * afresh and nothing else.
+     */
+    @Override
+    @Transactional
+    public void restore(Long id) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        if (userRepository.restoreDeleted(id, tenantId) == 0) {
+            throw new ResourceNotFoundException("User", id);
+        }
+        User restored = requireUser(id, tenantId);
+        auditService.success(AuditAction.USER_RESTORED, id, restored.getFullName(),
+                "USER", id);
+    }
+
+    /**
      * The shop must never be left without a working owner account.
      *
      * The owner list is read under a pessimistic write lock, scoped to one

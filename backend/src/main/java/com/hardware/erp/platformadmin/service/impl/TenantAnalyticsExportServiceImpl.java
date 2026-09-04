@@ -160,7 +160,11 @@ public class TenantAnalyticsExportServiceImpl implements TenantAnalyticsExportSe
         sb.append("</table>");
 
         sb.append("<h2>Churn (approximation)</h2>")
-          .append("<p>Tenants suspended this month &divide; total tenants that exist by month end - ")
+          // &#247; not &divide;: openhtmltopdf parses strict XHTML, where the only
+          // predefined entities are &amp;/&lt;/&gt;/&quot;/&apos; - a named HTML
+          // entity is an undeclared-entity parse error and fails the whole render
+          // with a 500. Caught by PlatformAdminAnalyticsControllerIT, not review.
+          .append("<p>Tenants suspended this month &#247; total tenants that exist by month end - ")
           .append("not a cohort or usage-based churn measure.</p>")
           .append("<table><tr><th>Month</th><th>Suspended</th><th>Total tenants</th><th>Churn %</th></tr>");
         for (ChurnPoint p : data.churn()) {

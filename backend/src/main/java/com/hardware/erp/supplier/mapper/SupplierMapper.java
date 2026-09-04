@@ -60,6 +60,17 @@ public class SupplierMapper {
                 supplier.getStatus());
     }
 
+    /** CR-058 recycle bin. Identification and the deletion date only. */
+    public SupplierDeletedResponse toDeletedResponse(Supplier supplier) {
+        return new SupplierDeletedResponse(
+                supplier.getId(),
+                supplier.getSupplierCode(),
+                supplier.getSupplierName(),
+                supplier.getMobileNo(),
+                supplier.getCity(),
+                supplier.getDeletedAt());
+    }
+
     public SupplierContactResponse toContactResponse(SupplierContact contact) {
         return new SupplierContactResponse(
                 contact.getId(),

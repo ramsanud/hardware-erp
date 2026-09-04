@@ -1,7 +1,7 @@
 import { apiDelete, apiGet, apiPost, apiPut } from '@/services/apiClient';
 import type { PageResponse } from '@/shared/types/api';
 import type {
-  SupplierContactRequest, SupplierContactResponse, SupplierRequest,
+  SupplierContactRequest, SupplierContactResponse, SupplierDeletedResponse, SupplierRequest,
   SupplierResponse, SupplierSearchParams, SupplierSummaryResponse,
 } from '../types';
 
@@ -25,6 +25,12 @@ export const supplierService = {
 
   /** Soft delete. Purchase orders and payments reference supplier_id permanently. */
   remove: (id: number) => apiDelete(`/v1/suppliers/${id}`),
+
+  /** CR-058. Deleted rows are invisible to `search` - @SQLRestriction hides them - so recovery needs its own endpoint. Requires SUPPLIER_MANAGE. Not paginated. */
+  listDeleted: () => apiGet<SupplierDeletedResponse[]>('/v1/suppliers/deleted'),
+
+  /** CR-058. Undoes `remove`, in place: same id, same code, same contacts, same purchase history. */
+  restore: (id: number) => apiPost<void>(`/v1/suppliers/${id}/restore`),
 
   addContact: (supplierId: number, body: SupplierContactRequest) =>
     apiPost<SupplierContactResponse>(`/v1/suppliers/${supplierId}/contacts`, body),

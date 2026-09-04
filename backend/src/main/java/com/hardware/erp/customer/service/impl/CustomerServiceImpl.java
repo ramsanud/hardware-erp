@@ -2,6 +2,7 @@ package com.hardware.erp.customer.service.impl;
 
 import com.hardware.erp.common.sequence.DocumentSequenceService;
 import com.hardware.erp.common.sequence.DocumentType;
+import com.hardware.erp.common.activity.ActivityAction;
 import com.hardware.erp.common.activity.ActivityLogService;
 import com.hardware.erp.common.dto.PageResponse;
 import com.hardware.erp.common.exception.DuplicateResourceException;
@@ -134,6 +135,24 @@ public class CustomerServiceImpl implements CustomerService {
         customer.setStatus(CustomerStatus.INACTIVE);
         customerRepository.save(customer);
         activityLog.deleted(MODULE, ENTITY, id, customer.getCustomerName(), "Customer deactivated");
+    }
+
+    /**
+     * CR-058, the inverse of deactivate. Customer has no deleted_at and no
+     * @SQLRestriction, so an inactive customer was always still readable -
+     * this is a plain status change, modelled on WorkerServiceImpl.activate
+     * rather than on the Supplier/Product/User restore path, and it touches
+     * nothing but the status.
+     */
+    @Override
+    @Transactional
+    public void activate(Long id) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        Customer customer = require(id, tenantId);
+        customer.setStatus(CustomerStatus.ACTIVE);
+        customerRepository.save(customer);
+        activityLog.action(MODULE, ENTITY, id, customer.getCustomerName(),
+                ActivityAction.STATUS_CHANGE, "Customer reactivated");
     }
 
     @Override

@@ -325,6 +325,143 @@ class UserControllerIT extends AbstractIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    // ---------------- CR-058: deleted accounts and restore ----------------
+    //
+    // These prove against real PostgreSQL what a mocked repository cannot: that
+    // the native queries genuinely see past User's @SQLRestriction, that the
+    // restriction still hides deleted rows from everything else, and - the one
+    // that matters most - that restoring an account does not hand its old
+    // access tokens back their permissions.
+
+    @Test
+    @DisplayName("CR-058: the deleted list shows the soft-deleted seed account that every other endpoint hides")
+    void deletedListSeesWhatSqlRestrictionHides() throws Exception {
+        String deleted = mockMvc.perform(get("/v1/users/deleted").header("Authorization", owner()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andReturn().getResponse().getContentAsString();
+
+        // V900 soft-deletes EMP012; the list test above asserts it is absent there.
+        assertThat(deleted).contains("Former Employee");
+        assertThat(deleted).contains("deletedAt");
+        // Internal security state must not ride along, live account or not.
+        assertThat(deleted).doesNotContain("passwordHash");
+        assertThat(deleted).doesNotContain("tokenVersion");
+        assertThat(deleted).doesNotContain("failedLoginAttempts");
+        assertThat(deleted).doesNotContain("lockedUntil");
+    }
+
+    @Test
+    @DisplayName("CR-058: a restored account signs in again, but its pre-deletion access token stays dead")
+    void restoreDoesNotRevivePreDeletionTokens() throws Exception {
+        String created = mockMvc.perform(post("/v1/users").header("Authorization", owner())
+                        .contentType(APPLICATION_JSON)
+                        .content(json(new CreateUserRequest("Restore Me", "9811100240",
+                                "restoreme@sarahardware.in", "EMP140", STAFF_ROLE_ID,
+                                "Welcome@2026", false))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long id = tree(created).path("data").path("id").asLong();
+
+        // A real, working session issued BEFORE the deletion.
+        String tokenBeforeDelete = bearer("9811100240", "Welcome@2026");
+        mockMvc.perform(get("/v1/auth/me").header("Authorization", tokenBeforeDelete))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/v1/users/" + id).header("Authorization", owner()))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/v1/auth/me").header("Authorization", tokenBeforeDelete))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/v1/users/" + id + "/restore").header("Authorization", owner()))
+                .andExpect(status().isNoContent());
+
+        // The account is usable again...
+        mockMvc.perform(get("/v1/users/" + id).header("Authorization", owner()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value((int) id))
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"));
+        mockMvc.perform(post("/v1/auth/login").contentType(APPLICATION_JSON)
+                        .content(json(new LoginRequest("9811100240", "Welcome@2026"))))
+                .andExpect(status().isOk());
+
+        // ...but the token that was alive before the deletion must stay dead.
+        // Restoring token_version would have silently re-armed every access
+        // token the account still had outstanding.
+        mockMvc.perform(get("/v1/auth/me").header("Authorization", tokenBeforeDelete))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("CR-058: a restored account appears in the ordinary list again and leaves the deleted list")
+    void restoredAccountReappearsInNormalQueries() throws Exception {
+        String created = mockMvc.perform(post("/v1/users").header("Authorization", owner())
+                        .contentType(APPLICATION_JSON)
+                        .content(json(new CreateUserRequest("Round Trip", "9811100241",
+                                "roundtrip@sarahardware.in", "EMP141", STAFF_ROLE_ID,
+                                "Welcome@2026", false))))
+                .andReturn().getResponse().getContentAsString();
+        long id = tree(created).path("data").path("id").asLong();
+
+        mockMvc.perform(delete("/v1/users/" + id).header("Authorization", owner()))
+                .andExpect(status().isNoContent());
+
+        String hidden = mockMvc.perform(get("/v1/users").header("Authorization", owner())
+                        .param("search", "9811100241"))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(tree(hidden).path("data").path("totalElements").asInt()).isZero();
+
+        mockMvc.perform(post("/v1/users/" + id + "/restore").header("Authorization", owner()))
+                .andExpect(status().isNoContent());
+
+        String visible = mockMvc.perform(get("/v1/users").header("Authorization", owner())
+                        .param("search", "9811100241"))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(tree(visible).path("data").path("totalElements").asInt()).isEqualTo(1);
+        assertThat(tree(visible).path("data").path("content").get(0).path("status").asText())
+                .isEqualTo("ACTIVE");
+
+        mockMvc.perform(get("/v1/users/deleted").header("Authorization", owner()))
+                .andExpect(content().string(
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("Round Trip"))));
+
+        // A second restore matches nothing.
+        mockMvc.perform(post("/v1/users/" + id + "/restore").header("Authorization", owner()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("CR-058: restoring an account that was never deleted gives 404")
+    void restoreOfLiveAccountIsNotFound() throws Exception {
+        mockMvc.perform(post("/v1/users/5/restore").header("Authorization", owner()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("CR-058: USER_VIEW alone cannot see the deleted list or restore - both need USER_MANAGE")
+    void deletedAccountsRequireManage() throws Exception {
+        // STAFF holds neither; MANAGER holds USER_VIEW without USER_MANAGE.
+        String staff = bearer(STAFF_MOBILE, STAFF_PASSWORD);
+
+        mockMvc.perform(get("/v1/users/deleted").header("Authorization", staff))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        mockMvc.perform(post("/v1/users/12/restore").header("Authorization", staff))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
+    @DisplayName("CR-058: an unauthenticated caller cannot reach the deleted list or restore")
+    void deletedAccountsRejectAnonymous() throws Exception {
+        mockMvc.perform(get("/v1/users/deleted"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/v1/users/12/restore"))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ---------------- last owner ----------------
 
     @Test
@@ -368,9 +505,10 @@ class UserControllerIT extends AbstractIntegrationTest {
                         .content(json(new ResetUserPasswordRequest("Temp@2026"))))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(post("/v1/auth/login").contentType(APPLICATION_JSON)
-                        .content(json(new LoginRequest("9811100015", "Temp@2026"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.mustChangePassword").value(true));
+        // mustChangePassword rides on the session, which under CR-058 only
+        // exists once the MFA challenge is completed - login() does that.
+        org.assertj.core.api.Assertions.assertThat(
+                        login("9811100015", "Temp@2026").path("mustChangePassword").asBoolean())
+                .isTrue();
     }
 }

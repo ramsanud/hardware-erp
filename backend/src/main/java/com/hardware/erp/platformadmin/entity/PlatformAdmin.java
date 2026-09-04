@@ -1,6 +1,7 @@
 package com.hardware.erp.platformadmin.entity;
 
 import com.hardware.erp.common.entity.BaseEntity;
+import com.hardware.erp.security.totp.TotpSecretConverter;
 import jakarta.persistence.*;
 import lombok.*;
 

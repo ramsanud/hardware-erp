@@ -3,6 +3,7 @@ import {
 } from '@/services/apiClient';
 import type { ApiResponse, PageResponse } from '@/shared/types/api';
 import type {
+  ProductDeletedResponse,
   ProductImportConfirmRequest, ProductImportPreviewResponse, ProductImportResultResponse,
   ProductPriceHistoryResponse, ProductRequest, ProductResponse, ProductSearchParams, ProductSummaryResponse,
 } from '../types';
@@ -21,6 +22,12 @@ export const productService = {
 
   /** Soft delete. Purchase and invoice history will reference product_id permanently. */
   remove: (id: number) => apiDelete(`/v1/products/${id}`),
+
+  /** CR-058. Deleted rows are invisible to `search` - @SQLRestriction hides them - so recovery needs its own endpoint. Requires PRODUCT_MANAGE. Not paginated. */
+  listDeleted: () => apiGet<ProductDeletedResponse[]>('/v1/products/deleted'),
+
+  /** CR-058. Undoes `remove`, in place: same id, same code, same stock row, same sales history. */
+  restore: (id: number) => apiPost<void>(`/v1/products/${id}/restore`),
 
   /** CR-053 backlog item 1. Up to the 20 most recent non-cancelled sales, newest first. */
   priceHistory: (id: number) => apiGet<ProductPriceHistoryResponse[]>(`/v1/products/${id}/price-history`),

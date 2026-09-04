@@ -195,4 +195,63 @@ class CustomerServiceImplTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> customerService.productHistory(999L))
                 .isInstanceOf(com.hardware.erp.common.exception.ResourceNotFoundException.class);
     }
+
+    // ---------------------------------------------------------------
+    // CR-058 - reactivation. Customer carries no deleted_at and no
+    // @SQLRestriction, so an INACTIVE customer was never hidden: this is a
+    // plain status change, not the Supplier/Product/User restore path.
+    // ---------------------------------------------------------------
+
+    @Test
+    @DisplayName("CR-058: activate() puts an INACTIVE customer back to ACTIVE and logs a STATUS_CHANGE")
+    void activateReactivatesInactiveCustomer() {
+        Customer inactive = Customer.builder()
+                .id(11L)
+                .customerName("Meenakshi Traders")
+                .mobileNo("9842000111")
+                .status(CustomerStatus.INACTIVE)
+                .build();
+        when(customerRepository.findByIdAndTenantId(11L, 1L)).thenReturn(Optional.of(inactive));
+
+        customerService.activate(11L);
+
+        assertThat(inactive.getStatus()).isEqualTo(CustomerStatus.ACTIVE);
+        // Reactivating is a business-record change, so it belongs in
+        // activity_log - unlike User.restore, which re-enables a login and is
+        // therefore a security event (CR-015, hard rule 8).
+        org.mockito.Mockito.verify(activityLog).action(
+                org.mockito.ArgumentMatchers.eq("CUSTOMER"),
+                org.mockito.ArgumentMatchers.eq("CUSTOMER"),
+                org.mockito.ArgumentMatchers.eq(11L),
+                org.mockito.ArgumentMatchers.eq("Meenakshi Traders"),
+                org.mockito.ArgumentMatchers.eq(com.hardware.erp.common.activity.ActivityAction.STATUS_CHANGE),
+                org.mockito.ArgumentMatchers.anyString());
+        // The same row is updated in place - the customer keeps its id and
+        // every invoice that references it.
+        org.mockito.Mockito.verify(customerRepository).save(inactive);
+    }
+
+    @Test
+    @DisplayName("CR-058: activate() on another tenant's customer is a 404, never a cross-tenant write")
+    void cannotActivateAnotherTenantsCustomer() {
+        // The signed-in principal is tenant 1; customer 11 belongs to tenant 2,
+        // so the tenant-scoped lookup finds nothing.
+        when(customerRepository.findByIdAndTenantId(11L, 1L)).thenReturn(Optional.empty());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> customerService.activate(11L))
+                .isInstanceOf(com.hardware.erp.common.exception.ResourceNotFoundException.class);
+
+        org.mockito.Mockito.verify(customerRepository, org.mockito.Mockito.never())
+                .save(org.mockito.ArgumentMatchers.any(Customer.class));
+        org.mockito.Mockito.verifyNoInteractions(activityLog);
+    }
+
+    @Test
+    @DisplayName("CR-058: activate() on an unknown id is a 404")
+    void activateUnknownIdGives404() {
+        when(customerRepository.findByIdAndTenantId(999L, 1L)).thenReturn(Optional.empty());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> customerService.activate(999L))
+                .isInstanceOf(com.hardware.erp.common.exception.ResourceNotFoundException.class);
+    }
 }

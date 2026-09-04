@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { History, KeyRound, Loader2, MoreHorizontal, Pencil, Trash2, UserPlus, Users } from 'lucide-react';
+import { History, KeyRound, Loader2, MoreHorizontal, Pencil, RotateCcw, Trash2, UserPlus, Users } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Card } from '@/shared/components/ui/card';
 import {
@@ -23,6 +23,8 @@ import { SearchInput } from '@/shared/components/SearchInput';
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog';
 import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
 import { useAsyncList } from '@/shared/hooks/useAsyncList';
+import { useAsyncData } from '@/shared/hooks/useAsyncData';
+import { emptyPage } from '@/shared/types/api';
 import { DEFAULT_PAGE_SIZE, SEARCH_DEBOUNCE_MS } from '@/shared/constants';
 import { formatDateTime } from '@/shared/lib/utils';
 import { PermissionGate } from '@/routes/RequirePermission';
@@ -38,9 +40,19 @@ import type { RoleResponse, UserActivityResponse, UserResponse, UserStatus } fro
 
 const ALL = '__all__';
 
+/**
+ * CR-058 - see SupplierListPage for why "Deleted" is a filter value rather
+ * than a UserStatus: a deleted account's status column still says INACTIVE,
+ * and the rows live behind their own USER_MANAGE endpoint.
+ */
+const DELETED = '__deleted__';
+
 export function UserManagementPage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, hasPermission } = useAuth();
   const toast = useToast();
+  // Both the deleted list and restore require USER_MANAGE server-side, so a
+  // USER_VIEW-only user is never offered the filter that would 403.
+  const canManage = hasPermission(PERMISSIONS.USER_MANAGE);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>(ALL);
@@ -54,28 +66,55 @@ export function UserManagementPage() {
   const [resetting, setResetting] = useState<UserResponse | null>(null);
   const [deleting, setDeleting] = useState<UserResponse | null>(null);
   const [viewingActivity, setViewingActivity] = useState<UserResponse | null>(null);
+  const [restoringId, setRestoringId] = useState<number | null>(null);
 
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
+  const deletedMode = status === DELETED;
 
   // A filter change must return to page 0, or a search matching two rows on
   // page 4 shows an empty table.
   useEffect(() => { setPage(0); }, [debouncedSearch, status, roleId, size]);
 
   const fetcher = useCallback(
-    () => userService.search({
-      search: debouncedSearch || undefined,
-      status: status === ALL ? undefined : (status as UserStatus),
-      roleId: roleId === ALL ? undefined : Number(roleId),
-      page,
-      size,
-      sortBy: 'fullName',
-      sortDir: 'asc',
-    }),
-    [debouncedSearch, status, roleId, page, size],
+    // In deleted mode the ordinary search would be both wrong (it cannot see
+    // deleted accounts at all) and wasted, so it is never sent.
+    () => (deletedMode
+      ? Promise.resolve(emptyPage<UserResponse>(size))
+      : userService.search({
+        search: debouncedSearch || undefined,
+        status: status === ALL ? undefined : (status as UserStatus),
+        roleId: roleId === ALL ? undefined : Number(roleId),
+        page,
+        size,
+        sortBy: 'fullName',
+        sortDir: 'asc',
+      })),
+    [deletedMode, debouncedSearch, status, roleId, page, size],
   );
 
   const { data, loading, error, reload } = useAsyncList(fetcher,
-    [debouncedSearch, status, roleId, page, size]);
+    [deletedMode, debouncedSearch, status, roleId, page, size]);
+
+  const deletedFetcher = useCallback(
+    () => (deletedMode ? userService.listDeleted() : Promise.resolve([])),
+    [deletedMode],
+  );
+  const {
+    data: deletedRows, loading: deletedLoading, error: deletedError, reload: reloadDeleted,
+  } = useAsyncData(deletedFetcher, [deletedMode]);
+
+  const handleRestore = async (id: number, name: string) => {
+    setRestoringId(id);
+    try {
+      await userService.restore(id);
+      toast.success(`${name} has been restored and can sign in again.`);
+      await reloadDeleted();
+    } catch (caught) {
+      toast.error(caught, 'Could not restore this user.');
+    } finally {
+      setRestoringId(null);
+    }
+  };
 
   useEffect(() => {
     void (async () => {
@@ -156,7 +195,9 @@ export function UserManagementPage() {
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <SearchInput value={search} onChange={setSearch}
+        {/* Search and role have no meaning against the deleted endpoint, which
+            returns this tenant's deleted accounts whole and unpaginated. */}
+        <SearchInput value={search} onChange={setSearch} disabled={deletedMode}
                      placeholder="Name, mobile, email or code…" />
 
         <Select value={status} onValueChange={setStatus}>
@@ -166,10 +207,11 @@ export function UserManagementPage() {
             {USER_STATUS_OPTIONS.map((option) => (
               <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
             ))}
+            {canManage ? <SelectItem value={DELETED}>Deleted</SelectItem> : null}
           </SelectContent>
         </Select>
 
-        <Select value={roleId} onValueChange={setRoleId}>
+        <Select value={roleId} onValueChange={setRoleId} disabled={deletedMode}>
           <SelectTrigger className="sm:w-44"><SelectValue placeholder="Role" /></SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>All roles</SelectItem>
@@ -180,6 +222,71 @@ export function UserManagementPage() {
         </Select>
       </div>
 
+      {deletedMode ? (
+        <Card>
+          {deletedError ? (
+            <ErrorState error={deletedError} onRetry={reloadDeleted} />
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="hidden sm:table-cell">Mobile</TableHead>
+                    <TableHead className="hidden lg:table-cell">Role</TableHead>
+                    <TableHead>Deleted on</TableHead>
+                    <TableHead className="w-12" />
+                  </TableRow>
+                </TableHeader>
+
+                {deletedLoading ? (
+                  <TableSkeleton columns={5} rows={5} />
+                ) : (
+                  <TableBody>
+                    {deletedRows?.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell>
+                          <span className="font-medium">{row.fullName}</span>
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            {row.employeeCode ?? '—'}
+                          </span>
+                        </TableCell>
+                        <TableCell className="tabular hidden sm:table-cell">{row.mobileNo}</TableCell>
+                        <TableCell className="hidden lg:table-cell">{row.roleName ?? '—'}</TableCell>
+                        <TableCell className="tabular text-sm text-muted-foreground">
+                          {formatDateTime(row.deletedAt)}
+                        </TableCell>
+                        <TableCell>
+                          {/* Restoring undoes a deletion; it is not destructive
+                              and needs no confirmation. The account comes back
+                              able to sign in - its old sessions stay dead. */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            loading={restoringId === row.id}
+                            onClick={() => handleRestore(row.id, row.fullName)}
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                            Restore
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                )}
+              </Table>
+
+              {!deletedLoading && deletedRows && deletedRows.length === 0 ? (
+                <EmptyState
+                  icon={Users}
+                  title="No deleted users"
+                  description="Accounts you deactivate appear here so they can be restored."
+                />
+              ) : null}
+            </>
+          )}
+        </Card>
+      ) : (
       <Card>
         {error ? (
           <ErrorState error={error} onRetry={reload} />
@@ -272,6 +379,7 @@ export function UserManagementPage() {
           </>
         )}
       </Card>
+      )}
 
       <Dialog open={creating} onOpenChange={(open) => !open && setCreating(false)}>
         <DialogContent className="sm:max-w-2xl">

@@ -191,6 +191,40 @@ public class SupplierController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/deleted")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).SUPPLIER_MANAGE)")
+    @Operation(
+            summary = "Deleted suppliers, for recovery (CR-058)",
+            description = "Soft-deleted rows are hidden from every other endpoint by "
+                        + "`@SQLRestriction`, which until now made a mistaken deactivation "
+                        + "irreversible from the UI. Gated on SUPPLIER_MANAGE, not "
+                        + "SUPPLIER_VIEW: only someone who can restore a record has any "
+                        + "reason to see the deleted list. Not paginated - a shop's "
+                        + "deleted-supplier list is short by nature.")
+    public ResponseEntity<ApiResponse<List<SupplierDeletedResponse>>> listDeleted() {
+        return ResponseEntity.ok(ApiResponse.ok(supplierService.listDeleted()));
+    }
+
+    @PostMapping("/{id}/restore")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).SUPPLIER_MANAGE)")
+    @Operation(
+            summary = "Restore a deleted supplier (CR-058)",
+            description = "Clears deleted_at/deleted_by and returns the supplier to ACTIVE, "
+                        + "in place: the same supplier_id, the same code, the same contacts, "
+                        + "and every purchase document that already references it. A supplier "
+                        + "that is not deleted, or belongs to another shop, gives 404.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "204", description = "Restored"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "Not deleted, unknown, or another tenant's",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<Void> restore(@Parameter(example = "13") @PathVariable Long id) {
+        supplierService.restore(id);
+        return ResponseEntity.noContent().build();
+    }
+
     // ---------------- contacts ----------------
 
     @PostMapping("/{id}/contacts")

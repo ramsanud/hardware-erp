@@ -894,3 +894,132 @@ exactly as `WhatsAppAccessTokenConverter` already does), `pro_plan_amount_paise`
 the `RAZORPAY_*` environment variables (V49) lives entirely in
 application code (`RazorpayConfigResolver`), not the schema - see the CR
 entry.
+
+## Module 3 table (V7) — `product`
+
+Documented here for the first time under CR-058: V7 was listed in the
+migration history from the start, but `product` never got a column-level
+section of its own the way `app_user` and `supplier` did. Nothing below is a
+schema change — this records what V7 has always created.
+
+### `product`
+Never hard-deleted: purchase, inventory, invoice and credit-note lines
+reference `product_id` permanently.
+
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| product_id | BIGINT IDENTITY | NO | PK |
+| tenant_id | BIGINT | NO | FK → tenant (CR-016) |
+| product_code | VARCHAR(30) | NO | `uk_product_code (tenant_id, product_code)`; auto-generated `PRD-nnnnnn` |
+| product_name | VARCHAR(255) | NO | |
+| category_id | BIGINT | YES | FK → category, ON DELETE RESTRICT |
+| brand_id | BIGINT | YES | FK → brand, ON DELETE RESTRICT |
+| model_no, manufacturer_code, barcode | VARCHAR(60) | YES | identification priority is barcode → manufacturer_code → model_no → product_code, never name alone |
+| unit | VARCHAR(20) | NO | |
+| description | TEXT | YES | |
+| hsn_code | VARCHAR(10) | YES | |
+| gst_rate_percent | DECIMAL(5,2) | NO | CHECK 0–100. Deliberately not constrained to today's 0/5/12/18/28 slabs — the slab set has changed before |
+| purchase_price_paise, selling_price_paise, mrp_paise | BIGINT | NO | paise, CHECK >= 0. Current price only; an issued invoice line keeps its own snapshot |
+| minimum_stock, reorder_level | DECIMAL(18,4) | NO | CHECK >= 0; quantities are DECIMAL(18,4), a carton may sell fractionally |
+| alt_unit_label | VARCHAR(30) | YES | CR-053 backlog item 1; set together with the factor or both null |
+| alt_unit_conversion_factor | DECIMAL(18,4) | YES | V40 |
+| status | VARCHAR(20) | NO | CHECK IN ('ACTIVE','INACTIVE') |
+| deleted_at, deleted_by | | YES | soft delete |
+| created_at … version | | | audit block + `@Version` |
+
+Functional/partial unique indexes, all scoped past soft-deleted rows:
+`uk_product_name_lower` on `(tenant_id, lower(product_name)) WHERE deleted_at
+IS NULL`, and `uk_product_barcode` on `(tenant_id, barcode) WHERE deleted_at
+IS NULL AND barcode IS NOT NULL`.
+
+Indexes: `idx_product_tenant`, `idx_product_category`, `idx_product_brand`,
+`idx_product_status (status, deleted_at)`, and the partial
+`idx_product_active ON (product_id) WHERE deleted_at IS NULL`.
+
+## CR-058 — `deleted_at` / `deleted_by` behaviour, and why restore is safe
+
+**No schema change. No migration.** CR-058 adds no column, no table and no
+constraint; it only adds queries against columns `app_user`, `supplier` and
+`product` have carried since V1/V2/V7.
+
+**Affected tables:** `app_user`, `supplier`, `product` (recoverable soft
+delete) and `customer` (status-only, unaffected by any of this).
+
+### What the columns mean
+
+`deleted_at IS NOT NULL` is the single source of truth for "deleted". The
+matching entity classes carry `@SQLRestriction("deleted_at is null")`, so
+Hibernate appends that predicate to every SQL statement whose FROM clause it
+generates itself — every derived query, every JPQL query, every association
+load. `deleted_by` records who did it; `status` is additionally set to
+`INACTIVE` by `softDelete()`, which is why a deleted row cannot be recognised
+by its status column alone.
+
+### The recoverability defect this fixes (BUG-SUP-006)
+
+Because `@SQLRestriction` hides the row from *every* ORM path — including
+`findByIdAndTenantId` — a soft-deleted supplier, product or user could not be
+read, listed or updated by any query in the codebase. The row survived
+correctly for `created_by`/`supplier_id`/`product_id` history, exactly as
+designed, but there was no way back: a mis-click on Deactivate was
+irreversible from the application. Restoring one required manual SQL against
+production.
+
+### How restore reaches the row without weakening the restriction
+
+Hibernate only rewrites a FROM clause it generated. A `nativeQuery = true`
+statement is passed through untouched, which is the escape hatch CR-018's two
+native queries in `SupplierRepository` already relied on. CR-058 adds two per
+table, both parameter-bound and both tenant-scoped:
+
+- `select * from <table> where tenant_id = :tenantId and deleted_at is not null
+  order by deleted_at desc` — the recycle-bin read.
+- `update <table> set deleted_at = null, deleted_by = null, status = 'ACTIVE',
+  version = version + 1 where <pk> = :id and tenant_id = :tenantId and
+  deleted_at is not null` — the restore.
+
+`@SQLRestriction` is **not** removed, disabled, or bypassed anywhere else. Its
+behaviour for ordinary queries is unchanged and covered by regression tests.
+
+### Why the restore is one guarded UPDATE, not read-then-write
+
+The `WHERE` clause *is* the authorization and state check, applied atomically
+by the database:
+
+- `tenant_id = :tenantId` (from `SecurityUtils.requireCurrentTenantId()`, never
+  from the request) makes a cross-tenant restore impossible rather than merely
+  checked.
+- `deleted_at IS NOT NULL` makes restoring a live row impossible, and makes a
+  double restore a no-op instead of a second "success".
+- Zero rows affected → `404 NOT_FOUND` for every one of those cases alike, so
+  ids cannot be probed.
+
+There is no window between the check and the write, so two concurrent restores
+cannot both believe they won.
+
+### Data integrity
+
+The row is mutated in place. The primary key, the code
+(`supplier_code`/`product_code`/`employee_code`), every foreign key pointing
+at it and every history row referencing it are untouched — a restore can
+never produce a duplicate record. `version` is incremented by hand because a
+native UPDATE bypasses the `@Version` column Hibernate would otherwise
+maintain; leaving it stale would let a concurrently-loaded copy overwrite the
+restore.
+
+`app_user` restore additionally sets `failed_login_attempts = 0` and
+`locked_until = NULL`, so a restored account is not born inside a lockout it
+can never clear. It deliberately does **not** touch `token_version`:
+`softDelete()` incremented it, and that increment is what invalidated every
+access token the account still had outstanding. Putting it back would hand
+those tokens their permissions again. The restored account can sign in afresh;
+its pre-deletion sessions stay dead, and the `refresh_token` rows revoked with
+reason `USER_DEACTIVATED` stay revoked.
+
+### `customer` is deliberately not part of this
+
+`customer` has no `deleted_at`, no `deleted_by` and no `@SQLRestriction`. Its
+`DELETE` endpoint only sets `status = 'INACTIVE'`, so the row was never hidden
+and there is nothing to recover — `POST /v1/customers/{id}/activate` simply
+sets it back to `ACTIVE`. No deleted-records table, column or endpoint was
+invented for it.

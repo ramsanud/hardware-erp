@@ -21,6 +21,7 @@ import { ImageUpload } from '@/shared/components/ImageUpload';
 import { SignaturePad } from '@/shared/components/SignaturePad';
 import { UnsavedChangesDialog } from '@/shared/components/UnsavedChangesDialog';
 import { useAuthenticatedImage } from '@/shared/hooks/useAuthenticatedImage';
+import { useDeploymentConfig } from '@/shared/hooks/useDeploymentConfig';
 import { cn } from '@/shared/lib/utils';
 import { INDIAN_STATES } from '@/shared/data/indianStates';
 import { BANK_OTHER, INDIAN_BANKS } from '@/shared/data/indianBanks';
@@ -89,6 +90,13 @@ function toFormValues(settings: TenantSettingsResponse): SettingsFormValues {
 export function ShopSettingsPage() {
   const toast = useToast();
   const { refreshBrand } = useAppChrome();
+  // CR-059. A self-hosted installation has no subscription to buy, so the
+  // purchase paths are hidden rather than left to fail - the server refuses
+  // them with BILLING_NOT_APPLICABLE, and a button that always errors is
+  // worse than no button. `resolved` keeps the hosted-default fallback from
+  // flashing an upgrade prompt at a client who already owns the software.
+  const deployment = useDeploymentConfig();
+  const showBilling = deployment.resolved && deployment.billingEnabled;
   const [settings, setSettings] = useState<TenantSettingsResponse | null>(null);
   const [usage, setUsage] = useState<UsageSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -490,11 +498,13 @@ export function ShopSettingsPage() {
         />
 
         <div className="max-w-2xl space-y-5">
-          <SubscriptionPlanCard currentTier={settings.subscriptionTier} trialExpiresAt={settings.subscriptionTrialExpiresAt} onChangeTier={changeTier} />
-          <BillingUpgradeCard currentTier={settings.subscriptionTier} tenantName={settings.name}
-                               ownerEmail={settings.email} ownerPhone={settings.phone} onUpgraded={handleUpgraded} />
+          {showBilling ? <SubscriptionPlanCard currentTier={settings.subscriptionTier} trialExpiresAt={settings.subscriptionTrialExpiresAt} onChangeTier={changeTier} /> : null}
+          {showBilling ? (
+            <BillingUpgradeCard currentTier={settings.subscriptionTier} tenantName={settings.name}
+                                 ownerEmail={settings.email} ownerPhone={settings.phone} onUpgraded={handleUpgraded} />
+          ) : null}
           {usage ? <UsageCard usage={usage} /> : null}
-          <SubscriptionCouponsCard onRedeemed={handleCouponRedeemed} />
+          {showBilling ? <SubscriptionCouponsCard onRedeemed={handleCouponRedeemed} /> : null}
           <InvoiceThemeCard currentTheme={settings.invoiceTheme} onChangeTheme={changeInvoiceTheme} />
           <AdditionalSettingsCard settings={settings} onChange={changeAdditionalSettings} />
           <TdsTcsCard settings={settings} onChange={changeTdsTcs} />
@@ -582,11 +592,13 @@ export function ShopSettingsPage() {
       />
 
       <div className="max-w-2xl mb-5 space-y-5">
-        <SubscriptionPlanCard currentTier={settings.subscriptionTier} trialExpiresAt={settings.subscriptionTrialExpiresAt} onChangeTier={changeTier} />
-        <BillingUpgradeCard currentTier={settings.subscriptionTier} tenantName={settings.name}
-                             ownerEmail={settings.email} ownerPhone={settings.phone} onUpgraded={handleUpgraded} />
+        {showBilling ? <SubscriptionPlanCard currentTier={settings.subscriptionTier} trialExpiresAt={settings.subscriptionTrialExpiresAt} onChangeTier={changeTier} /> : null}
+        {showBilling ? (
+          <BillingUpgradeCard currentTier={settings.subscriptionTier} tenantName={settings.name}
+                               ownerEmail={settings.email} ownerPhone={settings.phone} onUpgraded={handleUpgraded} />
+        ) : null}
         {usage ? <UsageCard usage={usage} /> : null}
-        <SubscriptionCouponsCard onRedeemed={handleCouponRedeemed} />
+        {showBilling ? <SubscriptionCouponsCard onRedeemed={handleCouponRedeemed} /> : null}
         <InvoiceThemeCard currentTheme={settings.invoiceTheme} onChangeTheme={changeInvoiceTheme} />
         <AdditionalSettingsCard settings={settings} onChange={changeAdditionalSettings} />
         <TdsTcsCard settings={settings} onChange={changeTdsTcs} />

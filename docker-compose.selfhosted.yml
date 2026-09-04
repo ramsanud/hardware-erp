@@ -1,0 +1,168 @@
+# =====================================================================
+# SELF-HOSTED Hardware ERP - the whole product on the client's own
+# machine, in one command (CR-059).
+#
+#   cp .env.selfhosted.example .env
+#   # edit .env - it will not start without a JWT secret and an owner account
+#   docker compose -f docker-compose.selfhosted.yml up -d
+#
+# Then open http://<this-machine's-LAN-ip>/ from any device in the shop.
+#
+# This is the alternative to the hosted product, not a development setup.
+# For development use docker-compose.yml, which starts PostgreSQL alone and
+# leaves the backend and frontend to run from source with hot reload.
+#
+# Three containers on one private network:
+#   postgres  the database, on a named volume - the only thing that must be
+#             backed up (scripts/backup-db.sh)
+#   backend   Spring Boot, profiles prod,selfhosted
+#   frontend  nginx serving the built SPA and proxying /api to backend
+#
+# ONLY the frontend publishes a port. The database and the API are reachable
+# from inside this network and nowhere else, so a laptop on the shop's wifi
+# cannot connect to PostgreSQL directly even with the password.
+# =====================================================================
+
+# Distinct from the development stack's project name, which Compose derives
+# from the directory and is therefore plain "hardware-erp". Sharing it would
+# make the two files two views of ONE project: `up` here would try to
+# reconcile the developer's already-running postgres container, and
+# `down -v` would delete the development data volume. Separate projects.
+name: hardware-erp-selfhosted
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hardware-erp-db
+    restart: unless-stopped
+    environment:
+      # These take effect ONLY on an empty volume. Changing them later does
+      # not rename an existing user or database - the same trap documented at
+      # length in docker-compose.yml, which this file deliberately mirrors.
+      POSTGRES_DB: ${DB_NAME:-hardware_erp}
+      POSTGRES_USER: ${DB_USER:-hardware_erp}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+      TZ: ${TZ:-Asia/Kolkata}
+    volumes:
+      - erp_db_data:/var/lib/postgresql/data
+    # No `ports:` on purpose. Uncomment only to attach psql or a GUI client
+    # from the host, and prefer `docker exec -it hardware-erp-db psql` over
+    # opening the port at all.
+    # ports:
+    #   - "127.0.0.1:5433:5432"
+    healthcheck:
+      # Named user AND database. Without both, pg_isready reports ready while
+      # the init scripts are still running, and the backend fails its first
+      # migration against a database that is not there yet.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hardware_erp} -d ${DB_NAME:-hardware_erp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: hardware-erp-backend:selfhosted
+    container_name: hardware-erp-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        # Not just "started". Flyway runs on boot and a not-yet-accepting
+        # database means a failed migration, not a retry.
+        condition: service_healthy
+    environment:
+      # 'prod' carries the security posture, 'selfhosted' the deployment
+      # differences. DeploymentModeGuard refuses to start if this is ever
+      # combined with 'cloud', or pointed at a hosted database.
+      SPRING_PROFILES_ACTIVE: prod,selfhosted
+
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-hardware_erp}
+      DB_USER: ${DB_USER:-hardware_erp}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+
+      # Refused at startup if left at the built-in placeholder (JwtSecretGuard).
+      # Generate with: openssl rand -base64 32
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      PLATFORM_ADMIN_JWT_SECRET: ${PLATFORM_ADMIN_JWT_SECRET:?PLATFORM_ADMIN_JWT_SECRET must be set in .env}
+
+      # Reached over http on a LAN by default - see application-selfhosted.yml
+      # for why, and what it costs. Set to true once this is behind HTTPS.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      APP_INSTALLATION_NAME: ${APP_INSTALLATION_NAME:-}
+
+      # Password-reset emails must link back to THIS machine, not to a hosted
+      # URL the shop cannot reach.
+      RESET_URL: ${APP_BASE_URL:-http://localhost}/reset-password
+      CORS_ORIGINS: ${APP_BASE_URL:-http://localhost}
+
+      # First OWNER account, created once on first boot. There is no
+      # self-registration endpoint by design (CR-008). Set
+      # APP_BOOTSTRAP_ENABLED=false and restart after the first sign-in.
+      APP_BOOTSTRAP_ENABLED: ${APP_BOOTSTRAP_ENABLED:-true}
+      APP_BOOTSTRAP_MOBILE: ${APP_BOOTSTRAP_MOBILE:-}
+      APP_BOOTSTRAP_EMAIL: ${APP_BOOTSTRAP_EMAIL:-}
+      APP_BOOTSTRAP_PASSWORD: ${APP_BOOTSTRAP_PASSWORD:-}
+      APP_BOOTSTRAP_NAME: ${APP_BOOTSTRAP_NAME:-Shop Owner}
+
+      # Optional. Email is simply off when unset: password reset then logs the
+      # link instead of sending it, and the owner can reset staff passwords
+      # from the Users screen regardless.
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USER: ${MAIL_USER:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+
+      TZ: ${TZ:-Asia/Kolkata}
+
+      # A shop PC is not a server. Without an explicit ceiling the JVM sizes
+      # its heap against total system memory and will happily take 4GB on a
+      # 16GB machine that is also running Tally and a browser.
+      JAVA_TOOL_OPTIONS: ${JAVA_OPTS:--XX:MaxRAMPercentage=60 -XX:+UseSerialGC}
+    # Not published. nginx reaches this over the compose network by service
+    # name; nothing outside the machine needs the API port.
+    expose:
+      - "8080"
+    healthcheck:
+      # /api/actuator/health is the one actuator path SecurityConfig leaves
+      # public, and application-prod.yml exposes health and nothing else - so
+      # this probe needs no credential and discloses no configuration.
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      # Spring Boot plus Flyway on first boot is slow on shop hardware. Too
+      # short a start_period marks a healthy start as failed and restart-loops
+      # the container forever.
+      start_period: 120s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: hardware-erp-frontend:selfhosted
+    container_name: hardware-erp-web
+    restart: unless-stopped
+    depends_on:
+      backend:
+        # Only so the first page load does not meet a 502 while Spring boots.
+        # nginx would recover on its own; this makes `up -d` mean "ready".
+        condition: service_healthy
+    ports:
+      # The single published port. 80 by default so the shop opens
+      # http://<ip> with nothing after it; set WEB_PORT if 80 is taken (IIS
+      # and Skype are the usual culprits on a Windows machine).
+      - "${WEB_PORT:-80}:80"
+    environment:
+      TZ: ${TZ:-Asia/Kolkata}
+
+volumes:
+  erp_db_data:
+    # Named explicitly so `docker compose down -v` in the wrong directory
+    # cannot quietly take a different project's data, and so the backup
+    # scripts have a stable name to refer to.
+    name: hardware-erp-selfhosted-data

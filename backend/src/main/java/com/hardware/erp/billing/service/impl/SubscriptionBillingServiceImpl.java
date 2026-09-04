@@ -12,6 +12,7 @@ import com.hardware.erp.billing.service.RazorpayConfigResolver;
 import com.hardware.erp.billing.service.RazorpayOrderClient;
 import com.hardware.erp.billing.service.SubscriptionBillingService;
 import com.hardware.erp.common.exception.BusinessException;
+import com.hardware.erp.config.DeploymentProperties;
 import com.hardware.erp.security.SecurityUtils;
 import com.hardware.erp.tenant.entity.SubscriptionTier;
 import com.hardware.erp.tenant.entity.Tenant;
@@ -38,6 +39,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SubscriptionBillingServiceImpl implements SubscriptionBillingService {
 
+    private final DeploymentProperties deployment;
     private final RazorpayConfigResolver configResolver;
     private final RazorpayOrderClient razorpayOrderClient;
     private final PlatformSubscriptionOrderRepository orderRepository;
@@ -48,6 +50,7 @@ public class SubscriptionBillingServiceImpl implements SubscriptionBillingServic
     @Override
     @Transactional
     public SubscriptionOrderResponse createOrder(SubscriptionTier requestedTier) {
+        requireBillingApplicable();
         EffectiveRazorpayConfig config = configResolver.resolve();
         if (!config.active()) {
             throw new BusinessException(
@@ -87,6 +90,7 @@ public class SubscriptionBillingServiceImpl implements SubscriptionBillingServic
     @Override
     @Transactional
     public void verifyPayment(VerifyPaymentRequest request) {
+        requireBillingApplicable();
         EffectiveRazorpayConfig config = configResolver.resolve();
         if (!config.active()) {
             throw new BusinessException(
@@ -118,6 +122,14 @@ public class SubscriptionBillingServiceImpl implements SubscriptionBillingServic
     @Override
     @Transactional
     public boolean handleWebhook(String rawBody, String signatureHeader) {
+        // CR-059. The webhook endpoint is public by design (Razorpay carries no
+        // JWT of ours), so on a self-hosted install it is an internet-facing
+        // path for a feature that install does not have. Refuse before parsing
+        // anything, rather than relying on there being no order to match.
+        if (!deployment.billingApplies()) {
+            log.warn("Razorpay webhook received on a deployment where billing does not apply - rejecting");
+            return false;
+        }
         EffectiveRazorpayConfig config = configResolver.resolve();
         if (!config.webhookActive()) {
             log.warn("Razorpay webhook received but no webhook secret configured - rejecting");
@@ -209,6 +221,25 @@ public class SubscriptionBillingServiceImpl implements SubscriptionBillingServic
     }
 
     /** Razorpay Checkout's own documented contract: HMAC-SHA256(order_id + "|" + payment_id, key_secret). */
+    /**
+     * CR-059. A self-hosted install is software the client has already bought;
+     * charging them a monthly subscription for it is simply wrong, so checkout
+     * is refused rather than merely hidden in the UI. Distinct from
+     * BILLING_NOT_CONFIGURED, which means "this deployment does bill, but
+     * Razorpay keys are missing" - an operator can fix that one.
+     *
+     * A reseller running self-hosted instances for several shops can turn this
+     * back on with app.deployment.billing-enabled=true.
+     */
+    private void requireBillingApplicable() {
+        if (!deployment.billingApplies()) {
+            throw new BusinessException(
+                    "This is a self-hosted installation. Subscription billing does not apply here - "
+                            + "contact your supplier about your licence.",
+                    HttpStatus.SERVICE_UNAVAILABLE, "BILLING_NOT_APPLICABLE");
+        }
+    }
+
     private boolean verifyPaymentSignature(String orderId, String paymentId, String signature, String keySecret) {
         return hmacMatches(orderId + "|" + paymentId, keySecret, signature);
     }

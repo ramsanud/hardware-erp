@@ -1,13 +1,26 @@
 import { apiDelete, apiGet, apiPost, apiPut } from '@/services/apiClient';
 import type {
   CaptchaConfigResponse,
-  ChangePasswordRequest, ForgotPasswordRequest, LoginRequest, LoginResponse,
+  ChangePasswordRequest, ForgotPasswordRequest, LoginChallengeResponse, LoginRequest,
+  LoginResponse, MfaConfirmResponse, MfaEnrollResponse,
   ResetPasswordRequest, SessionResponse, UpdateProfileRequest, UserResponse,
 } from '../types';
 
 /** Backend: auth/controller/AuthController.java */
 export const authService = {
-  login: (body: LoginRequest) => apiPost<LoginResponse>('/v1/auth/login', body),
+  /** CR-058 - returns an MFA challenge, never a session. */
+  login: (body: LoginRequest) => apiPost<LoginChallengeResponse>('/v1/auth/login', body),
+
+  /** Begins mandatory MFA enrollment for an account that has never set it up. */
+  enrollMfa: (mfaToken: string) =>
+    apiPost<MfaEnrollResponse>('/v1/auth/mfa/enroll', { mfaToken }),
+
+  confirmMfaEnroll: (mfaToken: string, code: string) =>
+    apiPost<MfaConfirmResponse>('/v1/auth/mfa/enroll/confirm', { mfaToken, code }),
+
+  /** Completes sign-in with an authenticator code or a one-time backup code. */
+  verifyMfa: (mfaToken: string, code: string) =>
+    apiPost<LoginResponse>('/v1/auth/mfa/verify', { mfaToken, code }),
 
   /** Public - the sign-in page needs this before anyone has signed in. */
   captchaConfig: () => apiGet<CaptchaConfigResponse>('/v1/auth/captcha-config'),

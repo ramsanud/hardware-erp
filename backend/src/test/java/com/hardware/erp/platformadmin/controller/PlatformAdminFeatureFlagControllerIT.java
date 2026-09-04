@@ -7,7 +7,7 @@ import com.hardware.erp.platformadmin.entity.PlatformAdminRole;
 import com.hardware.erp.platformadmin.entity.PlatformAdminStatus;
 import com.hardware.erp.platformadmin.repository.PlatformAdminRepository;
 import com.hardware.erp.platformadmin.service.FeatureFlagService;
-import com.hardware.erp.platformadmin.service.TotpService;
+import com.hardware.erp.security.totp.TotpService;
 import com.hardware.erp.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

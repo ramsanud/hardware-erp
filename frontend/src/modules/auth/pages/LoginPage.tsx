@@ -31,9 +31,21 @@ export function LoginPage() {
     }
   }, [initialising, isAuthenticated, navigate, from]);
 
+  // CR-058 - a correct password only clears the first factor. Where the user
+  // goes next depends on whether they have an authenticator app set up yet.
   const handleSubmit = async (values: LoginValues, captchaToken: string | null) => {
-    const user = await login({ ...values, captchaToken });
-    navigate(user.mustChangePassword ? AUTH_ROUTES.forceChangePassword : from, { replace: true });
+    const { enrollmentRequired, signedIn } = await login({ ...values, captchaToken });
+
+    // CR-060 - MFA is off on this server, so the session is already live.
+    // Sending the user to a second-factor screen here would strand them: there
+    // is no challenge to satisfy and no token for those pages to use.
+    if (signedIn) {
+      navigate(from, { replace: true });
+      return;
+    }
+
+    navigate(enrollmentRequired ? AUTH_ROUTES.mfaEnroll : AUTH_ROUTES.mfaVerify,
+      { replace: true, state: { from: state?.from } });
   };
 
   return (

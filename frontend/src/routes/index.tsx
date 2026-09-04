@@ -3,6 +3,8 @@ import { AuthLayout } from '@/layouts/AuthLayout';
 import { AppLayout } from '@/layouts/AppLayout';
 import { AUTH_ROUTES, PERMISSIONS } from '@/modules/auth/constants';
 import { LoginPage } from '@/modules/auth/pages/LoginPage';
+import { MfaEnrollPage } from '@/modules/auth/pages/MfaEnrollPage';
+import { MfaVerifyPage } from '@/modules/auth/pages/MfaVerifyPage';
 import { ForgotPasswordPage } from '@/modules/auth/pages/ForgotPasswordPage';
 import { ResetPasswordPage } from '@/modules/auth/pages/ResetPasswordPage';
 import { ForceChangePasswordPage } from '@/modules/auth/pages/ForceChangePasswordPage';
@@ -134,6 +136,22 @@ export function AppRoutes() {
       {/* Public */}
       <Route element={<AuthLayout />}>
         <Route path={AUTH_ROUTES.login} element={<LoginPage />} />
+        {/*
+          CR-058 - the second factor. Public on purpose: a correct password
+          clears only the first factor, so at this point there is no session
+          yet, just a short-lived MFA challenge token. Putting these behind
+          ProtectedRoute would be a deadlock - the user cannot obtain the
+          session the guard demands without first passing through here.
+
+          These two were written but never registered, which made MFA
+          mandatory *and* unreachable: LoginPage navigates to
+          AUTH_ROUTES.mfaEnroll/mfaVerify, React Router matched nothing, and
+          every sign-in on a fresh database dead-ended on "page not found".
+          The platform-admin equivalents above were wired up; these were the
+          pair that got missed.
+        */}
+        <Route path={AUTH_ROUTES.mfaEnroll} element={<MfaEnrollPage />} />
+        <Route path={AUTH_ROUTES.mfaVerify} element={<MfaVerifyPage />} />
         <Route path={AUTH_ROUTES.register} element={<RegisterPage />} />
         <Route path={AUTH_ROUTES.forgotPassword} element={<ForgotPasswordPage />} />
         <Route path={AUTH_ROUTES.resetPassword} element={<ResetPasswordPage />} />

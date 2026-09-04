@@ -9,11 +9,17 @@ import com.hardware.erp.auth.repository.UserRepository;
 import com.hardware.erp.auth.service.AuthService;
 import com.hardware.erp.auth.service.MailService;
 import com.hardware.erp.auth.service.SecurityAuditService;
+import com.hardware.erp.auth.service.UserBackupCodeService;
 import com.hardware.erp.common.exception.AuthException;
 import com.hardware.erp.common.exception.BusinessException;
 import com.hardware.erp.common.exception.ResourceNotFoundException;
+import com.hardware.erp.common.image.QrCodeGenerator;
 import com.hardware.erp.security.JwtService;
+import com.hardware.erp.security.MfaTokenPurpose;
+import com.hardware.erp.security.SecurityProperties;
 import com.hardware.erp.security.SecurityUtils;
+import com.hardware.erp.security.totp.TotpService;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +34,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,6 +51,11 @@ public class AuthServiceImpl implements AuthService {
     private final UserMapper userMapper;
     private final MailService mailService;
     private final SecurityAuditService auditService;
+    private final TotpService totpService;
+    private final UserBackupCodeService backupCodeService;
+    private final SecurityProperties securityProperties;
+
+    private static final String MFA_ISSUER_LABEL = "Hardware ERP";
 
     @Value("${app.password-reset.token-validity-minutes:30}")
     private int resetValidityMinutes;
@@ -57,7 +69,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public LoginResponse login(LoginRequest request) {
+    public LoginChallengeResponse login(LoginRequest request) {
         String identifier = request.identifier().trim();
 
         Optional<User> maybeUser = userRepository.findByIdentifier(identifier);
@@ -96,10 +108,126 @@ public class AuthServiceImpl implements AuthService {
 
         user.registerSuccessfulLogin();
         userRepository.save(user);
+
+        // CR-060 - MFA switched off for this installation. The password is then
+        // the only factor, so a correct one completes sign-in here and no
+        // challenge is issued. Everything above still applies unchanged: the
+        // account must exist, be active, be unlocked, and the password must
+        // match, with the same non-enumerable 401 for each failure.
+        //
+        // Audited as a plain LOGIN_SUCCESS rather than LOGIN_MFA_REQUIRED,
+        // because that is what actually happened - the audit log must not
+        // record a second factor that was never asked for.
+        if (!securityProperties.mfaRequired()) {
+            auditService.success(AuditAction.LOGIN_SUCCESS, user.getId(), user.getFullName(),
+                    "USER", user.getId());
+            return LoginChallengeResponse.signedIn(issueTokens(user));
+        }
+
+        // CR-058 - MFA is mandatory, never optional. An account with
+        // mfaEnabled=false gets an enrollment challenge instead of a session
+        // on this successful password check, and never gets a session before
+        // enrollment is confirmed.
+        MfaTokenPurpose purpose = user.isMfaEnabled() ? MfaTokenPurpose.LOGIN : MfaTokenPurpose.ENROLL;
+        String mfaToken = jwtService.generateMfaToken(user.getId(), purpose);
+
+        auditService.success(AuditAction.LOGIN_MFA_REQUIRED, user.getId(), user.getFullName(),
+                "USER", user.getId());
+
+        return LoginChallengeResponse.challenge(
+                mfaToken, purpose == MfaTokenPurpose.ENROLL, jwtService.mfaTokenSeconds());
+    }
+
+    @Override
+    @Transactional
+    public MfaEnrollResponse enrollMfa(MfaTokenRequest request) {
+        User user = requireChallenge(request.mfaToken(), MfaTokenPurpose.ENROLL);
+        if (user.isMfaEnabled()) {
+            throw new AuthException("MFA is already enrolled for this account", "MFA_ALREADY_ENROLLED");
+        }
+
+        String secret = totpService.generateSecret();
+        user.beginMfaEnrollment(secret);
+        userRepository.save(user);
+
+        String otpAuthUri = totpService.otpAuthUri(MFA_ISSUER_LABEL, identifierForOtpUri(user), secret);
+        String qrBase64 = Base64.getEncoder().encodeToString(QrCodeGenerator.pngBytes(otpAuthUri));
+
+        auditService.success(AuditAction.MFA_ENROLLMENT_STARTED, user.getId(), user.getFullName(),
+                "USER", user.getId());
+        return new MfaEnrollResponse(otpAuthUri, qrBase64, secret);
+    }
+
+    @Override
+    @Transactional
+    public MfaConfirmResponse confirmMfaEnroll(MfaVerifyRequest request) {
+        User user = requireChallenge(request.mfaToken(), MfaTokenPurpose.ENROLL);
+        if (user.getTotpSecret() == null) {
+            throw new AuthException("Call /mfa/enroll first", "MFA_NOT_STARTED");
+        }
+        if (!totpService.verifyCode(user.getTotpSecret(), request.code())) {
+            auditService.failure(AuditAction.MFA_CHALLENGE_FAILED, user.getId(), user.getFullName(),
+                    "Invalid enrollment code");
+            throw new AuthException("Invalid verification code", "INVALID_MFA_CODE");
+        }
+
+        user.confirmMfaEnrollment();
+        user.registerSuccessfulLogin();
+        userRepository.save(user);
+
+        List<String> backupCodes = backupCodeService.issueNewSet(user);
+
+        auditService.success(AuditAction.MFA_ENROLLED, user.getId(), user.getFullName(),
+                "USER", user.getId());
         auditService.success(AuditAction.LOGIN_SUCCESS, user.getId(), user.getFullName(),
                 "USER", user.getId());
 
+        return new MfaConfirmResponse(issueTokens(user), backupCodes);
+    }
+
+    @Override
+    @Transactional
+    public LoginResponse verifyMfa(MfaVerifyRequest request) {
+        User user = requireChallenge(request.mfaToken(), MfaTokenPurpose.LOGIN);
+
+        boolean valid = totpService.verifyCode(user.getTotpSecret(), request.code())
+                || backupCodeService.consume(user, request.code());
+
+        if (!valid) {
+            auditService.failure(AuditAction.MFA_CHALLENGE_FAILED, user.getId(), user.getFullName(),
+                    "Invalid TOTP or backup code");
+            throw new AuthException("Invalid verification code", "INVALID_MFA_CODE");
+        }
+
+        auditService.success(AuditAction.LOGIN_SUCCESS, user.getId(), user.getFullName(),
+                "USER", user.getId());
         return issueTokens(user);
+    }
+
+    private User requireChallenge(String mfaToken, MfaTokenPurpose expectedPurpose) {
+        Claims claims = jwtService.parse(mfaToken).orElseThrow(
+                () -> new AuthException("Invalid or expired verification session", "MFA_TOKEN_INVALID"));
+
+        MfaTokenPurpose purpose = jwtService.purposeFrom(claims).orElseThrow(
+                () -> new AuthException("Invalid or expired verification session", "MFA_TOKEN_INVALID"));
+        if (purpose != expectedPurpose) {
+            throw new AuthException("Invalid or expired verification session", "MFA_TOKEN_INVALID");
+        }
+
+        Long userId = jwtService.userIdFrom(claims).orElseThrow(
+                () -> new AuthException("Invalid or expired verification session", "MFA_TOKEN_INVALID"));
+
+        User user = userRepository.findById(userId).orElseThrow(
+                () -> new AuthException("Invalid or expired verification session", "MFA_TOKEN_INVALID"));
+        if (!user.isActive() || user.isLocked()) {
+            throw AuthException.invalidCredentials();
+        }
+        return user;
+    }
+
+    /** Falls back to the mobile number - email is optional on app_user, an OTP URI account label must not be blank. */
+    private String identifierForOtpUri(User user) {
+        return user.getEmail() != null && !user.getEmail().isBlank() ? user.getEmail() : user.getMobileNo();
     }
 
     private LoginResponse issueTokens(User user) {

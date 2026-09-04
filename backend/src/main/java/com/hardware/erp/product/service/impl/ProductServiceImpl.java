@@ -3,12 +3,14 @@ package com.hardware.erp.product.service.impl;
 import com.hardware.erp.common.sequence.DocumentSequenceService;
 import com.hardware.erp.common.sequence.DocumentType;
 import com.hardware.erp.auth.entity.PermissionCode;
+import com.hardware.erp.common.activity.ActivityAction;
 import com.hardware.erp.common.activity.ActivityLogService;
 import com.hardware.erp.common.dto.PageResponse;
 import com.hardware.erp.common.exception.BusinessException;
 import com.hardware.erp.common.exception.DuplicateResourceException;
 import com.hardware.erp.common.exception.ResourceNotFoundException;
 import com.hardware.erp.invoice.entity.InvoiceStatus;
+import com.hardware.erp.product.dto.ProductDeletedResponse;
 import com.hardware.erp.product.dto.ProductPriceHistoryResponse;
 import com.hardware.erp.product.dto.ProductRequest;
 import com.hardware.erp.product.dto.ProductResponse;
@@ -218,6 +220,37 @@ public class ProductServiceImpl implements ProductService {
         productRepository.save(product);
         activityLog.deleted(MODULE, ENTITY, id, product.getProductName(),
                 "Deactivated. Purchase and sales history is retained.");
+    }
+
+    /**
+     * CR-058. The only read path that can see a soft-deleted product -
+     * this tenant's deleted rows, a reduced projection, PRODUCT_MANAGE only.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductDeletedResponse> listDeleted() {
+        return productRepository.findDeletedByTenantId(SecurityUtils.requireCurrentTenantId())
+                .stream()
+                .map(productMapper::toDeletedResponse)
+                .toList();
+    }
+
+    /**
+     * CR-058, the inverse of softDelete - see SupplierServiceImpl.restore for
+     * the full reasoning. The guarded UPDATE is the authorisation check; the
+     * row is mutated in place, so the product keeps its id, its code, its
+     * stock row and every invoice line that references it.
+     */
+    @Override
+    @Transactional
+    public void restore(Long id) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        if (productRepository.restoreDeleted(id, tenantId) == 0) {
+            throw new ResourceNotFoundException("Product", id);
+        }
+        Product restored = require(id, tenantId);
+        activityLog.action(MODULE, ENTITY, id, restored.getProductName(),
+                ActivityAction.RESTORE, "Restored from deleted records");
     }
 
     // ---------------- helpers ----------------

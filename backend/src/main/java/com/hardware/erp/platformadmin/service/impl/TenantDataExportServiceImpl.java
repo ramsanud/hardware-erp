@@ -11,11 +11,14 @@ import com.hardware.erp.invoice.repository.InvoiceRepository;
 import com.hardware.erp.labour.entity.Worker;
 import com.hardware.erp.labour.repository.WorkerRepository;
 import com.hardware.erp.platformadmin.dto.TenantExportLogResponse;
-import com.hardware.erp.platformadmin.entity.PlatformTenantExport;
+import com.hardware.erp.platformadmin.entity.PlatformAdmin;
+import com.hardware.erp.platformadmin.entity.PlatformAuditAction;
 import com.hardware.erp.platformadmin.entity.TenantExportFormat;
-import com.hardware.erp.platformadmin.entity.TenantExportStatus;
+import com.hardware.erp.platformadmin.repository.PlatformAdminRepository;
 import com.hardware.erp.platformadmin.repository.PlatformTenantExportRepository;
+import com.hardware.erp.platformadmin.service.PlatformAuditService;
 import com.hardware.erp.platformadmin.service.TenantDataExportService;
+import com.hardware.erp.platformadmin.service.TenantExportLogWriter;
 import com.hardware.erp.product.entity.Product;
 import com.hardware.erp.product.repository.ProductRepository;
 import com.hardware.erp.purchase.entity.Purchase;
@@ -25,6 +28,7 @@ import com.hardware.erp.quotation.repository.QuotationRepository;
 import com.hardware.erp.supplier.entity.Supplier;
 import com.hardware.erp.supplier.repository.SupplierRepository;
 import com.hardware.erp.tenant.repository.TenantRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
@@ -61,6 +65,9 @@ import java.util.zip.ZipOutputStream;
 @RequiredArgsConstructor
 public class TenantDataExportServiceImpl implements TenantDataExportService {
 
+    /** Same target_type string PlatformAdminTenantService already writes for suspend/reactivate, so the Audit Log viewer's target filter groups them together. */
+    private static final String TARGET_TYPE = "TENANT";
+
     private final TenantRepository tenantRepository;
     private final ProductRepository productRepository;
     private final CustomerRepository customerRepository;
@@ -71,12 +78,27 @@ public class TenantDataExportServiceImpl implements TenantDataExportService {
     private final BusinessExpenseRepository businessExpenseRepository;
     private final WorkerRepository workerRepository;
     private final PlatformTenantExportRepository exportRepository;
+    private final TenantExportLogWriter exportLogWriter;
+    private final PlatformAuditService auditService;
+    private final PlatformAdminRepository platformAdminRepository;
     private final ObjectMapper objectMapper;
 
     @Override
     @Transactional
-    public byte[] export(Long tenantId, TenantExportFormat format, Long adminId) {
+    public byte[] export(Long tenantId, TenantExportFormat format, Long adminId, HttpServletRequest request) {
+        // A lazy proxy, never loaded - PlatformAuditService only reads getId().
+        // Same pattern as PlatformAdminTenantService.suspend().
+        PlatformAdmin actingAdmin = adminId == null ? null : platformAdminRepository.getReferenceById(adminId);
+
+        // Recorded before the tenant is resolved, so an export probe against a
+        // tenant id that does not exist is evidenced too - and so that no path
+        // out of this method can leave an attempt unrecorded.
+        auditService.record(PlatformAuditAction.TENANT_EXPORT_REQUESTED, actingAdmin, true,
+                TARGET_TYPE, tenantId, format.name(), request);
+
         if (!tenantRepository.existsById(tenantId)) {
+            auditService.record(PlatformAuditAction.TENANT_EXPORT_FAILED, actingAdmin, false,
+                    TARGET_TYPE, tenantId, "Tenant not found.", request);
             throw new BusinessException("Tenant not found.", HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND");
         }
 
@@ -85,24 +107,26 @@ public class TenantDataExportServiceImpl implements TenantDataExportService {
             byte[] body = format == TenantExportFormat.JSON ? toJson(data) : toCsvZip(data);
             int recordCount = data.values().stream().mapToInt(List::size).sum();
 
-            exportRepository.save(PlatformTenantExport.builder()
-                    .tenant(tenantRepository.getReferenceById(tenantId))
-                    .adminId(adminId)
-                    .format(format)
-                    .status(TenantExportStatus.COMPLETED)
-                    .recordCount(recordCount)
-                    .fileSizeBytes((long) body.length)
-                    .build());
+            exportLogWriter.completed(tenantId, adminId, format, recordCount, body.length);
+            // Volume metadata only - never a field, a row, or a customer name
+            // from the file itself. The audit log records that an export left
+            // the system, not what was in it.
+            auditService.record(PlatformAuditAction.TENANT_EXPORT_COMPLETED, actingAdmin, true,
+                    TARGET_TYPE, tenantId,
+                    "%s, %d records, %d bytes".formatted(format.name(), recordCount, body.length), request);
             return body;
         } catch (Exception e) {
             log.error("Tenant data export failed for tenant {}", tenantId, e);
-            exportRepository.save(PlatformTenantExport.builder()
-                    .tenant(tenantRepository.getReferenceById(tenantId))
-                    .adminId(adminId)
-                    .format(format)
-                    .status(TenantExportStatus.FAILED)
-                    .errorDetail(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage())
-                    .build());
+            exportLogWriter.failed(tenantId, adminId, format,
+                    e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            // The exception type, not its message: a serialization failure can
+            // quote the offending value, which would put exported business data
+            // into the audit trail. The full message stays on the export log row
+            // (platform_tenant_export.error_detail), which is operational, not
+            // an evidence record.
+            auditService.record(PlatformAuditAction.TENANT_EXPORT_FAILED, actingAdmin, false,
+                    TARGET_TYPE, tenantId,
+                    "%s export failed: %s".formatted(format.name(), e.getClass().getSimpleName()), request);
             throw new BusinessException(
                     "Could not build the export. This has been logged.", HttpStatus.INTERNAL_SERVER_ERROR, "EXPORT_FAILED");
         }

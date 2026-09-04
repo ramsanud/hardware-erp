@@ -8,6 +8,7 @@ import com.hardware.erp.platformadmin.service.TenantDataExportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -44,8 +45,9 @@ public class PlatformAdminBackupController {
     @PostMapping
     @PreAuthorize("hasAuthority('BACKUP_MANAGE')")
     @Operation(summary = "Export a tenant's core business data as JSON or a CSV zip - generated fresh, never stored")
-    public ResponseEntity<byte[]> export(@PathVariable Long tenantId, @RequestParam("format") TenantExportFormat format) {
-        byte[] body = exportService.export(tenantId, format, currentAdminId());
+    public ResponseEntity<byte[]> export(@PathVariable Long tenantId, @RequestParam("format") TenantExportFormat format,
+                                          HttpServletRequest httpRequest) {
+        byte[] body = exportService.export(tenantId, format, currentAdminId(), httpRequest);
         MediaType contentType = format == TenantExportFormat.JSON
                 ? MediaType.APPLICATION_JSON : MediaType.parseMediaType("application/zip");
         String filename = "tenant-" + tenantId + "-export." + (format == TenantExportFormat.JSON ? "json" : "zip");

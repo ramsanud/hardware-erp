@@ -82,6 +82,9 @@ export const USER_SORT_FIELDS = [
 
 export const AUTH_ROUTES = {
   login: '/login',
+  /** CR-058 - mandatory MFA, reached only mid-sign-in with a live challenge. */
+  mfaVerify: '/login/verify',
+  mfaEnroll: '/login/set-up-authenticator',
   register: '/register',
   forgotPassword: '/forgot-password',
   resetPassword: '/reset-password',

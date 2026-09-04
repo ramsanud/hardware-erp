@@ -11,6 +11,8 @@ import com.hardware.erp.common.exception.AuthException;
 import com.hardware.erp.common.exception.BusinessException;
 import com.hardware.erp.security.JwtProperties;
 import com.hardware.erp.security.JwtService;
+import com.hardware.erp.security.SecurityProperties;
+import com.hardware.erp.security.totp.TotpService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -31,6 +33,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -52,15 +55,43 @@ class AuthServiceImplTest {
     @Mock private PasswordResetTokenRepository resetTokenRepository;
     @Mock private MailService mailService;
     @Mock private SecurityAuditService auditService;
+    @Mock private UserBackupCodeService backupCodeService;
 
     @Spy private PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
     @Spy private UserMapper userMapper = new UserMapper();
+    @Spy private TotpService totpService = new TotpService();
     @Spy private JwtService jwtService = new JwtService(new JwtProperties(
-            "dGVzdC1zZWNyZXQta2V5LWZvci11bml0LXRlc3RzLTMyYnl0ZXMh", "hardware-erp", 15, 7));
+            "dGVzdC1zZWNyZXQta2V5LWZvci11bml0LXRlc3RzLTMyYnl0ZXMh", "hardware-erp", 15, 7, 10));
+
+    /**
+     * CR-060 - mfaRequired=true, the default and what every pre-CR-060 test in
+     * this class assumes. The two tests that cover MFA being switched off stub
+     * this spy rather than changing the field, so the rest of the class keeps
+     * exercising the CR-058 mandatory-MFA path unchanged.
+     */
+    @Spy private SecurityProperties securityProperties = new SecurityProperties(
+            SecurityProperties.RefreshTokenTransport.COOKIE, "erp_refresh_token",
+            true, true, List.of("http://localhost:5173"));
 
     @InjectMocks private AuthServiceImpl authService;
 
     private User user;
+
+    /**
+     * CR-058 - login now only clears the first factor, so every test that
+     * needs a real session completes the mandatory MFA challenge the same
+     * way a client does.
+     */
+    private LoginResponse signIn(String identifier) {
+        LoginChallengeResponse challenge = authService.login(new LoginRequest(identifier, PASSWORD));
+        if (challenge.enrollmentRequired()) {
+            MfaEnrollResponse enroll = authService.enrollMfa(new MfaTokenRequest(challenge.mfaToken()));
+            return authService.confirmMfaEnroll(new MfaVerifyRequest(
+                    challenge.mfaToken(), totpService.currentCode(enroll.secretBase32()))).session();
+        }
+        return authService.verifyMfa(new MfaVerifyRequest(
+                challenge.mfaToken(), totpService.currentCode(user.getTotpSecret())));
+    }
 
     @BeforeEach
     void setUp() {
@@ -88,6 +119,9 @@ class AuthServiceImplTest {
                 .build();
 
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        // The MFA challenge token carries the user id, so completing it
+        // re-reads the user by id rather than by identifier.
+        when(userRepository.findById(10L)).thenReturn(Optional.of(user));
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(i -> {
             RefreshToken t = i.getArgument(0);
             if (t.getId() == null) t.setId(99L);
@@ -101,12 +135,75 @@ class AuthServiceImplTest {
     class Login {
 
         @Test
-        @DisplayName("succeeds with the mobile number")
+        @DisplayName("a correct password returns an MFA challenge, not a session (CR-058)")
+        void passwordAloneNeverIssuesASession() {
+            when(userRepository.findByIdentifier("9876543210")).thenReturn(Optional.of(user));
+
+            LoginChallengeResponse challenge = authService.login(
+                    new LoginRequest("9876543210", PASSWORD));
+
+            assertThat(challenge.mfaToken()).isNotBlank();
+            assertThat(challenge.enrollmentRequired()).isTrue();
+            assertThat(challenge.expiresInSeconds()).isEqualTo(600);
+            verifyNoInteractions(refreshTokenRepository);
+        }
+
+        @Test
+        @DisplayName("CR-060: with MFA disabled a correct password returns a session directly, no challenge")
+        void mfaDisabledSignsInDirectly() {
+            doReturn(false).when(securityProperties).mfaRequired();
+            when(userRepository.findByIdentifier("9876543210")).thenReturn(Optional.of(user));
+
+            LoginChallengeResponse result = authService.login(
+                    new LoginRequest("9876543210", PASSWORD));
+
+            assertThat(result.isSignedIn()).isTrue();
+            assertThat(result.session()).isNotNull();
+            assertThat(result.session().accessToken()).isNotBlank();
+            assertThat(result.session().refreshToken()).isNotBlank();
+            assertThat(result.session().user().mobileNo()).isEqualTo("9876543210");
+            // No half-finished challenge is handed out alongside a live session.
+            assertThat(result.mfaToken()).isNull();
+            assertThat(result.enrollmentRequired()).isFalse();
+
+            // The audit trail must say what actually happened. Recording
+            // LOGIN_MFA_REQUIRED here would claim a second factor was demanded
+            // when none was.
+            verify(auditService).success(eq(AuditAction.LOGIN_SUCCESS), eq(10L), any(), any(), any());
+            verify(auditService, never()).success(eq(AuditAction.LOGIN_MFA_REQUIRED), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("CR-060: disabling MFA does not weaken the password check - a wrong password still fails")
+        void mfaDisabledStillRejectsWrongPassword() {
+            // The whole risk of a bypass flag is that it bypasses more than
+            // intended. The first factor must be enforced exactly as before.
+            doReturn(false).when(securityProperties).mfaRequired();
+            when(userRepository.findByIdentifier("9876543210")).thenReturn(Optional.of(user));
+
+            assertThatThrownBy(() -> authService.login(new LoginRequest("9876543210", "Wrong@2026")))
+                    .isInstanceOf(AuthException.class);
+            verifyNoInteractions(refreshTokenRepository);
+        }
+
+        @Test
+        @DisplayName("CR-060: a locked account is still refused when MFA is disabled")
+        void mfaDisabledStillRefusesLockedAccount() {
+            doReturn(false).when(securityProperties).mfaRequired();
+            user.setLockedUntil(LocalDateTime.now().plusMinutes(10));
+            when(userRepository.findByIdentifier("9876543210")).thenReturn(Optional.of(user));
+
+            assertThatThrownBy(() -> authService.login(new LoginRequest("9876543210", PASSWORD)))
+                    .isInstanceOf(AuthException.class);
+            verifyNoInteractions(refreshTokenRepository);
+        }
+
+        @Test
+        @DisplayName("succeeds with the mobile number once MFA is completed")
         void loginByMobile() {
             when(userRepository.findByIdentifier("9876543210")).thenReturn(Optional.of(user));
 
-            LoginResponse response = authService.login(
-                    new LoginRequest("9876543210", PASSWORD));
+            LoginResponse response = signIn("9876543210");
 
             assertThat(response.accessToken()).isNotBlank();
             assertThat(response.refreshToken()).isNotBlank();
@@ -121,9 +218,7 @@ class AuthServiceImplTest {
             when(userRepository.findByIdentifier("owner@sarahardware.in"))
                     .thenReturn(Optional.of(user));
 
-            assertThat(authService.login(
-                    new LoginRequest("owner@sarahardware.in", PASSWORD)).accessToken())
-                    .isNotBlank();
+            assertThat(signIn("owner@sarahardware.in").accessToken()).isNotBlank();
         }
 
         @Test
@@ -213,8 +308,7 @@ class AuthServiceImplTest {
             user.setLockedUntil(LocalDateTime.now().minusMinutes(1));
             when(userRepository.findByIdentifier(anyString())).thenReturn(Optional.of(user));
 
-            assertThat(authService.login(new LoginRequest("9876543210", PASSWORD)).accessToken())
-                    .isNotBlank();
+            assertThat(signIn("9876543210").accessToken()).isNotBlank();
             assertThat(user.getFailedLoginAttempts()).isZero();
         }
 
@@ -223,7 +317,7 @@ class AuthServiceImplTest {
         void refreshTokenStoredHashed() {
             when(userRepository.findByIdentifier(anyString())).thenReturn(Optional.of(user));
 
-            LoginResponse response = authService.login(new LoginRequest("9876543210", PASSWORD));
+            LoginResponse response = signIn("9876543210");
 
             ArgumentCaptor<RefreshToken> captor = ArgumentCaptor.forClass(RefreshToken.class);
             verify(refreshTokenRepository).save(captor.capture());

@@ -11,7 +11,14 @@ spring:
   # its default and also pointed at a database name and port the running
   # container had not used since 2026-08-23.
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:hardware_erp}?reWriteBatchedInserts=true
+    # CR-059. sslmode is explicit rather than left to the driver's default,
+    # because the two supported deployments want opposite answers and a
+    # silent default is the wrong place for that to be decided:
+    #   managed PostgreSQL (Supabase) -> require   (set by application-cloud.yml)
+    #   container on a private network -> disable  (set by application-selfhosted.yml)
+    # 'prefer' here is the driver's own default, so an existing deployment
+    # that sets neither profile connects exactly as it did before.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:hardware_erp}?reWriteBatchedInserts=true&sslmode=${DB_SSL_MODE:prefer}
     username: ${DB_USER:hardware_erp}
     password: ${DB_PASSWORD:hardware_erp}
     driver-class-name: org.postgresql.Driver
@@ -80,11 +87,35 @@ server:
     include-binding-errors: never
 
 app:
+  # CR-059 - which of the two supported installations this is.
+  #
+  #   CLOUD       hosted SaaS: managed PostgreSQL (Supabase), HTTPS, billing live
+  #   SELF_HOSTED the client's own Docker box: local PostgreSQL container, LAN
+  #               address, no billing (they bought the software outright)
+  #
+  # Normally set by activating the matching profile - SPRING_PROFILES_ACTIVE
+  # is 'prod,cloud' or 'prod,selfhosted' - each of which pins this value.
+  # APP_DEPLOYMENT_MODE overrides it directly where a profile is inconvenient.
+  #
+  # Defaults to CLOUD so that dev, local, test and the existing Render
+  # deployment behave exactly as they did before this switch existed;
+  # self-hosting is opt-in. DeploymentModeGuard refuses to start on a
+  # combination that cannot be right - see its javadoc for which ones.
+  deployment:
+    mode: ${APP_DEPLOYMENT_MODE:CLOUD}
+    installation-name: ${APP_INSTALLATION_NAME:}
+    # Blank means "follow the mode" (CLOUD bills, SELF_HOSTED does not). Set
+    # true only for a reseller running self-hosted instances they do bill for.
+    billing-enabled: ${APP_BILLING_ENABLED:}
+
   jwt:
     secret: ${JWT_SECRET:Y2hhbmdlLW1lLWluLXByb2R1Y3Rpb24tMzJieXRlcy1taW5pbXVtIQ==}
     issuer: hardware-erp
     access-token-minutes: 15
     refresh-token-days: 7
+    # CR-058 - mandatory tenant-user MFA. Same 10-minute window as the
+    # Platform Admin Console's own MFA challenge token (CR-054).
+    mfa-token-minutes: 10
 
   # Platform Admin Console (CR-054). Its own secret and issuer, deliberately
   # different from app.jwt above - see PlatformAdminJwtProperties. Must be a
@@ -108,6 +139,15 @@ app:
     refresh-token-transport: ${REFRESH_TOKEN_TRANSPORT:COOKIE}
     cookie-name: erp_refresh_token
     cookie-secure: ${COOKIE_SECURE:true}
+    # CR-060 - set MFA_REQUIRED=false to sign in with identifier + password
+    # alone, skipping the CR-058 mandatory second factor. The MFA code is not
+    # removed by this: enrollment, TOTP verification and backup codes all still
+    # exist and come back the moment this is true again.
+    #
+    # 'true' is the default on purpose. MFA being off must be a decision
+    # somebody wrote down, never the result of a forgotten variable, and the
+    # startup banner says "mfa: DISABLED" on every boot while it is off.
+    mfa-required: ${MFA_REQUIRED:true}
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
 
   # Cloudflare Turnstile on the sign-in page. Off by default and treated as

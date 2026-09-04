@@ -17,31 +17,42 @@ class AuthControllerIT extends AbstractIntegrationTest {
     // ================= login =================
 
     @Test
-    @DisplayName("login with mobile returns tokens and the user's permissions")
-    void loginWithMobile() throws Exception {
+    @DisplayName("a correct password returns an MFA challenge, never a session (CR-058)")
+    void loginReturnsMfaChallengeNotSession() throws Exception {
         mockMvc.perform(post("/v1/auth/login").contentType(APPLICATION_JSON)
                         .content(json(new LoginRequest(OWNER_MOBILE, OWNER_PASSWORD))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.timestamp").exists())
-                .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
-                .andExpect(jsonPath("$.data.tokenType").value("Bearer"))
-                .andExpect(jsonPath("$.data.expiresInSeconds").value(900))
-                .andExpect(jsonPath("$.data.user.roleCode").value("OWNER"))
-                .andExpect(jsonPath("$.data.user.permissions").isArray());
+                .andExpect(jsonPath("$.data.mfaToken").isNotEmpty())
+                .andExpect(jsonPath("$.data.expiresInSeconds").value(600))
+                // The whole point: no session material is handed out here.
+                .andExpect(jsonPath("$.data.accessToken").doesNotExist())
+                .andExpect(jsonPath("$.data.refreshToken").doesNotExist())
+                .andExpect(jsonPath("$.data.user").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("completing MFA returns tokens and the user's permissions")
+    void completedMfaReturnsSession() throws Exception {
+        JsonNode session = login(OWNER_MOBILE, OWNER_PASSWORD);
+
+        assertThat(session.path("accessToken").asText()).isNotBlank();
+        assertThat(session.path("tokenType").asText()).isEqualTo("Bearer");
+        assertThat(session.path("expiresInSeconds").asLong()).isEqualTo(900);
+        assertThat(session.path("user").path("roleCode").asText()).isEqualTo("OWNER");
+        assertThat(session.path("user").path("permissions").isArray()).isTrue();
     }
 
     @Test
     @DisplayName("login with email works for the same account")
     void loginWithEmail() throws Exception {
-        mockMvc.perform(post("/v1/auth/login").contentType(APPLICATION_JSON)
-                        .content(json(new LoginRequest(OWNER_EMAIL, OWNER_PASSWORD))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.user.mobileNo").value(OWNER_MOBILE));
+        JsonNode session = login(OWNER_EMAIL, OWNER_PASSWORD);
+        assertThat(session.path("user").path("mobileNo").asText()).isEqualTo(OWNER_MOBILE);
     }
 
     @Test
-    @DisplayName("no response ever contains a password hash")
+    @DisplayName("no response ever contains a password hash or the TOTP secret")
     void neverLeaksPasswordHash() throws Exception {
         String body = mockMvc.perform(post("/v1/auth/login").contentType(APPLICATION_JSON)
                         .content(json(new LoginRequest(OWNER_MOBILE, OWNER_PASSWORD))))
@@ -51,6 +62,7 @@ class AuthControllerIT extends AbstractIntegrationTest {
                 .doesNotContain("passwordHash")
                 .doesNotContain("$2a$")
                 .doesNotContain("tokenVersion")
+                .doesNotContain("totpSecret")
                 .doesNotContain("failedLoginAttempts");
     }
 

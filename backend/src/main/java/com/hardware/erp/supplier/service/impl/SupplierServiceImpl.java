@@ -4,6 +4,7 @@ import com.hardware.erp.common.sequence.DocumentSequenceService;
 import com.hardware.erp.common.sequence.DocumentType;
 import com.hardware.erp.auth.entity.AuditAction;
 import com.hardware.erp.auth.service.SecurityAuditService;
+import com.hardware.erp.common.activity.ActivityAction;
 import com.hardware.erp.common.activity.ActivityLogService;
 import com.hardware.erp.common.dto.PageResponse;
 import com.hardware.erp.common.exception.BusinessException;
@@ -220,6 +221,44 @@ public class SupplierServiceImpl implements SupplierService {
         supplierRepository.save(supplier);
         activityLog.deleted(MODULE, ENTITY, id, supplier.getSupplierName(),
                 "Deactivated. Purchase history is retained.");
+    }
+
+    /**
+     * CR-058. The only read path that can see a soft-deleted supplier, and it
+     * is deliberately narrow: this tenant's deleted rows, a reduced projection,
+     * SUPPLIER_MANAGE only.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<SupplierDeletedResponse> listDeleted() {
+        return supplierRepository.findDeletedByTenantId(SecurityUtils.requireCurrentTenantId())
+                .stream()
+                .map(supplierMapper::toDeletedResponse)
+                .toList();
+    }
+
+    /**
+     * CR-058, the inverse of softDelete. The guarded UPDATE is the whole
+     * authorisation check (see SupplierRepository.restoreDeleted): an id from
+     * another tenant, an id that was never deleted, and an id that does not
+     * exist all touch zero rows and are reported as 404 alike, so restore
+     * cannot be used to probe which suppliers exist elsewhere.
+     *
+     * Only once the row is undeleted can the ordinary tenant-scoped read see
+     * it again - before the UPDATE, @SQLRestriction hides it from require().
+     * The row is mutated in place, so the supplier keeps its primary key, its
+     * code, its contacts and every purchase document that references it.
+     */
+    @Override
+    @Transactional
+    public void restore(Long id) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        if (supplierRepository.restoreDeleted(id, tenantId) == 0) {
+            throw new ResourceNotFoundException("Supplier", id);
+        }
+        Supplier restored = require(id, tenantId);
+        activityLog.action(MODULE, ENTITY, id, restored.getSupplierName(),
+                ActivityAction.RESTORE, "Restored from deleted records");
     }
 
     // ---------------- contacts ----------------

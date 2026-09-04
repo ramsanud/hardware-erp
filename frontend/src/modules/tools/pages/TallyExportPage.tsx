@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { FileDown, Loader2 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
-import { Input } from '@/shared/components/ui/input';
+import { DatePicker } from '@/shared/components/ui/date-picker';
 import { Alert, AlertDescription } from '@/shared/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/shared/components/ui/card';
 import { FormField } from '@/shared/components/FormField';
@@ -73,12 +73,10 @@ export function TallyExportPage() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField id="fromDate" label="From date">
-              <Input id="fromDate" type="date" value={fromDate} max={toDate}
-                     onChange={(e) => setFromDate(e.target.value)} />
+              <DatePicker id="fromDate" value={fromDate} max={toDate} onChange={setFromDate} />
             </FormField>
             <FormField id="toDate" label="To date">
-              <Input id="toDate" type="date" value={toDate} min={fromDate} max={today()}
-                     onChange={(e) => setToDate(e.target.value)} />
+              <DatePicker id="toDate" value={toDate} min={fromDate} max={today()} onChange={setToDate} />
             </FormField>
           </div>
 

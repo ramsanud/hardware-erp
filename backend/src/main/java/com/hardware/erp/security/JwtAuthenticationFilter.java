@@ -27,7 +27,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/v1/auth/login",
             "/v1/auth/refresh",
             "/v1/auth/forgot-password",
-            "/v1/auth/reset-password");
+            "/v1/auth/reset-password",
+            // CR-058 - these carry the MFA challenge token in the request
+            // body, never an Authorization header; there is no session yet.
+            "/v1/auth/mfa/enroll",
+            "/v1/auth/mfa/enroll/confirm",
+            "/v1/auth/mfa/verify");
 
     private final JwtService jwtService;
     private final AppUserDetailsService userDetailsService;
@@ -59,6 +64,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
         Claims claims = parsed.get();
+
+        // CR-058 - an MFA challenge token proves only "password check passed",
+        // never a real session. Reject it explicitly rather than relying on
+        // it also lacking a token-version claim.
+        if (jwtService.purposeFrom(claims).isPresent()) {
+            log.debug("Rejected MFA challenge token presented as a session token");
+            return;
+        }
 
         Optional<Long> userId = jwtService.userIdFrom(claims);
         Optional<Integer> tokenVersion = jwtService.tokenVersionFrom(claims);

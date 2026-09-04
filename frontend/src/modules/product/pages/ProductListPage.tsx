@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  ImageIcon, MoreHorizontal, Package, Pencil, Plus, Trash2, Upload,
+  ImageIcon, MoreHorizontal, Package, Pencil, Plus, RotateCcw, Trash2, Upload,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Card } from '@/shared/components/ui/card';
@@ -28,6 +28,9 @@ import { UnsavedChangesDialog } from '@/shared/components/UnsavedChangesDialog';
 import { useAuthenticatedImage } from '@/shared/hooks/useAuthenticatedImage';
 import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
 import { useAsyncList } from '@/shared/hooks/useAsyncList';
+import { useAsyncData } from '@/shared/hooks/useAsyncData';
+import { emptyPage } from '@/shared/types/api';
+import { formatDateTime } from '@/shared/lib/utils';
 import { DEFAULT_PAGE_SIZE, SEARCH_DEBOUNCE_MS } from '@/shared/constants';
 import { PermissionGate } from '@/routes/RequirePermission';
 import { PERMISSIONS } from '@/modules/auth/constants';
@@ -47,6 +50,9 @@ import type {
 import type { ProductValues } from '../validation/schemas';
 
 const ALL = '__all__';
+
+/** CR-058 - see SupplierListPage for why "Deleted" is a filter value, not a ProductStatus. */
+const DELETED = '__deleted__';
 
 function ProductThumbnail({ productId, hasImage, productName }: { productId: number; hasImage: boolean; productName: string }) {
   const src = useAuthenticatedImage(hasImage ? productService.imageUrl(productId) : null);
@@ -93,6 +99,12 @@ export function ProductListPage() {
   const [formDirty, setFormDirty] = useState(false);
   const [confirmingClose, setConfirmingClose] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [restoringId, setRestoringId] = useState<number | null>(null);
+
+  // The deleted list and restore both require PRODUCT_MANAGE server-side, so a
+  // PRODUCT_VIEW-only user is never offered the filter that would 403.
+  const canManage = hasPermission(PERMISSIONS.PRODUCT_MANAGE);
+  const deletedMode = status === DELETED;
 
   const requestCloseCreate = () => {
     if (formDirty) { setConfirmingClose(true); return; }
@@ -108,21 +120,46 @@ export function ProductListPage() {
   useEffect(() => { setPage(0); }, [debouncedSearch, status, categoryId, brandId, size]);
 
   const fetcher = useCallback(
-    () => productService.search({
-      search: debouncedSearch || undefined,
-      status: status === ALL ? undefined : (status as ProductStatus),
-      categoryId: categoryId === ALL ? undefined : Number(categoryId),
-      brandId: brandId === ALL ? undefined : Number(brandId),
-      page,
-      size,
-      sortBy: 'productName',
-      sortDir: 'asc',
-    }),
-    [debouncedSearch, status, categoryId, brandId, page, size],
+    // In deleted mode the ordinary search would be both wrong (it cannot see
+    // deleted rows at all) and wasted, so it is never sent.
+    () => (deletedMode
+      ? Promise.resolve(emptyPage<ProductSummaryResponse>(size))
+      : productService.search({
+        search: debouncedSearch || undefined,
+        status: status === ALL ? undefined : (status as ProductStatus),
+        categoryId: categoryId === ALL ? undefined : Number(categoryId),
+        brandId: brandId === ALL ? undefined : Number(brandId),
+        page,
+        size,
+        sortBy: 'productName',
+        sortDir: 'asc',
+      })),
+    [deletedMode, debouncedSearch, status, categoryId, brandId, page, size],
   );
 
   const { data, loading, error, reload } = useAsyncList(fetcher,
-    [debouncedSearch, status, categoryId, brandId, page, size]);
+    [deletedMode, debouncedSearch, status, categoryId, brandId, page, size]);
+
+  const deletedFetcher = useCallback(
+    () => (deletedMode ? productService.listDeleted() : Promise.resolve([])),
+    [deletedMode],
+  );
+  const {
+    data: deletedRows, loading: deletedLoading, error: deletedError, reload: reloadDeleted,
+  } = useAsyncData(deletedFetcher, [deletedMode]);
+
+  const handleRestore = async (id: number, name: string) => {
+    setRestoringId(id);
+    try {
+      await productService.restore(id);
+      toast.success(`${name} has been restored.`);
+      await reloadDeleted();
+    } catch (caught) {
+      toast.error(caught, 'Could not restore this product.');
+    } finally {
+      setRestoringId(null);
+    }
+  };
 
   useEffect(() => {
     void (async () => {
@@ -211,7 +248,9 @@ export function ProductListPage() {
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <SearchInput value={search} onChange={setSearch}
+        {/* Search, category and brand have no meaning against the deleted
+            endpoint, which returns this tenant's deleted products whole. */}
+        <SearchInput value={search} onChange={setSearch} disabled={deletedMode}
                      placeholder="Name, code, barcode, model…" />
 
         <Select value={status} onValueChange={setStatus}>
@@ -221,10 +260,11 @@ export function ProductListPage() {
             {PRODUCT_STATUS_OPTIONS.map((option) => (
               <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
             ))}
+            {canManage ? <SelectItem value={DELETED}>Deleted</SelectItem> : null}
           </SelectContent>
         </Select>
 
-        <Select value={categoryId} onValueChange={setCategoryId}>
+        <Select value={categoryId} onValueChange={setCategoryId} disabled={deletedMode}>
           <SelectTrigger className="sm:w-44"><SelectValue placeholder="Category" /></SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>All categories</SelectItem>
@@ -234,7 +274,7 @@ export function ProductListPage() {
           </SelectContent>
         </Select>
 
-        <Select value={brandId} onValueChange={setBrandId}>
+        <Select value={brandId} onValueChange={setBrandId} disabled={deletedMode}>
           <SelectTrigger className="sm:w-44"><SelectValue placeholder="Brand" /></SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>All brands</SelectItem>
@@ -245,6 +285,70 @@ export function ProductListPage() {
         </Select>
       </div>
 
+      {deletedMode ? (
+        <Card>
+          {deletedError ? (
+            <ErrorState error={deletedError} onRetry={reloadDeleted} />
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product</TableHead>
+                    <TableHead className="hidden sm:table-cell">Category</TableHead>
+                    <TableHead className="hidden md:table-cell">Brand</TableHead>
+                    <TableHead>Deleted on</TableHead>
+                    <TableHead className="w-12" />
+                  </TableRow>
+                </TableHeader>
+
+                {deletedLoading ? (
+                  <TableSkeleton columns={5} rows={5} />
+                ) : (
+                  <TableBody>
+                    {deletedRows?.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell>
+                          <span className="font-medium">{row.productName}</span>
+                          <span className="tabular mt-0.5 block text-xs text-muted-foreground">
+                            {row.productCode}
+                          </span>
+                        </TableCell>
+                        <TableCell className="hidden sm:table-cell">{row.categoryName ?? '—'}</TableCell>
+                        <TableCell className="hidden md:table-cell">{row.brandName ?? '—'}</TableCell>
+                        <TableCell className="tabular text-sm text-muted-foreground">
+                          {formatDateTime(row.deletedAt)}
+                        </TableCell>
+                        <TableCell>
+                          {/* Restoring undoes a deletion; it is not destructive
+                              and needs no confirmation. */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            loading={restoringId === row.id}
+                            onClick={() => handleRestore(row.id, row.productName)}
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                            Restore
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                )}
+              </Table>
+
+              {!deletedLoading && deletedRows && deletedRows.length === 0 ? (
+                <EmptyState
+                  icon={Package}
+                  title="No deleted products"
+                  description="Products you deactivate appear here so they can be restored."
+                />
+              ) : null}
+            </>
+          )}
+        </Card>
+      ) : (
       <Card>
         {error ? (
           <ErrorState error={error} onRetry={reload} />
@@ -335,6 +439,7 @@ export function ProductListPage() {
           </>
         )}
       </Card>
+      )}
 
       <Dialog open={creating} onOpenChange={(open) => { if (!open) requestCloseCreate(); }}>
         <DialogContent className="sm:max-w-2xl">

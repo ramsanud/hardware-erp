@@ -558,4 +558,76 @@ freely in both cases). Unchanged with no gateway configured. See
 | Method | Path | Auth | Notes |
 |---|---|---|---|
 | GET | `/v1/platform-admin/settings/razorpay` | `BILLING_VIEW` | Current config - `keySecretConfigured`/`webhookSecretConfigured` booleans only, never the secret itself. `source` names whether the database row or the `RAZORPAY_*` env vars are actually in force. |
-| PUT | `/v1/platform-admin/settings/razorpay` | `BILLING_MANAGE` | Body: `enabled`, `keyId`, `keySecret`/`webhookSecret` (omitted = leave unchanged, `""` = clear), `proPlanAmountPaise`, `maxPlanAmountPaise`. Audited (`PLATFORM_SETTING_UPDATED`). |
+| PUT | `/v1/platform-admin/settings/razorpay` | `BILLING_MANAGE` | Body: `enabled`, `keyId`, `keySecret`/`webhookSecret` (omitted = leave unchanged, `""` = clear), `proPlanAmountPaise`, `maxPlanAmountPaise`. Audited (`PLATFORM_SETTING_UPDATED`).
+
+## CR-058 — Deleted-record recovery (Supplier / Product / User) and Customer reactivation
+
+| Method | Path | Permission | Success |
+|---|---|---|---|
+| GET | `/v1/suppliers/deleted` | SUPPLIER_MANAGE | 200 |
+| POST | `/v1/suppliers/{id}/restore` | SUPPLIER_MANAGE | 204 |
+| GET | `/v1/products/deleted` | PRODUCT_MANAGE | 200 |
+| POST | `/v1/products/{id}/restore` | PRODUCT_MANAGE | 204 |
+| GET | `/v1/users/deleted` | USER_MANAGE | 200 |
+| POST | `/v1/users/{id}/restore` | USER_MANAGE | 204 |
+| POST | `/v1/customers/{id}/activate` | CUSTOMER_MANAGE | 204 |
+
+**Permission choice.** All three deleted-record endpoints are gated on the
+module's `_MANAGE` permission, not `_VIEW`. Only someone who can restore a
+record has a reason to see the deleted list, and the list itself discloses
+that a record was deleted and when. No new permission was introduced —
+`_MANAGE` was already the correct authorization boundary. `POST
+/v1/customers/{id}/activate` matches the `CUSTOMER_MANAGE` its existing
+`DELETE` counterpart already requires.
+
+**Response shape.** The three `/deleted` endpoints return an unpaginated
+`ApiResponse<List<…DeletedResponse>>` — a shop's deleted list is short by
+nature, and paginating it would imply a search surface that deliberately does
+not exist. Each row carries identification plus `deletedAt`, and nothing else:
+`SupplierDeletedResponse` omits credit limit/GST/bank details,
+`ProductDeletedResponse` omits every price (cost and selling alike), and
+`UserDeletedResponse` omits all security state, exactly as `UserResponse`
+does. The four action endpoints return **204** with no body, matching the
+established `POST /v1/workers/{id}/activate` convention.
+
+**404 semantics, deliberately uniform.** Restore is one guarded `UPDATE …
+WHERE <pk> = ? AND tenant_id = ? AND deleted_at IS NOT NULL`. A row belonging
+to another tenant, a row that was never deleted, and an id that does not exist
+all update zero rows and all return `404 NOT_FOUND` — indistinguishable, so
+restore cannot be used to probe which records exist at other shops. A second
+restore of an already-restored row is therefore also 404, not a silent
+success. Cross-tenant access is never `403`, matching CR-016's rule across
+the codebase.
+
+**Route precedence.** `/deleted` is a literal segment and takes precedence
+over `/{id}` under Spring's most-specific-pattern matching — the same way
+`/v1/suppliers/cities` already coexists with `/v1/suppliers/{id}`. No existing
+route changed.
+
+**Customer has no `/deleted` endpoint, by design.** `customer` carries no
+`deleted_at` and no `@SQLRestriction`, so an INACTIVE customer was never
+hidden and there is nothing to recover — see the CR-058 entry in
+`CHANGE_REQUEST_REGISTRY.md`. |
+
+## CR-059 — Deployment mode (hosted SaaS vs self-hosted Docker)
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/v1/deployment-config` | public (permitAll) | Which installation this is: `{mode, selfHosted, billingEnabled, installationName}`. Public for the same reason `/v1/auth/captcha-config` is — the app shell renders before anyone signs in, and a self-hosted install must not flash a billing prompt while the session loads. Deliberately serves **no** host, credential, provider key or version string. |
+
+**Effect on the CR-057 phase 9 billing endpoints above.** On a self-hosted
+installation (`app.deployment.mode=SELF_HOSTED`, and `billing-enabled` not
+forced true):
+
+- `POST /v1/billing/checkout` and `POST /v1/billing/verify` return
+  **`503 BILLING_NOT_APPLICABLE`** — distinct from `BILLING_NOT_CONFIGURED`,
+  which means "this deployment does bill but has no Razorpay keys". The
+  client bought the software outright; there is nothing to subscribe to.
+- `POST /v1/webhooks/razorpay` rejects before parsing the body. It is
+  `permitAll` by design, so on a self-hosted box it is otherwise an
+  internet-reachable path for a feature that install does not have.
+- `GET /v1/billing/history` still works and simply returns nothing.
+- `GET /v1/settings/usage` reports every limit as `-1` (UNLIMITED), because
+  `EntitlementService` enforces no tier cap on a self-hosted install — the
+  summary must describe what is actually enforced, not a ceiling that is
+  never applied.

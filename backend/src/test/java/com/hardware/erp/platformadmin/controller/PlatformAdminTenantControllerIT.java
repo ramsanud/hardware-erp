@@ -8,7 +8,7 @@ import com.hardware.erp.platformadmin.entity.PlatformAdminStatus;
 import com.hardware.erp.platformadmin.entity.PlatformAuditAction;
 import com.hardware.erp.platformadmin.repository.PlatformAdminRepository;
 import com.hardware.erp.platformadmin.repository.PlatformAuditLogRepository;
-import com.hardware.erp.platformadmin.service.TotpService;
+import com.hardware.erp.security.totp.TotpService;
 import com.hardware.erp.support.AbstractIntegrationTest;
 import com.hardware.erp.tenant.entity.Tenant;
 import com.hardware.erp.tenant.entity.TenantStatus;

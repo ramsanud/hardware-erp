@@ -72,6 +72,43 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
     List<String> findDistinctCities(@Param("tenantId") Long tenantId);
 
     /**
+     * CR-058. Native on purpose: every JPQL/derived query above is rewritten by
+     * Supplier's own {@code @SQLRestriction("deleted_at is null")}, so a
+     * soft-deleted row is unreachable through the ORM and was therefore
+     * unrecoverable (BUG-SUP-006). Hibernate only appends that restriction to a
+     * FROM clause it generated itself; this hand-written SQL is passed through
+     * untouched, which is the same deliberate escape hatch the two CR-018
+     * queries below already use. Still tenant-scoped - bypassing the delete
+     * filter must never mean bypassing tenant isolation (CR-016).
+     */
+    @Query(value = """
+           select * from supplier
+           where tenant_id = :tenantId and deleted_at is not null
+           order by deleted_at desc
+           """, nativeQuery = true)
+    List<Supplier> findDeletedByTenantId(@Param("tenantId") Long tenantId);
+
+    /**
+     * CR-058. One atomic guarded statement rather than read-then-write: the
+     * WHERE clause is the authorisation check, so a row belonging to another
+     * tenant, a row that was never deleted, and a row that does not exist all
+     * update zero rows and are reported identically as 404 - a caller cannot
+     * tell them apart by probing ids.
+     *
+     * `version` is incremented by hand because a native update bypasses the
+     * @Version column Hibernate would otherwise maintain; leaving it stale
+     * would let a concurrently-loaded copy overwrite the restore.
+     */
+    @Modifying
+    @Query(value = """
+           update supplier
+           set deleted_at = null, deleted_by = null, status = 'ACTIVE',
+               version = version + 1
+           where supplier_id = :id and tenant_id = :tenantId and deleted_at is not null
+           """, nativeQuery = true)
+    int restoreDeleted(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
+    /**
      * CR-018 one-time backfill only (SupplierBankAccountEncryptionRunner) -
      * the raw column value, bypassing BankAccountNumberConverter entirely,
      * so legacy plaintext rows (no "ENC:" prefix) can be found and encrypted.

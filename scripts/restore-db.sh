@@ -7,14 +7,17 @@
 # run backup-db.sh first, even to overwrite something you think is
 # disposable.
 #
-# Usage:
-#   ./scripts/restore-db.sh backups/hardware_erp_20260823_190000.sql
+# Works against either installation (CR-059) - db-target.sh works out which:
+#
+#   self-hosted   ./scripts/restore-db.sh backups/hardware_erp_20260904_190000.sql
+#   hosted        DB_HOST=... DB_USER=... DB_NAME=postgres DB_PASSWORD='...' \
+#                 ./scripts/restore-db.sh backups/hardware_erp_20260904_190000.sql
 
 set -euo pipefail
 
-DB_CONTAINER="${DB_CONTAINER:-hardware-erp-postgres}"
-DB_NAME="${DB_NAME:-hardware_erp}"
-DB_USER="${DB_USER:-hardware_erp}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/db-target.sh
+source "$SCRIPT_DIR/db-target.sh"
 
 BACKUP_FILE="${1:-}"
 if [ -z "$BACKUP_FILE" ]; then
@@ -25,24 +28,35 @@ if [ ! -f "$BACKUP_FILE" ]; then
     echo "ERROR: backup file not found: $BACKUP_FILE" >&2
     exit 1
 fi
-if ! docker ps --format '{{.Names}}' | grep -qx "$DB_CONTAINER"; then
-    echo "ERROR: container '$DB_CONTAINER' is not running (docker ps shows no match)." >&2
-    exit 1
-fi
 
-echo "This will DROP and recreate the schema in database '$DB_NAME'"
-echo "(container '$DB_CONTAINER') and load: $BACKUP_FILE"
-read -r -p "Type 'yes' to continue: " CONFIRM
-if [ "$CONFIRM" != "yes" ]; then
+resolve_db_target
+
+echo "This will DROP and recreate schema 'public' in"
+echo "  $(db_target_description)"
+echo "and load: $BACKUP_FILE"
+# Restoring over a managed database is the one case where a typo destroys
+# data that is not on this machine and may be shared by every tenant, so it
+# asks for something harder to type by reflex than 'yes'.
+if [ "$DB_TARGET_KIND" = "remote" ]; then
+    echo ""
+    echo "WARNING: this target is a MANAGED database, not a local container."
+    echo "         On the hosted deployment that database holds EVERY tenant."
+    read -r -p "Type the database host ('$DB_HOST') to continue: " CONFIRM
+    EXPECTED="$DB_HOST"
+else
+    read -r -p "Type 'yes' to continue: " CONFIRM
+    EXPECTED="yes"
+fi
+if [ "$CONFIRM" != "$EXPECTED" ]; then
     echo "Aborted - nothing was changed."
     exit 1
 fi
 
 echo "Dropping and recreating schema 'public' ..."
-docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+db_psql -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 
 echo "Loading $BACKUP_FILE ..."
-docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$BACKUP_FILE"
+db_psql < "$BACKUP_FILE"
 
 echo "Restore complete. Start the backend normally next - Flyway will see"
 echo "the restored schema_version history and will not try to re-run"

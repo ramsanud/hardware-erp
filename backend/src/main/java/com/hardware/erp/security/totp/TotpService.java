@@ -1,4 +1,4 @@
-package com.hardware.erp.platformadmin.service;
+package com.hardware.erp.security.totp;
 
 import org.springframework.stereotype.Service;
 
@@ -15,6 +15,13 @@ import java.util.Locale;
  * already implements, hand-rolled on top of javax.crypto.Mac rather than
  * pulling in a new Maven dependency for something this small and this
  * precisely specified.
+ *
+ * Shared between the Platform Admin Console (CR-054, mandatory MFA for
+ * platform staff) and tenant user login (CR-058, mandatory MFA for shop
+ * users) - moved here from platformadmin.service so the algorithm exists
+ * in exactly one place. Security-critical crypto code must never be
+ * duplicated: a future fix to one copy silently missing the other is
+ * exactly the kind of bug this move exists to prevent.
  */
 @Service
 public class TotpService {
@@ -23,7 +30,7 @@ public class TotpService {
     private static final int SECRET_BYTES = 20;
     private static final int TIME_STEP_SECONDS = 30;
     private static final int CODE_DIGITS = 6;
-    /** One step of drift tolerated each side, for clock skew between the server and the admin's phone. */
+    /** One step of drift tolerated each side, for clock skew between the server and the user's phone. */
     private static final int ALLOWED_DRIFT_STEPS = 1;
 
     private static final String BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";

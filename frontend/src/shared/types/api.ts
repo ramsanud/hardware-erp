@@ -31,6 +31,15 @@ export interface PageResponse<T> {
   last: boolean;
 }
 
+/**
+ * A resolved-but-empty page. CR-058: a list page showing its deleted-records
+ * view must not also fire the ordinary paginated search, so its fetcher
+ * short-circuits to this instead of leaving the previous page's rows on screen.
+ */
+export function emptyPage<T>(size = 0): PageResponse<T> {
+  return { content: [], page: 0, size, totalElements: 0, totalPages: 0, first: true, last: true };
+}
+
 /** Error codes the backend actually emits. Kept in sync with GlobalExceptionHandler. */
 export type ApiErrorCode =
   | 'VALIDATION_ERROR'
