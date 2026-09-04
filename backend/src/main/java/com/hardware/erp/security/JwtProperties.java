@@ -20,5 +20,9 @@ public record JwtProperties(
         long accessTokenMinutes,
 
         @Min(value = 1, message = "Refresh token lifetime must be at least 1 day")
-        long refreshTokenDays
+        long refreshTokenDays,
+
+        /** CR-058 - how long a "password check passed" MFA challenge token stays usable before the user must sign in again. */
+        @Min(value = 1, message = "MFA token lifetime must be at least 1 minute")
+        long mfaTokenMinutes
 ) {}

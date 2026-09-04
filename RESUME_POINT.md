@@ -1,34 +1,115 @@
 # RESUME POINT
 
-**Updated:** 2026-08-31 (CR-051 + CR-052 done and live-verified locally. CR-053 phase 1 — invoice PDF themes — also done and live-verified. Neither is committed yet. A second, separate multi-phase backlog (CR-053 phases 2+) is queued from a screenshot-driven request — see below.)
+**Updated:** 2026-09-04 (**CR-059 — deployment mode switch: hosted (Supabase) or self-hosted (Docker)**). The client-facing requirement was "work with both supabase and also in docker, need switch option ... if the client not acquired to get hosted version they can use docker version."
+
+**The finding that shaped the work:** Supabase was already nothing but a hostname here. No Supabase SDK, Auth or Storage exists anywhere in `backend/src` or `frontend/src` — uploads are `bytea`, auth is our own JWT+MFA, tenant export is plain JDBC. So **no application-layer portability work was needed and none was done**; the user was offered Supabase Storage/Auth in hosted mode and explicitly declined, because either forks a core subsystem into two implementations. What was missing was everything *around* the app.
+
+**Built:** `app.deployment.mode` = `CLOUD` | `SELF_HOSTED`, set by `SPRING_PROFILES_ACTIVE=prod,cloud` or `prod,selfhosted` (new `application-cloud.yml` / `application-selfhosted.yml`, both layering **on top of** `prod`, which keeps owning the security posture). Defaults to `CLOUD`, so every pre-existing environment behaves exactly as before. `DeploymentModeGuard` refuses to boot on four incoherent configurations — notably **`SELF_HOSTED` pointed at a managed database** (one client's data into the multi-tenant SaaS DB) and **`CLOUD` with `cookie-secure=false`**. Full self-hosted stack: `docker-compose.selfhosted.yml` (postgres + backend + frontend, only the web port published), new `frontend/Dockerfile` + `nginx.conf` (same-origin `/api` proxy, because the refresh cookie is `SameSite=Strict`), `.env.selfhosted.example`. Billing is off on a self-hosted licence: checkout/verify return `503 BILLING_NOT_APPLICABLE`, the public Razorpay webhook is rejected before parsing, **tier caps are not enforced** (otherwise a `FREE`-tier self-hosted install stops the client at their 101st customer and tells them to upgrade — a dead end), and the plan/upgrade/coupon cards are hidden via the new public `GET /v1/deployment-config`. `scripts/db-target.sh` makes backup/restore work against a container *or* a managed host. Full detail in `CHANGE_REQUEST_REGISTRY.md` CR-059 and `docs/DEPLOYMENT_MODES.md`.
+
+**Verified for CR-059 — all of this was actually executed:** `mvn -o test` **430/430 BUILD SUCCESS** (12 new tests); `tsc -b --force` and `vite build` clean; `mvn -o verify` → **430 unit + 189 integration, BUILD SUCCESS**. The self-hosted stack was genuinely built and run, not merely written: both images built, all three containers reached healthy in dependency order, `/healthz` returned `ok`, `/api/actuator/health` returned `{"status":"UP"}` **through the nginx proxy**, and `/api/v1/deployment-config` returned `mode: SELF_HOSTED, billingEnabled: false`. The guard's refusal was proven for real by running the backend image with `prod,selfhosted` against a Supabase `DB_HOST` — it refused at context initialization, with no Hikari pool and no Flyway line ahead of it. `down -v` afterwards removed only the self-hosted project and left the developer's `hardware-erp-postgres` container and volume untouched. **Two defects of my own were found and fixed during that verification** (the compose project-name collision below, and the guard originally running at `ApplicationReadyEvent` — too late, since Flyway would already have migrated the SaaS database; moving it to a `BeanFactoryPostProcessor` initially broke nine `@SpringBootTest` contexts with "No default constructor found", resolved by taking the `Environment` from the bean factory). **Not executed:** `registry/static_check.py` (`python3` is not installed on this machine).
+
+**BUG-TEST-002 — found while running `mvn -o verify` for CR-059, then fixed on the user's instruction.** `CustomerControllerIT.activateRequiresManage` (an untracked test file from another session's in-flight CR-058 work) expected 403 and got 204. Its premise was false: it signed in as ACCOUNTANT on the comment "ACCOUNTANT holds CUSTOMER_VIEW but not CUSTOMER_MANAGE", but `V1__auth_schema.sql` — the file that actually seeds the test database — grants `CUSTOMER_MANAGE` to MANAGER, ACCOUNTANT **and** STAFF, so **no seeded role can express "view customers but not manage them"** and 204 was the correct response. It is a clone of `SupplierControllerIT.deletedRecordsRequireManage`, which is correct because ACCOUNTANT genuinely lacks `SUPPLIER_MANAGE`; the premise was true for suppliers and silently false for customers. `ProductControllerIT`'s equivalent was checked too and is correct (STAFF has `PRODUCT_VIEW` without `PRODUCT_MANAGE`), so the defect was confined to that one test. **Fix**: the test now creates its own `CUSTOMER_READER` role holding `CUSTOMER_VIEW` only, plus a user in it, and asserts 200 on the list (proving the token and the VIEW grant are real) before asserting 403 on activate. **Deliberately rejected**: removing `CUSTOMER_MANAGE` from ACCOUNTANT in the seed to make the old assertion pass — role design is a product decision, and that edit would have silently changed what every existing deployment's ACCOUNTANT can do. Full detail in `BUG_REGISTRY.md`. **Worth confirming with the owner, not changed**: `STAFF` also holds `CUSTOMER_MANAGE`, so counter staff can deactivate and reactivate customers.
+
+**A compose-project-name collision was caught and fixed before it could do harm.** `docker-compose.selfhosted.yml` originally declared `name: hardware-erp`, which is also what Compose derives for the *development* `docker-compose.yml` from the directory name. That would have made the two files two views of one project — a `down -v` against the self-hosted file would have deleted the developer's running database volume. It now declares `name: hardware-erp-selfhosted`.
+
+---
+
+**Updated:** 2026-09-03 (CR-057 phases 11-12 — Backup Center + Platform Settings (Razorpay). **Phase 11**: an honest on-demand tenant-data export (JSON, or a CSV zip) - this app has no snapshot/blob infrastructure, so rather than fake a "last backup" dashboard, `TenantDataExportService` pulls flat rows from 8 core tables and logs every attempt (`platform_tenant_export`, V50) without ever persisting the file itself. New `TenantBackupCard` on Tenant Detail. **Phase 12**: a real `/platform-admin/settings` page where an admin fills in Razorpay credentials directly - `platform_razorpay_config` (V51, singleton row, secrets AES-256-GCM encrypted via a new `EncryptedSecretConverter` reusing CR-018's `FieldEncryptor`). New `RazorpayConfigResolver` is the single precedence point between this DB row and the `RAZORPAY_*` env vars from phase 9 (DB wins when enabled, env vars are the fallback - neither was removed). `RazorpayOrderClientImpl`/`SubscriptionBillingServiceImpl`/`TenantSettingsServiceImpl` all now go through the resolver instead of reading `RazorpayProperties` directly. Every save is audited (`PLATFORM_SETTING_UPDATED`). 3 new tests (`TenantDataExportServiceImplTest`); `SubscriptionBillingServiceImplTest`/`TenantSettingsServiceImplTest` updated for the resolver constructor change, same coverage. `mvn -o test` **391/391, BUILD SUCCESS** — Docker came up mid-session and stayed up for this run, so the 2 previously-Docker-gated tests ran and passed for real. `tsc -b --force`/`vite build` clean. Full detail in `CHANGE_REQUEST_REGISTRY.md`'s CR-057 phase 11/12 entries.
+
+**Also completed earlier this same session** (same continuous pass): **CR-057 phase 9** (Subscriptions & Billing — real Razorpay order/verify/webhook architecture; found+fixed BUG-SET-001, the self-declared plan picker was a free checkout bypass once billing exists) and **phase 10** (Tenant Analytics — growth/module-adoption/churn with CSV/XLSX/PDF export).
+
+**Important — this repo had concurrent sessions active on it during this work, and that shaped how this was committed.** Multiple other Claude Code sessions were editing this same working tree at the same time, building an unrelated "CR-058" (mandatory tenant-user MFA, plus a soft-delete recovery feature for Product/Supplier/Customer — `findDeletedByTenantId`/`restoreDeleted`). At commit time their work was still in flight and left `src/test` non-compiling (`AuthServiceImplTest`/`JwtServiceTest` against a changed `JwtProperties` record). **`src/main` compiled cleanly; every compile error was in their test files, none in this work.**
+
+So rather than bundle their unfinished work into this commit, the CR-057 phase 9-12 commit was staged **surgically**: files exclusively authored here were staged whole, and for the four genuinely shared files (`SecurityConfig.java`, `application.yml`, `ProductRepository.java`, `SupplierRepository.java`) only this session's own hunks were staged via index-only patches (`git apply --cached`), leaving their changes intact and uncommitted in the working tree for their own session to commit. The two new IT files were likewise staged against the pre-refactor `platformadmin.service.TotpService` import so this commit is self-consistent standalone, while the working tree keeps their relocated `security.totp.TotpService` path.
+
+**Consequence to be aware of**: this commit's own test suite was last verified green at **391/391 `BUILD SUCCESS`** *before* their breakage landed; it was not re-verified at the exact commit SHA because their in-flight files block `test-compile` tree-wide. Re-run `mvn -o verify` once CR-058 lands to confirm the combined state.
 
 ---
 
 ## Next file to work on
 
-**Uncommitted work sitting on `main` right now — commit it first, following CLAUDE.md's branch workflow, before starting anything else.** `main` and `develop` both exist; this work was built directly against `main`'s working tree, same as every other change this session, but per CLAUDE.md it belongs on a feature branch merged back with `--no-ff`. Everything below is one working tree's worth of uncommitted diff (CR-051, CR-052, CR-053 phase 1 together) — commit as one or split per CR, reviewer's call. Suggested: `git switch -c feature/sales-order-delivery-challan-credit-note-invoice-themes`, commit, merge into `develop`, then into `main`. Not yet done because committing was not explicitly requested this round.
+**CR-057, the remainder** - per the user's own spec, in roughly this priority order: **Announcements**; **Global Search**; **Admin Notifications**; **Maintenance Mode**. The user's instruction was to continue through all of these without stopping to ask - if resuming this work, keep doing that unless something is genuinely blocked.
 
-**CR-053, phases 3+ — a live backlog, being worked one item at a time on explicit "add all features one by one" authorization.** Phase 1 (invoice PDF themes) and phase 2 (registration-form scroll fix + auth-page icon polish) are both done. The queue, roughly in the order raised, none of the rest started yet - pick the next one using judgement, no need to re-ask before each (already authorized), but keep doing them one at a time and verify each before moving on:
+**Re-run `mvn -o verify` to pick up the full integration suite** - it now includes 148 pre-existing integration tests plus 3 new phase-9/10 IT files (`PlatformAdminAnalyticsControllerIT`, `PlatformAdminBillingControllerIT`, `SubscriptionBillingControllerIT`). These were confirmed to at least test-compile cleanly; whether they were run against real Postgres before this commit depends on Docker's availability at commit time - check the commit's own message/CI result rather than assuming.
 
-1. **Invoice "Additional Settings" toggles** — Show Item Description, Show Alternate Unit, Price History, Free Quantity, Show Time on Invoices, Show Item Image, Tagline. Small, bounded, same shape as `Tenant.invoiceTheme` (CR-053 phase 1) - most likely more `tenant` columns read by `InvoicePdfService`.
-2. **Tally export** — a Tally-compatible XML export of sales/purchases/parties/items for a date range. Real, bounded, no external credential needed.
-3. **TDS/TCS settings** — under Business & GST Settings, affecting invoice/purchase tax calculation. Bounded, no external dependency.
-4. **e-Invoice (IRN) — UI-only, explicitly not-yet-live.** User's own decision when asked: build the seller/buyer/voucher/HSN-code review screens and wire them to save data, but the final "Generate e-Invoice" action must stay disabled with an honest "needs a GSP/NIC account" message - same degrade-gracefully pattern CR-036 phase 1 used for WhatsApp sharing. **Never** fabricate a real IRN or claim generation succeeded - no GSP/NIC credential exists anywhere in this environment. If real credentials are ever supplied, this becomes a different, bigger piece of work (a real GSP/NIC API integration), not an extension of the UI shell.
-5. **Reminder settings page** — SMS-to-party on transaction, payment-due reminders, daily outstanding-payments/sales-summary digest, low-stock alert, WhatsApp alerts. Needs a scheduled job (nothing in this codebase currently runs one). WhatsApp alerts hit the same no-credential gap as e-Invoice above - default to the same UI-present-but-disabled or browser-share-fallback treatment rather than asking again, unless something below changes that.
-6. **Named user roles + activity feed** — preset display names (Partner, Salesman, Stock Manager, Delivery Boy, CA) over the existing four system roles, plus a per-user activity timeline on the Manage User page. The RBAC/permission engine underneath already exists in full (`PermissionGate`, `PermissionCode`, `@PreAuthorize`) — this is a presentation layer, not new authorization.
-7. **GST/margin calculator tool** — a standalone cost-price + GST% → selling-price calculator with a profit-ratio donut chart. Not tied to any existing document; a small new page, likely with no backend at all (pure arithmetic).
+**A known, deliberately-not-fixed gap from phase 11**: both platform-admin and tenant-side API clients' blob-download helpers (`platformAdminGetBlob`/`platformAdminPostBlob`, `apiGetBlob`) surface a failed export's JSON error body as an unparsed `Blob` rather than the server's actual message, because axios does not discriminate `responseType` by HTTP status. This is pre-existing (the Tally export had the same issue already) - worth a dedicated pass across both clients' response interceptors, not a one-off fix.
+
+**Vitest + Playwright test infrastructure.** Still not started; frontend has **no** test runner at all. The user's spec explicitly asks for both, including real Playwright click-throughs of the Platform Admin console once enough of it exists.
+
+**A dedicated final security review + full tenant-side regression pass.** Every CR-057 phase so far has been additive-only and the full backend suite stayed green after each one, which is evidence against regression but is not the same as the focused security/regression pass the user's own spec asks for as a closing step (SQL injection/IDOR/tenant-isolation/broken-authorization sweep specifically over every new `/v1/platform-admin/**`, `/v1/support-tickets/**` and `/v1/billing/**`+`/v1/webhooks/razorpay` endpoint).
+
+**CR-053 backlog item 8 — still not started, still needs scoping before any of it begins.** The rest of the myBillBook premium-plan list (barcode/warehouse, scan-to-invoice, online store, foreign-currency invoicing, "Add your CA" access, GSTR JSON export, remove-branding toggle, recover deleted invoices, bulk-edit items) overlaps heavily with several of the master prompt's own later tasks (28-33) - treat those master-prompt tasks as the authoritative version of this backlog item rather than working it twice.
+
+**Uncommitted work sitting on `main` right now — commit it first, following CLAUDE.md's branch workflow, before starting anything else.** `main` and `develop` both exist; this work was built directly against `main`'s working tree, same as every other change this session, but per CLAUDE.md it belongs on a feature branch merged back with `--no-ff`.
+
+---
+
+## CR-054 phase 1 — Platform Admin Console: identity & auth foundation (DONE 2026-09-01)
+
+Full detail in `project-knowledge/CHANGE_REQUEST_REGISTRY.md`'s CR-054
+entry - this is the summary. A second, structurally separate login system
+for Hardware ERP *staff* (`platform_admin` table, V39, no `tenant_id`
+anywhere), never a flag on `app_user`: its own JWT signing key/issuer
+(`PlatformAdminJwtService`), its own `@Order(0)` Spring Security filter
+chain (`PlatformAdminSecurityConfig`, `.securityMatcher("/v1/platform-admin/**")`),
+its own rate limiter, its own audit log (`platform_audit_log`, deliberately
+no FK on `platform_admin_id` - see the CR entry for the `REQUIRES_NEW`
+transaction-ordering bug that taught this). MFA is mandatory for every
+account, no opt-out: a hand-rolled RFC 6238 `TotpService` (no new Maven
+dependency), QR enrollment (reused/widened `QrCodeGenerator`), 10 one-time
+backup codes issued once enrollment is confirmed. `PlatformAdminUserController`
+(SUPER_ADMIN-only create/list) is the only business endpoint - just enough
+to prove the 7-role RBAC model end to end. Frontend: `/platform-admin/{login,mfa,enroll,dashboard}`,
+its own axios client and in-memory token store (`platformAdminApiClient.ts`/
+`platformAdminTokenStorage.ts`), its own `PlatformAdminAuthProvider`, wired
+into `routes/index.tsx` as a fully isolated subtree - never inside the
+tenant `AuthProvider`/`AuthLayout`/`AppLayout`.
+
+**Verified**: `mvn clean compile` + `mvn clean verify` clean (existing 298
+unit + 100 Testcontainers integration tests unaffected). New
+`PlatformAdminAuthControllerIT` - 10 tests, real PostgreSQL - covers the
+full enroll→confirm→session flow with a genuine computed TOTP code,
+already-enrolled login, wrong-code rejection, backup-code single-use,
+enumeration resistance, refresh rotation + reuse detection, SUPER_ADMIN-only
+RBAC, and cross-boundary isolation in both directions (a real tenant token
+refused on `/v1/platform-admin/**`, a real platform-admin token refused on
+`/v1/auth/**`). `tsc -b --force` and `vite build` both clean. **Not
+performed**: no browser automation tool in this environment - the frontend
+pages have not been clicked through, only typechecked and build-verified.
+
+**Explicitly not done, needs selection before starting**: every phase
+after identity/auth - tenant management, support tools, announcements,
+subscriptions, system health, security center, developer tools, backup/
+maintenance/analytics - plus the two doc files
+(`docs/PLATFORM_ADMIN_GUIDE.md`/`PLATFORM_ADMIN_SECURITY.md`, premature
+before more of the console exists to document truthfully) and the
+synthetic demo data / 20-step test scenario from the original spec.
+
+---
+
+**CR-053, phases 3+ — a live backlog, being worked one item at a time on explicit "add all features one by one" authorization.** Phase 1 (invoice PDF themes) and phase 2 (registration-form scroll fix + auth-page icon polish) are both done. Items 1-7 below are now all **DONE** (2026-09-02) - see CHANGE_REQUEST_REGISTRY.md's "CR-053 backlog items 2-7" entry for full detail. Only item 8 remains, and it explicitly needs scoping first:
+
+1. ~~**Invoice "Additional Settings" toggles**~~ — DONE.
+2. ~~**Tally export**~~ — DONE. `GET /v1/exports/tally`, ledger-level vouchers only (not item-wise inventory), sign convention unverified against real Tally software (none in this environment) but every voucher provably sums to zero (`TallyXmlBuilderTest` + live-verified against real seeded invoice data).
+3. ~~**TDS/TCS settings**~~ — DONE, informational only (never touches a document's own stored total).
+4. ~~**e-Invoice (IRN) UI shell**~~ — DONE, review-only, Generate button permanently disabled with the honest GSP/NIC message.
+5. **Reminder settings page** — PARTIALLY DONE: payment-due reminder and low-stock alert are live, with a real daily `@Scheduled` job (`ReminderSchedulerService`) that logs an SMS via the existing stub provider. SMS-on-transaction, the daily sales-summary digest, and WhatsApp-specific alerts are still not built - pick this up again if wanted.
+6. ~~**Named user roles + activity feed**~~ — DONE. Also found+fixed a real bug while extending this area: `AdditionalSettingsCard` (item 1) was never rendered in Settings' edit-mode view, only the read-only view.
+7. ~~**GST/margin calculator tool**~~ — DONE. `/tools/gst-calculator`.
 8. The rest of the screenshotted premium-plan list, not yet scoped in detail: barcode generation/printing, scan-to-create-invoice, an online store, foreign-currency invoicing, "Add your CA" access, GSTR JSON export, remove-branding toggle, recover deleted invoices, bulk-edit items. Several of these overlap with Master Prompt phases already known to be missing (barcode/warehouse was one of the three Master Prompt phases the user has not yet picked) — resolve that overlap before starting rather than guessing which backlog takes priority.
 
 **A defect noticed in passing, not fixed (out of scope for CR-053 phase 2):** `SupplierWizard`'s submit button shows two overlapping loading spinners - it passes `loading={submitting}` to `Button` *and* separately renders its own `<Loader2 className="animate-spin" />`, but `Button`'s own `loading` prop already renders that spinner internally. `RegisterPage`'s new wizard (phase 2) deliberately does not repeat this. Worth a one-line fix whenever `SupplierWizard` is next touched.
 
 After CR-053 is worked through (or paused), the other still-open piece of
-Master Prompt work is whichever of *its* remaining three proposed phases the
+Master Prompt work is whichever of *its* remaining proposed phases the
 user picks next (they chose Phase 1 — idempotency + Sales Order/Delivery
-Challan/Credit Note — via AskUserQuestion; the other three were never
-started and must not be silently begun): warehouse/rack + barcode scanning,
-e-invoice/e-way bill, WhatsApp Business API, backup/restore, invoice
-template designer, 4-tier entitlements, financial year rollover, price
-history — see this session's own 15-point audit for the full list.
+Challan/Credit Note — via AskUserQuestion; **WhatsApp Business API is now
+done, CR-056**, built directly on the user's own follow-up spec rather
+than waiting to be picked from this list): warehouse/rack + barcode
+scanning, e-invoice/e-way bill, backup/restore, invoice template designer,
+4-tier entitlements, financial year rollover, price history — see this
+session's own 15-point audit for the full list. The remaining ones were
+never started and must not be silently begun.
 
 **CR-042, increment 2 — thermal print rendering** is still queued behind
 whichever Master Prompt phase comes next; unchanged by anything in this

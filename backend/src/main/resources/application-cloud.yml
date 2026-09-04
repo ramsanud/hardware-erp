@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------------
+# CLOUD - the hosted, multi-tenant SaaS (CR-059).
+#
+#   SPRING_PROFILES_ACTIVE=prod,cloud
+#
+# Layered ON TOP of application-prod.yml, never instead of it: 'prod' still
+# owns the security posture (no springdoc, no actuator beyond health, no
+# stack traces, no developer inspection). This file adds only what differs
+# because the database and the browser are somewhere else.
+#
+# Supabase is a managed PostgreSQL endpoint and nothing more. No Supabase
+# SDK, Auth or Storage exists in this codebase - uploads are bytea in
+# PostgreSQL and auth is this application's own JWT + MFA - so moving to
+# Neon, RDS or a self-managed instance is a change of DB_HOST alone, with
+# this file unchanged.
+# ---------------------------------------------------------------------
+spring:
+  datasource:
+    # Repeated in full rather than inherited, so that the connection this
+    # deployment actually makes is readable in one place. Two things differ
+    # from the base URL in application.yml:
+    #
+    #   sslmode=require - managed PostgreSQL demands TLS. 'require' encrypts
+    #     without needing the provider's CA in the JVM truststore, which
+    #     'verify-full' would; against a fixed provider hostname on their own
+    #     network that trade is worth making, and it is one less way for a
+    #     deploy to fail at 2am.
+    #   port/name defaults - Supabase's session pooler is 5432 and its
+    #     database is 'postgres', not the 5433/hardware_erp that
+    #     docker-compose.yml uses locally.
+    #
+    # Use the SESSION pooler (5432), never the transaction pooler (6543):
+    # transaction-mode pooling breaks server-side prepared statements and
+    # per-session state, and DocumentSequenceService holds SELECT ... FOR
+    # UPDATE for the caller's transaction (CR-041). See render.yaml.
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME:postgres}?reWriteBatchedInserts=true&sslmode=${DB_SSL_MODE:require}
+    hikari:
+      # A managed free/small tier caps connections hard, and a pooler grants
+      # far fewer than PostgreSQL's own max_connections suggests. Overridden
+      # per deployment - render.yaml sets 5 for the free tier.
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: 2
+      # A managed pooler drops idle connections server-side without telling
+      # the client. Retire them here first, otherwise Hikari hands a dead
+      # connection to a request and the user sees a 500 on a healthy system.
+      max-lifetime: 900000
+      idle-timeout: 300000
+      keepalive-time: 240000
+
+app:
+  deployment:
+    mode: CLOUD
+  security:
+    # Not a ${...} placeholder. The hosted product is HTTPS-only and the
+    # refresh token is a 7-day credential; DeploymentModeGuard refuses to
+    # start if this is ever false under CLOUD + prod.
+    cookie-secure: true

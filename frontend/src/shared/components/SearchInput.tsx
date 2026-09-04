@@ -5,9 +5,15 @@ interface SearchInputProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  /**
+   * CR-058: the deleted-records view is served by its own unpaginated,
+   * unsearchable endpoint, so the box is disabled rather than left looking
+   * usable while typing in it does nothing.
+   */
+  disabled?: boolean;
 }
 
-export function SearchInput({ value, onChange, placeholder = 'Search…' }: SearchInputProps) {
+export function SearchInput({ value, onChange, placeholder = 'Search…', disabled = false }: SearchInputProps) {
   return (
     <div className="relative w-full sm:max-w-xs">
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -18,8 +24,9 @@ export function SearchInput({ value, onChange, placeholder = 'Search…' }: Sear
         className="pl-9 pr-9"
         type="search"
         aria-label={placeholder}
+        disabled={disabled}
       />
-      {value ? (
+      {value && !disabled ? (
         <button
           type="button"
           onClick={() => onChange('')}

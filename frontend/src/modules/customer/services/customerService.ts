@@ -20,6 +20,9 @@ export const customerService = {
 
   deactivate: (id: number) => apiDelete(`/v1/customers/${id}`),
 
+  /** CR-058. The inverse of deactivate. Customer has no soft delete, so there is nothing to "restore" - an inactive customer was never hidden. */
+  activate: (id: number) => apiPost<void>(`/v1/customers/${id}/activate`),
+
   financialSummary: (id: number) =>
     apiGet<CustomerFinancialSummaryResponse>(`/v1/customers/${id}/financial-summary`),
 

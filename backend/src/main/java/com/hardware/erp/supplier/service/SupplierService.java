@@ -30,6 +30,12 @@ public interface SupplierService {
 
     void softDelete(Long id, Long actingUserId);
 
+    /** CR-058: soft-deleted suppliers for this tenant, newest deletion first. Invisible to every other query - see SupplierRepository.findDeletedByTenantId. */
+    List<SupplierDeletedResponse> listDeleted();
+
+    /** CR-058: undoes softDelete. 404 unless the row is this tenant's AND is genuinely deleted. */
+    void restore(Long id);
+
     SupplierContactResponse addContact(Long supplierId, SupplierContactRequest request);
 
     SupplierContactResponse updateContact(Long supplierId, Long contactId,

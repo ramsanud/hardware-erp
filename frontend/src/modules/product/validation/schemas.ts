@@ -56,7 +56,21 @@ export const productSchema = z.object({
   minimumStock: z.coerce.number().min(0, 'Minimum stock cannot be negative'),
   reorderLevel: z.coerce.number().min(0, 'Reorder level cannot be negative'),
   status: z.enum(['ACTIVE', 'INACTIVE']),
-});
+  // CR-053 backlog item 1. Both set together or both left blank - see the
+  // matching "both or neither" check in ProductServiceImpl.validateAltUnit.
+  // 0 means "not applicable", the same convention mrpRupees above already
+  // uses - avoids the "empty string coerces to 0, not undefined" trap a
+  // truly optional z.coerce.number() field would hit on a blank NumberInput.
+  altUnitLabel: z.string().trim().max(30, 'Alternate unit label must be 30 characters or fewer')
+    .optional().or(z.literal('')),
+  altUnitConversionFactor: z.coerce.number().min(0, 'Conversion factor cannot be negative'),
+}).refine(
+  (values) => Boolean(values.altUnitLabel) === (values.altUnitConversionFactor > 0),
+  {
+    message: 'Set both the alternate unit label and conversion factor, or leave both blank',
+    path: ['altUnitLabel'],
+  },
+);
 
 export type CategoryValues = z.infer<typeof categorySchema>;
 export type BrandValues = z.infer<typeof brandSchema>;

@@ -269,3 +269,88 @@ straight through the filter and four of `RateLimitIT`'s five assertions failed.
 Production throttling worked; its evidence did not exist. Now keyed on
 `SecurityUtils.requestPath()`, which is identical in both. A security control
 no test can reach is indistinguishable from one that is switched off.
+
+---
+
+## CR-054 phase 1 — Platform Admin Console: identity & auth foundation
+
+A second, structurally isolated authentication system for Hardware ERP
+*staff*, deliberately never merged into `app_user`/`SecurityConfig`. Full
+build detail is in CHANGE_REQUEST_REGISTRY.md's CR-054 entry; this section
+records the security-relevant design decisions and what was verified.
+
+**Isolation, not just a separate table.** A platform admin token can never
+be accepted on a tenant endpoint, or vice versa, even if the two configured
+JWT secrets were somehow identical — `PlatformAdminJwtService` and
+`security.JwtService` are separate `SecretKey` instances built from
+separate `@ConfigurationProperties` (`app.platform-admin.jwt.*` vs
+`app.jwt.*`), and each parser checks its own `issuer` claim
+(`hardware-erp-platform-admin` vs `hardware-erp`) in addition to the
+signature. Enforced by a second Spring Security filter chain
+(`PlatformAdminSecurityConfig`, `@Order(0)`,
+`.securityMatcher("/v1/platform-admin/**")`) ahead of the tenant chain
+(`SecurityConfig`, moved to `@Order(1)` in this CR) rather than one chain
+branching on path — a request either matches the platform-admin
+`securityMatcher` and never reaches the tenant chain's rules at all, or it
+doesn't and the platform-admin filter never runs. **Live-verified, not
+just reasoned about**: `PlatformAdminAuthControllerIT` obtains a real
+tenant access token through the real tenant login flow and confirms it is
+refused (401) on `/v1/platform-admin/auth/me`, and obtains a real
+platform-admin token the same way and confirms it is refused on
+`/v1/auth/me`.
+
+**MFA is mandatory, with no opt-out and no bypass path.** Every account -
+including the bootstrap `SUPER_ADMIN` - starts with `mfaEnabled: false`
+and `POST /login` never issues a session for such an account; it issues an
+`mfaToken` (a purpose-scoped JWT, `purpose: ENROLL`) that only
+`/mfa/enroll` and `/mfa/enroll/confirm` accept, and only
+`/mfa/enroll/confirm` can turn `mfaEnabled` true. `PlatformAdminAuthenticationFilter`
+explicitly rejects any token carrying a `purpose` claim on a protected
+endpoint (`purposeFrom(claims).isPresent()` → reject) — an MFA-challenge
+token can never be replayed as a session token even if leaked, because the
+two token *shapes* are distinguishable independent of expiry.
+
+**TOTP secret at rest**: encrypted via the existing `FieldEncryptor`
+(AES-256-GCM, CR-018's mechanism) through a new `TotpSecretConverter`,
+never plaintext in the database. Same graceful-degradation behavior as
+`bank_account_no` if `APP_ENCRYPTION_KEY` is unset in a dev environment -
+documented there, not repeated here as a new risk.
+
+**Backup codes**: 10 issued once, on enrollment confirmation; only the
+SHA-256 hash is ever persisted (`platform_admin_backup_code.code_hash`),
+each usable exactly once (`used_at`). Added beyond the literal spec text as
+the standard companion to TOTP enrollment — without it, losing the
+enrolled device permanently locks a platform admin out, with no
+forgot-password-equivalent recovery path the way a tenant user has.
+
+**Rate limiting**: `PlatformAdminRateLimitFilter`, a new dedicated filter
+(the existing tenant `RateLimitFilter` was not touched — see its own
+javadoc for why it is deliberately hardcoded to tenant paths only),
+per-IP only on `/login` (`PLATFORM_ADMIN_LOGIN_PER_IP`, 10/min). No
+per-identifier bucket in Phase 1: the platform-admin roster is small and
+every account already has its own lockout
+(`PlatformAdmin.registerFailedLogin`, identical shape to `User`'s), so a
+per-IP ceiling was judged sufficient without the request-body-buffering
+complexity the tenant filter's per-identifier bucket needs.
+
+**Refresh-token rotation and reuse detection**: `PlatformAdminAuthService.refresh`
+is a line-for-line mirror of `AuthServiceImpl.refresh`, including the
+`noRollbackFor = AuthException.class` fix from BUG-AUTH-009 (the
+theft-response branch writes - revokes every session, bumps
+`token_version` - and then throws to report it; without that annotation the
+throw would have undone the very revocation it was announcing). Live-
+verified via a real rotate-then-replay sequence in
+`PlatformAdminAuthControllerIT`, not assumed from code symmetry with the
+tenant side.
+
+**Explicitly not built in Phase 1, flagged rather than silently deferred**:
+an HttpOnly-cookie refresh-token transport (the raw token currently travels
+in the JSON response/request body both ways — an XSS bug in the future
+platform-admin frontend could read it directly, unlike the tenant side's
+cookie-scoped token; accepted for now because a page reload also drops the
+in-memory access token, so the practical exposure window is short, but this
+is the first thing to close before this console handles anything more
+sensitive than viewing its own identity); a Platform Admin Console-specific
+CSP/CORS origin (currently reuses the tenant `SecurityConfig`'s CORS
+configuration source bean, which is broad enough today because there is no
+separate admin subdomain yet).

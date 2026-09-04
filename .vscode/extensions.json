@@ -11,5 +11,19 @@
     "ckolkman.vscode-postgres",
     "rangav.vscode-thunder-client",
     "eamodio.gitlens"
+  ],
+
+  "// unwanted": [
+    "Do NOT run the Apache NetBeans Java server alongside the Red Hat one above.",
+    "Its javac cannot initialise Lombok's annotation processor on this JDK:",
+    "  Could not initialize class lombok.javac.Javac",
+    "  Caused by: NoSuchFieldException: com.sun.tools.javac.code.TypeTag :: UNKNOWN",
+    "The result is hundreds of phantom 'cannot find symbol' errors for every",
+    "Lombok-generated member - getters, builder(), the @Slf4j 'log' field, the",
+    "@RequiredArgsConstructor constructor - in a backend that compiles cleanly",
+    "with Maven. The code is fine; that language server simply cannot see it."
+  ],
+  "unwantedRecommendations": [
+    "asf.apache-netbeans-java"
   ]
 }

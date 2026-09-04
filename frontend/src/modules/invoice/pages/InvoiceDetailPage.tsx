@@ -33,6 +33,7 @@ import { downloadBlob, formatDateTime, previewBlob } from '@/shared/lib/utils';
 import { PermissionGate } from '@/routes/RequirePermission';
 import { PERMISSIONS } from '@/modules/auth/constants';
 import { useToast } from '@/modules/auth/hooks/useToast';
+import { useAppChrome } from '@/layouts/AppChromeProvider';
 import { INVOICE_ROUTES, PAYMENT_METHOD_OPTIONS } from '../constants';
 import { invoiceService } from '../services/invoiceService';
 import { InvoiceStatusBadge } from '../components/InvoiceStatusBadge';
@@ -78,10 +79,14 @@ export function InvoiceDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [previewingPdf, setPreviewingPdf] = useState(false);
+  const { tcsEnabled, tcsRatePercent, einvoiceEnabled } = useAppChrome();
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
   const [emailing, setEmailing] = useState(false);
   const [sharingViaApp, setSharingViaApp] = useState(false);
+  const [sendingReminder, setSendingReminder] = useState(false);
+  const [sendWhatsAppConfirmOpen, setSendWhatsAppConfirmOpen] = useState(false);
+  const [sendingReceiptId, setSendingReceiptId] = useState<number | null>(null);
 
   const { invoice, loading, error, reload } = useInvoiceDetail(id);
 
@@ -188,6 +193,56 @@ export function InvoiceDetailPage() {
     }
   };
 
+  /** Task 05 (WhatsApp reminders, MUST-HAVE) - real backend send via WhatsAppBusinessProvider, not the client-side share sheet handleShareViaApp uses. LOGGED_ONLY is an honest "no WhatsApp Business account configured here yet" state, not an error. */
+  const handleSendReminder = async () => {
+    setSendingReminder(true);
+    try {
+      const status = await invoiceService.sendPaymentReminder(id);
+      if (status === 'SENT') {
+        toast.success('WhatsApp payment reminder sent.');
+      } else if (status === 'LOGGED_ONLY') {
+        toast.info('WhatsApp is not configured on this server yet - the reminder was logged, not sent.');
+      } else {
+        toast.error(new Error('Send failed'), 'Could not send the WhatsApp reminder. Please try again.');
+      }
+    } catch (caught) {
+      toast.error(caught, 'Could not send the WhatsApp reminder.');
+    } finally {
+      setSendingReminder(false);
+    }
+  };
+
+  /** CR-056 §8 - the actual tenant-owned WhatsApp Business send, distinct from handleShareViaApp's browser share sheet above. */
+  const handleSendInvoiceWhatsApp = async () => {
+    const status = await invoiceService.sendInvoiceViaWhatsApp(id);
+    if (status === 'SENT') {
+      toast.success('Invoice sent via WhatsApp.');
+    } else if (status === 'LOGGED_ONLY') {
+      toast.info('WhatsApp is not connected yet - the message was logged, not sent.');
+    } else {
+      toast.error(new Error('Send failed'), 'Could not send the invoice via WhatsApp. Please try again.');
+    }
+  };
+
+  /** CR-056 §10 - manual only, per recorded payment. */
+  const handleSendPaymentReceipt = async (paymentId: number) => {
+    setSendingReceiptId(paymentId);
+    try {
+      const status = await invoiceService.sendPaymentReceiptViaWhatsApp(id, paymentId);
+      if (status === 'SENT') {
+        toast.success('Payment receipt sent via WhatsApp.');
+      } else if (status === 'LOGGED_ONLY') {
+        toast.info('WhatsApp is not connected yet - the receipt was logged, not sent.');
+      } else {
+        toast.error(new Error('Send failed'), 'Could not send the receipt via WhatsApp. Please try again.');
+      }
+    } catch (caught) {
+      toast.error(caught, 'Could not send the receipt via WhatsApp.');
+    } finally {
+      setSendingReceiptId(null);
+    }
+  };
+
   const handleCancel = async () => {
     try {
       await invoiceService.cancel(id);
@@ -278,6 +333,12 @@ export function InvoiceDetailPage() {
                   <Mail className="h-4 w-4" />
                   Email
                 </DropdownMenuItem>
+                <PermissionGate permission={PERMISSIONS.INVOICE_VIEW}>
+                  <DropdownMenuItem onSelect={() => setSendWhatsAppConfirmOpen(true)}>
+                    <MessageCircle className="h-4 w-4" />
+                    Send WhatsApp
+                  </DropdownMenuItem>
+                </PermissionGate>
                 <DropdownMenuItem disabled={sharingViaApp} onSelect={() => void handleShareViaApp()}>
                   <MessageCircle className="h-4 w-4" />
                   WhatsApp / more apps
@@ -298,6 +359,14 @@ export function InvoiceDetailPage() {
                 <span className="hidden sm:inline">Repeat</span>
               </Button>
             </PermissionGate>
+            {canTakePayment ? (
+              <PermissionGate permission={PERMISSIONS.INVOICE_VIEW}>
+                <Button variant="outline" onClick={() => void handleSendReminder()} loading={sendingReminder}>
+                  <MessageCircle className="h-4 w-4" />
+                  <span className="hidden sm:inline">WhatsApp reminder</span>
+                </Button>
+              </PermissionGate>
+            ) : null}
             {canTakePayment ? (
               <PermissionGate permission={PERMISSIONS.PAYMENT_MANAGE}>
                 <Button onClick={() => setPayDialogOpen(true)}>
@@ -335,7 +404,12 @@ export function InvoiceDetailPage() {
                 {invoice.items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.productName}</TableCell>
-                    <TableCell className="tabular">{item.quantity}</TableCell>
+                    <TableCell className="tabular">
+                      {item.quantity}
+                      {item.freeQuantity > 0 ? (
+                        <span className="ml-1 text-xs text-muted-foreground">+{item.freeQuantity} free</span>
+                      ) : null}
+                    </TableCell>
                     <TableCell className="tabular">₹{item.unitPriceDisplay}</TableCell>
                     <TableCell className="tabular text-right">₹{item.lineTotalDisplay}</TableCell>
                   </TableRow>
@@ -367,6 +441,50 @@ export function InvoiceDetailPage() {
             </CardContent>
           </Card>
 
+          {tcsEnabled ? (
+            <Card>
+              <CardHeader><CardTitle className="text-base">TCS (informational)</CardTitle></CardHeader>
+              <CardContent className="space-y-1.5 text-sm">
+                <p className="text-muted-foreground">
+                  Not added to the total above - a reminder of what you would collect from this customer in addition to it.
+                </p>
+                <div className="flex justify-between pt-1">
+                  <span className="text-muted-foreground">TCS @ {tcsRatePercent}%</span>
+                  <span className="tabular">
+                    ₹{(Number(invoice.subtotalDisplay.replace(/,/g, '')) * (tcsRatePercent / 100))
+                      .toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {einvoiceEnabled ? (
+            <Card>
+              <CardHeader><CardTitle className="text-base">e-Invoice (IRN) - not yet live</CardTitle></CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <div><p className="text-muted-foreground">Document no.</p><p>{invoice.invoiceNumber}</p></div>
+                  <div><p className="text-muted-foreground">Document date</p><p>{invoice.invoiceDate}</p></div>
+                  <div><p className="text-muted-foreground">Buyer</p><p>{invoice.customerName}</p></div>
+                  <div><p className="text-muted-foreground">Total value</p><p className="tabular">₹{invoice.totalDisplay}</p></div>
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground">IRN</p>
+                    <p className="text-muted-foreground">Not generated</p>
+                  </div>
+                </div>
+                <Button type="button" variant="outline" disabled className="w-full"
+                        title="Needs a GSP/NIC account, which is not configured in this environment">
+                  Generate e-Invoice (IRN)
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Generating a real IRN needs a GSP/NIC account, which is not configured. This
+                  section only reviews the document details that would be sent.
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
+
           {invoice.payments.length > 0 ? (
             <Card>
               <CardHeader><CardTitle className="text-base">Payments</CardTitle></CardHeader>
@@ -377,6 +495,14 @@ export function InvoiceDetailPage() {
                       <p>₹{payment.amountDisplay} · {payment.paymentMethod}</p>
                       <p className="text-xs text-muted-foreground">{formatDateTime(payment.paymentDate)}</p>
                     </div>
+                    <PermissionGate permission={PERMISSIONS.PAYMENT_MANAGE}>
+                      <Button type="button" variant="ghost" size="sm"
+                              onClick={() => void handleSendPaymentReceipt(payment.id)}
+                              loading={sendingReceiptId === payment.id}>
+                        <MessageCircle className="h-4 w-4" />
+                        <span className="hidden sm:inline">Send receipt</span>
+                      </Button>
+                    </PermissionGate>
                   </div>
                 ))}
               </CardContent>
@@ -448,6 +574,15 @@ export function InvoiceDetailPage() {
         confirmLabel="Cancel invoice"
         destructive
         onConfirm={handleCancel}
+      />
+
+      <ConfirmDialog
+        open={sendWhatsAppConfirmOpen}
+        onOpenChange={setSendWhatsAppConfirmOpen}
+        title="Send invoice via WhatsApp"
+        description={`Customer: ${invoice.customerName} · Phone: ${invoice.customerMobile} · Invoice: ${invoice.invoiceNumber} · Amount: ${invoice.totalDisplay}`}
+        confirmLabel="Send"
+        onConfirm={handleSendInvoiceWhatsApp}
       />
     </>
   );

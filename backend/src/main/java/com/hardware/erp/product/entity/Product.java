@@ -77,6 +77,19 @@ public class Product extends BaseEntity {
     @Column(name = "hsn_code", length = 10)
     private String hsnCode;
 
+    /**
+     * CR-053 backlog item 1. A secondary unit of measure, e.g. label="BOX",
+     * conversionFactor=12.0000 meaning 1 BOX = 12 of this product's own
+     * `unit`. Both null together for a product with no alternate unit -
+     * never a zero factor, which would read as a real "12 PCS = 0 BOX".
+     * Printed on the invoice PDF only when Tenant.showAlternateUnit is on.
+     */
+    @Column(name = "alt_unit_label", length = 30)
+    private String altUnitLabel;
+
+    @Column(name = "alt_unit_conversion_factor", precision = 18, scale = 4)
+    private BigDecimal altUnitConversionFactor;
+
     @Column(name = "gst_rate_percent", nullable = false, precision = 5, scale = 2)
     @Builder.Default
     private BigDecimal gstRatePercent = BigDecimal.ZERO;

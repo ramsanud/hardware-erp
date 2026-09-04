@@ -4,6 +4,7 @@ import com.hardware.erp.common.dto.ApiResponse;
 import com.hardware.erp.common.dto.PageResponse;
 import com.hardware.erp.notification.dto.ContactAdminRequest;
 import com.hardware.erp.notification.dto.NotificationLogResponse;
+import com.hardware.erp.notification.entity.NotificationChannel;
 import com.hardware.erp.notification.service.NotificationService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -35,8 +37,9 @@ public class NotificationController {
     @GetMapping("/log")
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).SETTINGS_VIEW)")
     public ApiResponse<PageResponse<NotificationLogResponse>> log(
+            @RequestParam(required = false) NotificationChannel channel,
             @PageableDefault(size = 20) Pageable pageable) {
-        return ApiResponse.ok(notificationService.search(pageable));
+        return ApiResponse.ok(notificationService.search(channel, pageable));
     }
 
     @PostMapping("/contact-admin")

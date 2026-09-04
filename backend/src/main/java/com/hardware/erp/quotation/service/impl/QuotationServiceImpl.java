@@ -346,7 +346,7 @@ public class QuotationServiceImpl implements QuotationService {
             return new InvoiceItemRequest(
                     item.getProduct().getId(), item.getQuantity(),
                     item.getDiscountType(), item.getDiscountPercent(),
-                    item.getLabourPercent());
+                    item.getLabourPercent(), BigDecimal.ZERO);
         }
 
         long gross = BigDecimal.valueOf(item.getUnitPricePaise())
@@ -356,7 +356,7 @@ public class QuotationServiceImpl implements QuotationService {
         if (gross <= 0) {
             return new InvoiceItemRequest(
                     item.getProduct().getId(), item.getQuantity(),
-                    LineDiscount.Type.NONE, BigDecimal.ZERO, item.getLabourPercent());
+                    LineDiscount.Type.NONE, BigDecimal.ZERO, item.getLabourPercent(), BigDecimal.ZERO);
         }
 
         // Solve for the discount percentage that reproduces this line's agreed
@@ -387,7 +387,7 @@ public class QuotationServiceImpl implements QuotationService {
 
         return new InvoiceItemRequest(
                 item.getProduct().getId(), item.getQuantity(),
-                LineDiscount.Type.PERCENTAGE, effectiveDiscount, labour);
+                LineDiscount.Type.PERCENTAGE, effectiveDiscount, labour, BigDecimal.ZERO);
     }
 
     private void applyQuotationDiscount(Quotation quotation, QuotationRequest request) {

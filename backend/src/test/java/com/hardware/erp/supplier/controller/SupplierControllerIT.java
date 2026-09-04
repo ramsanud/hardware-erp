@@ -196,6 +196,138 @@ class SupplierControllerIT extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    // ---------------- CR-058: deleted records and restore ----------------
+    //
+    // These are the tests that actually prove the escape hatch works against
+    // real PostgreSQL: that a native query genuinely bypasses Supplier's
+    // @SQLRestriction (a mocked repository could never show that), and that
+    // the restriction is still doing its job everywhere else afterwards.
+
+    @Test
+    @DisplayName("CR-058: the deleted list shows the soft-deleted seed row that every other endpoint hides")
+    void deletedListSeesWhatSqlRestrictionHides() throws Exception {
+        String deleted = mockMvc.perform(get("/v1/suppliers/deleted")
+                        .header("Authorization", owner()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andReturn().getResponse().getContentAsString();
+
+        // V901 soft-deletes exactly this row; the ordinary list test above
+        // asserts the same name is absent there.
+        assertThat(deleted).contains("Old Ganesh Hardware");
+        assertThat(deleted).contains("deletedAt");
+        // The reduced projection must not ship credit limits or GST numbers.
+        assertThat(deleted).doesNotContain("creditLimitDisplay");
+    }
+
+    @Test
+    @DisplayName("CR-058: delete then restore returns the same supplier row, id and history intact")
+    void restoreLifecycle() throws Exception {
+        String created = mockMvc.perform(post("/v1/suppliers").header("Authorization", owner())
+                        .contentType(APPLICATION_JSON)
+                        .content(json(supplier("SUP-9030", "Restore Me Traders",
+                                "9811100240", null, "33"))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long id = tree(created).path("data").path("id").asLong();
+
+        // A contact, so the restore can be shown not to have orphaned children.
+        mockMvc.perform(post("/v1/suppliers/" + id + "/contacts").header("Authorization", owner())
+                        .contentType(APPLICATION_JSON)
+                        .content(json(new SupplierContactRequest(
+                                "Restore Contact", "Owner", "9811100241", null, true))))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(delete("/v1/suppliers/" + id).header("Authorization", owner()))
+                .andExpect(status().isNoContent());
+
+        // Hidden from GET-by-id and from search - @SQLRestriction still holds.
+        mockMvc.perform(get("/v1/suppliers/" + id).header("Authorization", owner()))
+                .andExpect(status().isNotFound());
+        String hidden = mockMvc.perform(get("/v1/suppliers").header("Authorization", owner())
+                        .param("search", "Restore Me"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(tree(hidden).path("data").path("totalElements").asInt()).isZero();
+
+        // ... but visible in the recycle bin.
+        mockMvc.perform(get("/v1/suppliers/deleted").header("Authorization", owner()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Restore Me Traders")));
+
+        mockMvc.perform(post("/v1/suppliers/" + id + "/restore").header("Authorization", owner()))
+                .andExpect(status().isNoContent());
+
+        // Same id, back to ACTIVE, and the contact came back with it.
+        mockMvc.perform(get("/v1/suppliers/" + id).header("Authorization", owner()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value((int) id))
+                .andExpect(jsonPath("$.data.supplierCode").value("SUP-9030"))
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.contacts[0].contactName").value("Restore Contact"));
+
+        // Findable by ordinary search again, and gone from the deleted list.
+        String afterRestore = mockMvc.perform(get("/v1/suppliers").header("Authorization", owner())
+                        .param("search", "Restore Me"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(tree(afterRestore).path("data").path("totalElements").asInt()).isEqualTo(1);
+
+        mockMvc.perform(get("/v1/suppliers/deleted").header("Authorization", owner()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("Restore Me Traders"))));
+
+        // Restoring an already-restored row matches nothing and 404s, rather
+        // than silently succeeding a second time.
+        mockMvc.perform(post("/v1/suppliers/" + id + "/restore").header("Authorization", owner()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("CR-058: restoring a supplier that was never deleted gives 404")
+    void restoreOfLiveSupplierIsNotFound() throws Exception {
+        mockMvc.perform(post("/v1/suppliers/1/restore").header("Authorization", owner()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("CR-058: restoring an unknown id gives 404, indistinguishable from the above")
+    void restoreOfUnknownIdIsNotFound() throws Exception {
+        mockMvc.perform(post("/v1/suppliers/999999/restore").header("Authorization", owner()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("CR-058: SUPPLIER_VIEW alone cannot see the deleted list or restore - both need SUPPLIER_MANAGE")
+    void deletedRecordsRequireManage() throws Exception {
+        // ACCOUNTANT holds SUPPLIER_VIEW but not SUPPLIER_MANAGE.
+        String accountant = bearer("9840223344", "Account@2026");
+
+        mockMvc.perform(get("/v1/suppliers").header("Authorization", accountant))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/v1/suppliers/deleted").header("Authorization", accountant))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        mockMvc.perform(post("/v1/suppliers/13/restore").header("Authorization", accountant))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
+    @DisplayName("CR-058: an unauthenticated caller cannot reach the deleted list or restore")
+    void deletedRecordsRejectAnonymous() throws Exception {
+        mockMvc.perform(get("/v1/suppliers/deleted"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/v1/suppliers/13/restore"))
+                .andExpect(status().isUnauthorized());
+    }
+
     @Test
     @DisplayName("only one contact per supplier can be primary")
     void onePrimaryContact() throws Exception {

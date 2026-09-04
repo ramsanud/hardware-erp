@@ -1441,3 +1441,1425 @@ is available in this environment (a constraint noted repeatedly elsewhere
 in this project's history) - the visual result has not been screenshotted
 or clicked through, only typechecked and build-verified. Stated plainly
 rather than claimed.
+
+## CR-054 phase 1 — Platform Admin Console: identity & auth foundation (APPLIED, 2026-09-01)
+
+### What
+
+The first phase of the Platform Admin / Developer Admin Console: a second,
+structurally separate login system for Hardware ERP *staff* (not shop
+owners), with mandatory TOTP MFA and its own audit trail. Every later phase
+(tenant management, support tools, security center, ...) builds on this
+foundation and was deliberately deferred - see "Explicitly not done" below.
+
+### Why a disjoint system, not a flag on `app_user`
+
+A platform admin is not a tenant. `app_user` is defined entirely in terms
+of `tenant_id` (CR-016) - every column, every query, every permission is
+scoped to one shop. Bolting "is this a platform staff row" onto that table
+would mean every tenant-facing query written from now on needs an extra
+"and not a platform admin" guard to stay safe, forever, with no compiler or
+test able to catch the one place someone forgets it. A disjoint table with
+its own JWT signing key, its own Spring Security filter chain and its own
+audit log makes that class of mistake structurally impossible instead of
+merely discouraged.
+
+### What was built
+
+**Database** (`V39__platform_admin.sql`): `platform_admin`,
+`platform_admin_backup_code`, `platform_admin_refresh_token`,
+`platform_audit_log` - none carry `tenant_id`, and `platform_audit_log`
+also holds no foreign key on `platform_admin_id` (mirrors
+`security_audit_log.user_id` exactly): the audit write runs in its own
+`REQUIRES_NEW` transaction, which for a "platform admin created" event
+races the still-uncommitted insert of the row it is describing. An enforced
+FK there was tried first and rejected the audit row outright with a
+constraint violation - caught by `PlatformAdminAuthControllerIT`, not by
+inspection.
+
+**Backend** (`com.hardware.erp.platformadmin`): a full mirror of the
+tenant auth stack, kept deliberately duplicate rather than shared -
+`PlatformAdminJwtService`/`PlatformAdminJwtProperties` (own secret, own
+issuer, `app.platform-admin.jwt.*`), `PlatformAdminUserDetails`/`Service`,
+`PlatformAdminAuthenticationFilter`, a second `@Order(0)`
+`PlatformAdminSecurityConfig` with `.securityMatcher("/v1/platform-admin/**")`
+(the existing tenant `SecurityConfig.filterChain` moved to `@Order(1)` so it
+never shadows it), a dedicated `PlatformAdminRateLimitFilter` (per-IP only -
+see its javadoc for why a per-identifier bucket was skipped for Phase 1),
+and `PlatformAdminBootstrapInitializer` (mirrors `BootstrapOwnerInitializer`,
+gated by `PLATFORM_ADMIN_BOOTSTRAP_ENABLED`, always leaves `mfaEnabled=false`
+since a TOTP secret cannot be bootstrapped from an env var).
+
+Login is always exactly two factors, with no opt-out: `POST
+/v1/platform-admin/auth/login` checks the password and returns a short-lived
+`mfaToken` (a JWT with a `purpose` claim, `LOGIN` or `ENROLL`), never a
+session. An unenrolled account is routed through `/mfa/enroll` (generates a
+TOTP secret + QR, stored encrypted but `mfaEnabled` stays false) then
+`/mfa/enroll/confirm` (proves the code was actually captured, then issues
+the first real session plus 10 one-time backup codes). `TotpService` is a
+hand-rolled RFC 6238 implementation (HMAC-SHA1 via `javax.crypto.Mac`, plus
+a from-scratch Base32 codec) rather than a new Maven dependency. The TOTP
+secret reuses `FieldEncryptor`/`TotpSecretConverter` (same AES-256-GCM
+pattern as `BankAccountNumberConverter`, CR-018); the QR reuses
+`QrCodeGenerator`, widened from UPI-only to a generic `pngBytes(String)`.
+Refresh-token rotation and reuse detection (`PlatformAdminAuthService.refresh`)
+is a line-for-line mirror of `AuthServiceImpl.refresh`, including the
+`noRollbackFor = AuthException.class` fix from BUG-AUTH-009.
+
+`PlatformAdminUserController` (`POST`/`GET /v1/platform-admin/admins`,
+`@PreAuthorize("hasAuthority('PLATFORM_ADMIN_MANAGE')")`) is intentionally
+the only business endpoint in this phase - just enough to prove the 7-role
+RBAC model (`PlatformAdminRole` → `PlatformPermission`, both compile-time
+enums, no database permission table: the 7 roles are fixed by the spec, not
+tenant-configurable, so a `PermissionCode`-style DB-backed system would be
+overhead with no one able to use the extra flexibility).
+
+**Frontend** (`frontend/src/modules/platform-admin`, `frontend/src/services
+/platformAdminApiClient.ts` + `platformAdminTokenStorage.ts`): a second axios
+instance and a second in-memory token store, never shared with
+`services/apiClient.ts` - same reasoning as the backend's two filter chains.
+Both the access token and the refresh token live in memory only for this
+console (no HttpOnly cookie transport was built for it in Phase 1), so a
+page reload signs a platform admin out; accepted deliberately rather than
+building the cookie service now. Four pages
+(`PlatformAdminLoginPage`/`MfaVerifyPage`/`MfaEnrollPage`/`DashboardPage`)
+mounted at `/platform-admin/*`, wrapped in their own `PlatformAdminAuthProvider`
+at the route level in `routes/index.tsx` - never inside the tenant
+`AuthProvider`, `AuthLayout` or `AppLayout`. The dashboard shows only the
+signed-in admin's own identity/role/permissions and says plainly that
+tenant management, support tools, security center and analytics are "not
+available yet" - Section 37 of the spec forbids fabricated metrics, and
+Phase 1 computes none.
+
+### Explicitly not done (proposed phases, awaiting selection - see the
+`AskUserQuestion` phase-ordering answer that started this CR)
+
+Tenant management (list/detail/status control), support-session
+impersonation, support tickets, announcements, subscription/plan/feature
+control, system health/error/incident monitoring, security center, global
+platform audit *log viewer* (the log itself is written starting now),
+developer tools, backup management, maintenance mode, feature flags, tenant
+usage analytics, the tenant data-access-request workflow, synthetic demo
+data (3 tenants × 5 roles), the 20-step admin dashboard test scenario, and
+`docs/PLATFORM_ADMIN_GUIDE.md`/`docs/PLATFORM_ADMIN_SECURITY.md` (both
+require enough of the console to exist to document truthfully - premature
+before Phase 2).
+
+### Verified
+
+`mvn clean compile` and `mvn clean verify` both clean (full existing suite,
+298 unit + 100 Testcontainers integration tests, unaffected). New
+`PlatformAdminAuthControllerIT` (10 tests, real PostgreSQL via
+Testcontainers, real filter chain): full enroll→confirm→session flow with a
+genuine RFC 6238 code (`TotpService.currentCode`, added for this), login
+with an already-enrolled account, wrong-code rejection, backup-code
+single-use, login enumeration-resistance, refresh rotation + reuse
+detection, SUPER_ADMIN-only RBAC (403 for another role), and - the
+guarantee the spec cared about most - a tenant access token is refused on
+`/v1/platform-admin/**` and a platform-admin access token is refused on
+`/v1/auth/**`, both with a real token exchanged through the real login flow
+of the other side, not a forged claim. `tsc -b --force` and `vite build`
+both clean. **Not performed**: no browser automation tool is available in
+this environment - the frontend has not been clicked through, only
+typechecked and build-verified.
+
+## CR-053 backlog items 2-7 (APPLIED, 2026-09-02)
+
+Six more items from the myBillBook backlog (`RESUME_POINT.md`'s own queue),
+built one after another following the same rhythm as every other CR this
+session - migration → entity → DTO → service → controller → frontend →
+`mvn clean compile`/`tsc -b --force` after each, full `mvn clean verify`
++ `vite build` as a final checkpoint. Migrations V41-V43.
+
+**Real bug found and fixed along the way, not part of the ask**:
+`AdditionalSettingsCard` (built last turn, CR-053 backlog item 1) was
+rendered on the **read-only** Settings view but missing entirely from the
+**edit-mode** view - a real, user-visible instance of "I built the option
+but it doesn't show up," caught while extending that same card for this
+round's toggles. Fixed by adding it (and the new `TdsTcsCard`) to both
+render paths.
+
+**Item 2 - Tally export** (`backend/export` package, no new tables).
+`GET /v1/exports/tally?fromDate&toDate` (`REPORT_FINANCIAL`) returns a
+Tally-importable XML envelope: party ledgers (Sundry Debtors/Creditors),
+stock-item masters, and **ledger-level** Sales/Purchase vouchers (party +
+Sales or Purchase Account + CGST/SGST/IGST) - deliberately not "Invoice
+mode" vouchers with per-line inventory allocations; see
+`TallyXmlBuilder`'s own javadoc for the exact scope and for why the
+debit/credit sign convention has not been verified against real Tally
+software (none exists in this environment - it matches the convention in
+Tally's own published samples, and `TallyXmlBuilderTest` proves every
+voucher's ledger entries sum to zero, which is the one thing a real
+import would reject outright if wrong).
+
+**Item 3 - TDS/TCS settings**. Six new `tenant` columns (V41), all
+**informational only** - the computed figure is shown on the Purchase/
+Invoice detail page, never added to or subtracted from that document's
+own stored `total_paise`/`balance_paise`. Folding a real statutory tax
+deduction into core financial totals is its own separately-reviewed
+change, not a drive-by extension of a settings toggle - stated on the
+Settings card itself, not just in code.
+
+**Item 4 - e-Invoice (IRN) UI shell**. One `tenant.einvoice_enabled`
+toggle (V42), no IRN/acknowledgement columns anywhere - there is nothing
+to store until a real GSP/NIC integration exists. When on, Invoice detail
+shows a review card (document/buyer/total already on the invoice) and a
+permanently-disabled "Generate e-Invoice (IRN)" button with an honest
+"needs a GSP/NIC account" message, matching the user's own answer to the
+original scoping question.
+
+**Item 5 - reminder settings, 2 of 5 reminder types**. `tenant.payment_due_reminder_enabled`
+and `tenant.low_stock_alert_enabled` (V43), plus a genuinely new
+`@Scheduled` job - `ReminderSchedulerService`, cron `0 0 8 * * *`
+Asia/Kolkata, same shape as the existing `TokenCleanupJob`. Iterates
+active tenants with a reminder on, and for each, logs a summary SMS (via
+the existing `SmsWhatsAppNotificationProvider` stub - no real SMS account
+configured, exactly like every other SMS/WhatsApp touchpoint in this
+codebase) to the tenant's own contact number. SMS-on-transaction, a daily
+sales-summary digest, and WhatsApp-specific alerts are deferred - same
+"one bounded piece at a time" reasoning as everything else in this list.
+
+**Item 6 - named roles + activity feed**. `RoleForm`'s existing free-text
+"Display name" field already let a system role be renamed (an audit
+finding, not new work - `RoleServiceImpl.update()` only ever locked
+`code` for a system role, never `name`) - added a `<datalist>` of common
+labels (Partner, Salesman, Stock Manager, Delivery Boy, CA, Cashier,
+Godown Staff) as suggestions, not a fixed enum. Separately, `GET
+/v1/users/{id}/activity` (new, `USER_VIEW`) surfaces `activity_log` rows
+for one user on the User Management page's new "Activity" action.
+**Security finding recorded, not fixed**: `activity_log` carries no
+`tenant_id` of its own (pre-existing, not introduced here - see
+`SECURITY_REGISTRY.md`). This endpoint is safe only because it verifies
+the target user belongs to the caller's own tenant *before* it is ever
+used to filter `activity_log` by `user_id` - `ActivityLogRepository`'s
+own javadoc warns against building a second endpoint that skips that
+check.
+
+**Item 7 - GST/margin calculator**. `/tools/gst-calculator`, no
+permission gate (pure client-side arithmetic, no tenant data touched).
+Cost price + profit margin % + GST slab → selling price, GST amount,
+final price, and a donut breakdown of what the final price is made of.
+
+**Item 8 - the rest of the premium-plan list** (barcode/warehouse,
+scan-to-invoice, online store, foreign-currency invoicing, "Add your CA"
+access, GSTR JSON export, remove-branding toggle, recover deleted
+invoices, bulk-edit items) is **explicitly not started**. Per this
+session's own earlier note, several of these overlap with Master Prompt
+phases the user has not yet picked (barcode/warehouse in particular) -
+resolving that overlap needs the user's own answer, not a guess, before
+any of item 8 begins.
+
+**Verified**: `mvn clean compile` after every file, full `mvn clean
+verify` clean (existing suite unaffected, plus the new
+`TallyXmlBuilderTest`). `tsc -b --force` and `vite build` both clean.
+Live-verified: the local dev backend (real PostgreSQL, real Flyway) boots
+cleanly through V41-V43. **Not performed**: no browser automation tool in
+this environment - every page built this round has been typechecked and
+build-verified, and the backend endpoints compile/test-pass, but none of
+it has been clicked through in a real browser.
+
+## CR-055 — WhatsApp reminders made real (APPLIED, 2026-09-02)
+
+The single non-negotiable item from the user's "Free-Tier-First
+Completion" master prompt: `NotificationChannel.WHATSAPP` had existed as
+an enum value since CR-027 but no business logic ever attempted it -
+`sendToCustomer` only ever tried SMS and EMAIL. This CR closes that gap
+with a real, provider-ready implementation, not a second stub.
+
+**Migration**: V44 adds `notification_log.provider_message_id` (nullable
+`VARCHAR(100)`) - the provider's own message id on a real accepted send,
+kept for a future delivery-status-webhook reconciliation this CR does not
+build.
+
+**`NotificationProvider.send()` return type changed** from
+`NotificationStatus` to a new `NotificationSendResult` record (`status` +
+`providerMessageId`), across every implementation
+(`EmailNotificationProvider`, `SmsNotificationProvider`,
+`WhatsAppBusinessProvider`) and every call site
+(`NotificationServiceImpl.attempt()`/`contactAdmin()`). `SmsWhatsAppNotificationProvider`
+was split into `SmsNotificationProvider` (SMS-only stub, unchanged
+behaviour) and `WhatsAppBusinessProvider` (new) - two providers both
+claiming `WHATSAPP` would have silently collided in the channel-to-provider
+map NotificationServiceImpl builds at `@PostConstruct` (last one registered
+wins, no error), so the split is load-bearing, not cosmetic.
+
+**`WhatsAppBusinessProvider`** (`app.notifications.whatsapp.*`, env-backed:
+`WHATSAPP_PROVIDER` default `meta`, `WHATSAPP_ACCESS_TOKEN`,
+`WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_API_BASE_URL` default
+`https://graph.facebook.com/v19.0`). Same graceful-degradation contract as
+every other provider in this codebase: unconfigured (blank token or phone
+number id) logs at INFO and returns `LOGGED_ONLY`, never a fake `SENT`.
+When configured, POSTs a real `type: "text"` message to Meta's WhatsApp
+Cloud API via `java.net.http.HttpClient` (no new Maven dependency, same
+precedent as the hand-rolled TOTP in CR-054) and returns Meta's own
+`wamid.*` message id on success; a non-2xx response or network failure
+throws, and the caller (`NotificationServiceImpl.attempt`) is the one that
+records `FAILED` - exactly one write to `notification_log` per attempt,
+success or failure, same as every other channel.
+
+**Stated limitation, not hidden**: this sends free-form `type: "text"`
+messages. Meta only accepts those for a business-initiated conversation
+within 24 hours of the customer's own last message; a reminder sent
+outside that window - most of what this feature exists for - needs a
+pre-approved `type: "template"` message instead, which requires
+registering exact wording with Meta through a real WhatsApp Business
+Manager account. No such account exists in this environment and none can
+be created by writing code. Until one registers templates and
+`WhatsAppBusinessProvider`/`app.notifications.whatsapp` are extended with
+a template name, expect Meta to accept this call inside a live customer
+session and reject it outside one - Meta's policy, not a bug here. Real
+delivery therefore stays `LOGGED_ONLY` in every environment until the
+user supplies `WHATSAPP_ACCESS_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID`, and full
+production conformance additionally needs the template extension above.
+
+**Wired into every place WhatsApp was asked for**:
+- `sendToCustomer()` (backs `notifyInvoiceCreated`/`notifyPaymentReceived`)
+  now attempts WHATSAPP alongside SMS whenever the customer has a mobile
+  number - invoice-created and payment-received both now reach WhatsApp,
+  not just SMS/email.
+- `NotificationService.notifyPaymentDue(Invoice)` (new) - synchronous
+  (unlike the `@Async` trigger methods above), because a person clicking a
+  button needs the real resulting status, not a background fire-and-forget.
+  Refuses a cancelled invoice, a fully-paid invoice, a customer with no
+  mobile number, and a reminder already sent today for this invoice
+  (`notification_log` existence check on `WHATSAPP` + `INVOICE_REMINDER` +
+  invoice id + `createdAt` since local midnight) - same once-daily cadence
+  as the scheduled digest below, so a shop cannot spam a customer by
+  repeat-clicking.
+- `POST /v1/invoices/{id}/remind` (`INVOICE_VIEW`, same permission as the
+  existing `/share/email`) → `InvoiceServiceImpl.sendPaymentReminder()` →
+  `notifyPaymentDue()`. Synchronous `ApiResponse<NotificationStatus>`.
+- Invoice Detail page: a "WhatsApp reminder" button next to "Record
+  payment" (same `canTakePayment` visibility - UNPAID/PARTIALLY_PAID
+  only), showing the real Sent/Logged-only/Failed toast - distinct from
+  the pre-existing "WhatsApp / more apps" share-sheet item, which is a
+  client-side PDF share and was not touched.
+- `ReminderSchedulerService`'s daily shop-facing digest (payment-due
+  summary, low-stock alert) now sends via both `SmsNotificationProvider`
+  and `WhatsAppBusinessProvider` to the tenant's own contact number; a
+  WhatsApp failure for one tenant is caught and logged, not allowed to
+  abort the rest of that day's run.
+- `GET /v1/notifications/log` (`NotificationLogResponse`, pre-existing
+  endpoint) now also returns `providerMessageId` - the smallest useful
+  step toward "delivery status" without building the webhook
+  reconciliation this CR deliberately does not include.
+
+**Not built, and explicitly not implied by "MUST-HAVE"**: Meta template
+registration/approval (needs a real account - see limitation above),
+delivery-status webhook reconciliation, retry/backoff on transient
+failures beyond the caller's own try/catch, rate limiting specific to the
+WhatsApp channel (the app-wide `RateLimitFilter` still applies to the
+HTTP endpoint), and a frontend "Notification history" page (the backend
+`search()`/`GET /v1/notifications/log` this CR extended already existed
+before this CR and remains usable via Postman/Swagger; no page in this
+codebase renders it yet).
+
+**Verified**: `mvn compile` and `mvn test-compile` both clean after every
+file. `NotificationServiceImplTest` (rewritten for the new
+`NotificationSendResult` return type and the extra WhatsApp attempt on
+`sendToCustomer`) - 8/8 passing, including two new tests exercising the
+unconfigured-WhatsApp `LOGGED_ONLY` path directly against
+`WhatsAppBusinessProvider` (no mock). Full `mvn test` - 352 passing, 0
+failures; the only 2 errors are `PermissionCodeConsistencyTest` and
+`SecurityFilterRegistrationTest`, both failing on `Could not find a valid
+Docker environment` (Testcontainers) - a pre-existing environment
+limitation unrelated to this change, not a regression it introduced.
+`tsc -b --force` clean. **Not performed**: no browser automation tool in
+this environment, and no real WhatsApp Business account exists to
+live-verify an actual outbound send - the unconfigured/`LOGGED_ONLY` path
+is exercised by both the automated test above and, exactly like every
+other channel in this codebase, is exactly what every environment gets
+until real credentials are supplied.
+
+## CR-056 — Tenant-owned WhatsApp Business API integration (APPLIED, 2026-09-02)
+
+**Supersedes CR-055 above.** The user's explicit, non-negotiable
+requirement: every hardware-shop tenant must send WhatsApp messages from
+**their own** WhatsApp Business identity, never Hardware ERP's. CR-055
+built a real Meta Cloud API integration but with one shared app-level
+`WHATSAPP_ACCESS_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID` for the whole
+application - exactly the architecture the user's spec forbids
+(§29: "Never implement ONE WhatsApp Account → ALL TENANTS"). This CR
+replaces that with a real per-tenant connection, before any of it was
+committed to git.
+
+**Phase decision, made with the user via `AskUserQuestion`**: Meta's true
+Embedded Signup OAuth flow needs a registered Meta Tech Provider app with
+Business verification and App Review already granted - none of that
+exists in this environment and none of it can be created by writing code.
+The user chose **manual credential entry** for phase 1 (the tenant pastes
+a token/phone-number-id/WABA-id they already obtained from their own Meta
+Business Manager) - the architecture is forward-compatible with real
+Embedded Signup later (only how the token/phone-number-id get populated
+would change, not `tenant_whatsapp_connection`'s shape or anything built
+on top of it). The user also chose to work through every phase in one
+pass rather than stopping after the connection foundation.
+
+### Database (V45)
+
+`tenant_whatsapp_connection` - one row per tenant. `phone_number_id` is
+`UNIQUE` across the *whole table*, not per tenant - it doubles as the
+routing key an inbound webhook event uses to find which tenant it belongs
+to, so two tenants can never share one. `access_token` encrypted via new
+`WhatsAppAccessTokenConverter` (reusing `FieldEncryptor`/CR-018's
+AES-256-GCM, never a new scheme). `connection_status` (`CONNECTED`/
+`DISCONNECTED`/`NEEDS_ATTENTION`). See `DATABASE_REGISTRY.md` for the full
+column list.
+
+`customer` gains `whatsapp_opt_in` (default `true`) + `whatsapp_opt_in_at`
+(§16). Defaults true, not false: every customer already received
+transactional WhatsApp (invoice created, payment received) before this CR
+as part of a sale they were already in, not unsolicited marketing - this
+column is what lets an owner turn it off per customer, not a retroactive
+gate that would silently break an already-shipping feature.
+
+`notification_log.status` (V14) widened to add `DELIVERED`/`READ`, set
+only by a real inbound Meta webhook event - never assumed or faked (spec
+§13's own instruction).
+
+### Backend architecture
+
+- **`TenantWhatsAppConnectionService`/`Impl`** - `connect()` makes a real,
+  live GET call to Meta's Graph API (`/{phoneNumberId}?fields=verified_name,display_phone_number`)
+  using the pasted token, *before* writing anything - a typo'd token or
+  phone number id is caught immediately, not discovered on the first real
+  invoice send. Checks phone-number-id uniqueness across tenants *before*
+  calling Meta, both so one tenant can never even attempt to claim
+  another's number and so a doomed request never burns a real API call.
+  `disconnect()` keeps the row (business name/phone/history preserved per
+  spec §19) but revokes the stored token.
+- **`NotificationProvider.send()`** gained a leading `tenantId` parameter
+  (every implementation and call site updated: `EmailNotificationProvider`,
+  `SmsNotificationProvider`, `WhatsAppBusinessProvider`,
+  `NotificationServiceImpl`, `ReminderSchedulerService`) - the one
+  structural change needed so a shared interface could still resolve a
+  tenant-specific connection instead of a global one.
+- **`WhatsAppBusinessProvider`** rewritten: resolves the connection by
+  `tenantId` via `TenantWhatsAppConnectionRepository`, no more
+  `WhatsAppProperties.accessToken`/`phoneNumberId` (that record now holds
+  only the app-wide `apiBaseUrl`/`appSecret`/`webhookVerifyToken`). A 401/403
+  from Meta marks the connection `NEEDS_ATTENTION` (spec §18's "reconnect"
+  state) instead of failing silently forever. Same graceful-degradation
+  contract as before: no connection for a tenant means `LOGGED_ONLY`, not
+  an error - except `NotificationService.sendTestWhatsApp()`, which checks
+  first and throws, because a "Test WhatsApp" button reporting fake
+  success would be worse than not having one.
+- **`WhatsAppWebhookController`** (new, §14) - one endpoint for the whole
+  app (Meta supports one callback URL per app). GET is the one-time
+  `hub.verify_token` handshake. POST verifies `X-Hub-Signature-256` via
+  HMAC-SHA256 against `WHATSAPP_APP_SECRET`, routes each event to a tenant
+  by `phone_number_id`, and advances the matching `notification_log` row's
+  status forward only (`SENT → DELIVERED → READ`, or → `FAILED`) -
+  idempotent against Meta's own redelivery. **Stated limitation**: the
+  signature check is only meaningful for a tenant connected through this
+  app's own (future) Meta Tech Provider app; a phase-1 tenant who supplied
+  a token minted through a *different* Meta app of their own will not have
+  matching webhook events verify here until real Embedded Signup exists.
+- **Manual sends built on the same `NotificationServiceImpl` plumbing**:
+  `sendInvoiceViaWhatsApp` (§8, resend), `sendPaymentReceiptViaWhatsApp`
+  (§10, manual only - no auto-send toggle exists, so "do not automatically
+  send" is satisfied by this never firing on its own), `sendTestWhatsApp`
+  (§3). `ReminderSchedulerService.sendLowStockAlertNow()` (§11, new manual
+  trigger alongside its existing daily 8am job) - sends to the shop's own
+  contact number, never a customer, and refuses with a clear message if no
+  contact number is on file.
+- **Customer opt-in enforced** (§16): `sendToCustomer()`'s automatic
+  WhatsApp attempt (invoice created/payment received) now checks
+  `customer.isWhatsappOptIn()` first - SMS is unaffected, consent is
+  WhatsApp-specific per the spec. Every manual send (reminder/invoice/
+  receipt) throws a clear "opted out" error via a shared
+  `requireWhatsAppEligible()` check.
+- No new permission codes - reuses `SETTINGS_VIEW`/`SETTINGS_MANAGE` (the
+  same pair `tenant_bank_account`, CR-022, already uses) for the
+  connection, and each module's own existing permission for the sends
+  built on top of it (`INVOICE_VIEW`, `PAYMENT_MANAGE`, `INVENTORY_VIEW`).
+
+### Frontend
+
+`WhatsAppSettingsPage` (`/settings/whatsapp`, linked from Shop Settings) -
+connect/reconnect/disconnect/test-send, matching the spec's own §2-§3
+mockups almost exactly (connected/not-connected states, masked phone,
+"needs attention" banner). `NotificationHistoryPage`
+(`/settings/whatsapp/history`) - Date/Recipient/Type/Status, defaulting to
+the WhatsApp channel filter, DELIVERED/READ badges genuinely sourced from
+`notification_log`. Invoice Detail gained a "Send WhatsApp" item in the
+Share menu (a `ConfirmDialog` showing customer/phone/invoice/amount before
+sending, per spec §8) and a "Send receipt" button per recorded payment.
+Customer Detail gained a "Send WhatsApp Reminder" button per outstanding
+invoice row (reuses the existing `/remind` endpoint - no new backend
+needed). Stock page gained a "Send WhatsApp Alert" toolbar button.
+`CustomerForm` gained the opt-in checkbox (§16).
+
+### Explicitly not built, and why - not silently dropped
+
+- **Message Templates (spec §15)** - not built. A local CRUD showing a
+  self-invented "Pending Approval" status that never actually syncs with
+  Meta would be exactly the kind of fake functionality the spec itself
+  forbids (§15 "do not fake WhatsApp functionality"); real template
+  registration needs a Meta Business Manager account, which does not exist
+  in this environment, same reasoning `WhatsAppBusinessProvider`'s own
+  `type: "text"`-only limitation already documents.
+- **Platform Admin console visibility (spec §21)** - not built. CR-054's
+  console phase 2+ (tenant management, and everything after identity/auth)
+  was never selected by the user; extending it here without that decision
+  would be exactly the "silently start a phase nobody picked" mistake
+  `RESUME_POINT.md` already warns against for CR-054.
+- **Subscription-tier entitlement gating (spec §22)** - deliberately not
+  added. The spec's own text says WhatsApp reminders must stay available
+  on the Free tier; since nothing here is meant to be tier-gated yet, there
+  is nothing to wire into `EntitlementService` without inventing a rule the
+  user never asked for.
+- **Vitest/Playwright (spec §27)** - not built. This project has no
+  frontend test runner at all (see `RESUME_POINT.md`'s own "Not present"
+  line); standing one up from scratch is its own large undertaking,
+  separate from this feature, and was not part of what was asked.
+- **A real Meta Embedded Signup OAuth flow** - not built, per the phase
+  decision above; the connection UI and backend are shaped so it drops in
+  later without changing `tenant_whatsapp_connection` or anything that
+  reads from it.
+
+### Verified
+
+`mvn -DskipTests compile` and `mvn -DskipTests test-compile` both clean.
+`mvn test` (everything not requiring Docker/Testcontainers): all passing,
+including `NotificationServiceImplTest` (rewritten for the new `tenantId`
+parameter - 8/8) and `CustomerServiceImplTest` (7/7, covering the new
+`whatsappOptIn` field). The only 2 errors anywhere in the suite are
+`PermissionCodeConsistencyTest`/`SecurityFilterRegistrationTest`, both
+`Could not find a valid Docker environment` - this machine has no Docker,
+a pre-existing environment limitation, not a regression. New
+`WhatsAppConnectionSecurityIT` (6 tests, spec §20's own tenant-isolation
+list) compiles and is written against real Testcontainers PostgreSQL, but
+**could not be run in this environment** for the same Docker reason -
+reported honestly rather than claimed. It seeds connections directly via
+the repository rather than through `connect()`, deliberately: `connect()`'s
+live Meta verification call is exactly what makes it trustworthy in
+production and exactly what makes it unreachable from a sandboxed test
+with no real Meta account behind it; what the test exercises instead -
+tenant resolution, the phone-number-id uniqueness guard, and role
+permission gates - is the same isolation logic `connect()` itself runs
+before it would ever reach Meta. `tsc -b --force` and `vite build` both
+clean. **Not performed**: no browser automation tool in this environment,
+and no real Meta WhatsApp Business account exists to live-verify an actual
+Embedded-Signup-free manual connection end to end - the same limitation
+CR-055 already stated, now scoped per-tenant instead of per-app.
+
+## CR-057 phase 2 — Platform Admin Console: Tenant Management + Overview (APPLIED, 2026-09-02)
+
+The user's own 76-section Platform Admin Console spec, explicitly rejecting
+CR-054 phase 1's dashboard as "only identity/MFA - NOT sufficient" and
+demanding real tenant management, real KPIs, and no fake/placeholder UI.
+Given the spec's own instruction to work one phase/module at a time
+(§68-69), this CR covers exactly its first two priority items - **Admin
+Overview** and **Tenant Management + Tenant Detail** - the highest-priority
+module per the spec's own §8. Phases 3-8 (System Health, Support Center,
+Billing, Security Center, Audit Logs, Feature Flags, Backup, Developer
+Tools) are explicitly not started - see "Not built" below.
+
+**Reused, not duplicated**: `Tenant`/`User`/`Customer`/`Product`/`Invoice`/
+`Purchase`/`Payment`/`BusinessExpense`/`TenantWhatsAppConnection` - every
+number on both new pages comes from one of these existing entities' own
+repository, never a shadow "admin view" table. No new migration.
+
+### Backend
+
+- **`PlatformPermission`** gained `TENANT_VIEW` (granted to all 7 roles -
+  the minimum useful access) and `TENANT_MANAGE` (suspend/reactivate;
+  withheld from `FINANCE_ADMIN`/`DEVELOPER`/`READ_ONLY_AUDITOR` - least
+  privilege, matching this file's own existing intent). `PlatformAuditAction`
+  gained `TENANT_SUSPENDED`/`TENANT_REACTIVATED` - no migration needed,
+  `platform_audit_log.action` is a plain `VARCHAR(60)` with no CHECK
+  constraint restricting values.
+- **Repository additions, one-liners each** (Spring Data derived queries,
+  no new `@Query` needed except `Tenant.search()`): `countByTenantId` on
+  Customer/Product/Invoice/Purchase/Payment/BusinessExpense repositories;
+  `countByTenantId`/`countByTenantIdAndStatus`/`countByStatus`/
+  `countByCreatedAtBetween`/`lastLoginAtForTenant`/
+  `findFirstByTenantIdAndRole_CodeOrderByIdAsc` on `UserRepository`;
+  `countByStatus`/`countBySubscriptionTier`/`countByCreatedAtBetween`/
+  `search()` on `TenantRepository`; a global (non-tenant-scoped)
+  `countByInvoiceDate`/`countByPurchaseDate`/`countByPaymentDateBetween`
+  for "today" platform-wide KPIs.
+- **`PlatformAdminDashboardService.overview()`** - every field in
+  `PlatformDashboardResponse` is a live aggregate computed at request time:
+  tenant counts by status, a genuine month-over-month new-tenant growth
+  percentage (null when last month had zero, never a division by zero
+  presented as a number), user counts, today's invoice/payment/purchase
+  counts platform-wide, subscription tier mix. **Deliberately excluded**:
+  system health/error rate/background job health (Phase 3's own job, not
+  faked here - `platformHealth.databaseReachable` is the one honest signal
+  this phase can report, and it is trivially true by the response having
+  been computed at all) and MRR/revenue (no billing gateway exists -
+  `subscriptionTier` is self-declared, spec §23 explicitly forbids treating
+  it as real revenue).
+- **`PlatformAdminTenantService`** - `list()` (search/filter/paginate),
+  `get()` (detail + usage aggregate), `suspend()`/`reactivate()` (audited
+  via `PlatformAuditService` under the **acting** admin's own id, resolved
+  from `SecurityContextHolder`, never the target tenant - a distinction
+  worth stating because `PlatformAdminUserService.create()`'s own existing
+  audit call passes the *newly created* admin as the actor, which this
+  service does not copy). Suspending an already-suspended tenant (or
+  reactivating an already-active one) is a real 422, not a silent no-op -
+  live-tested via the IT suite below.
+- **`PlatformAdminTenantController`**: `GET /v1/platform-admin/tenants`,
+  `GET /v1/platform-admin/tenants/{id}`, `POST .../suspend`, `POST
+  .../reactivate` - `TENANT_VIEW`/`TENANT_MANAGE` enforced via
+  `@PreAuthorize`, not just hidden in the frontend (spec §54).
+  `PlatformAdminDashboardController`: `GET /v1/platform-admin/dashboard`,
+  gated only by being an authenticated platform admin (same "authenticated
+  is enough" shape as the existing `/auth/me`) - aggregate platform counts,
+  not one tenant's business data, so every staff role sees them.
+
+### Frontend
+
+New `PlatformAdminLayout` (sidebar + header shell, `layouts/`) - **only
+two nav entries, Overview and Tenants**, deliberately not the spec's full
+20-item mega-sidebar (§4): a nav link to a page that does not exist yet is
+exactly the "navigation without functionality" the spec's own §6/§62
+forbids. Grows one entry per phase as each is actually built, never ahead
+of it. `PlatformAdminDashboardPage` rewritten from the Phase-1 "not
+available yet" stub into real KPI cards (reuses `Card`/`Badge`, a genuine
+trend indicator only when computable). `PlatformAdminTenantListPage`
+(search/status/plan filters, real pagination via the existing `Pagination`/
+`useAsyncList` shared infra - the same components every tenant-side list
+page already uses, not a bespoke admin-only table). `PlatformAdminTenantDetailPage`
+(Overview/Subscription/Integrations/Usage cards, Suspend dialog with a
+required reason field per spec's own §10 mockup, Reactivate via the shared
+`ConfirmDialog`) - the Suspend/Reactivate actions render only when the
+signed-in admin's own `permissions` array includes `TENANT_MANAGE`
+(frontend visibility only; the backend `@PreAuthorize` above is the actual
+enforcement, per spec §54).
+
+### Verified
+
+`mvn compile`/`mvn test-compile` clean throughout. New
+`PlatformAdminTenantServiceTest` (5 unit tests, mocked repositories -
+suspend/reactivate guards, usage aggregation, and specifically that the
+audit call captures the *acting* admin's id). New
+`PlatformAdminTenantControllerIT` (7 tests, real PostgreSQL via
+Testcontainers) - RBAC (`READ_ONLY_AUDITOR` views but gets 403 suspending),
+validation (blank reason → 400), the full suspend→audit→double-suspend-
+refused→reactivate→audit lifecycle against a freshly created tenant (not
+the shared seed tenant, so it cannot collide with any other test), a real
+404 for an unknown tenant id, and cross-boundary isolation (a tenant JWT
+refused on this endpoint). List/detail tests assert against the *real*
+V900 seed values (`slug='default'`, owner `'Saravanan Murugan'`) - caught
+and fixed a mistake made while first drafting the test, where the live
+long-running dev database's own drifted data (an owner renamed to "Siva"
+sometime after V900 was originally seeded) was used instead of what a
+fresh migration run actually produces. Full `mvn test` after: **364
+tests, 0 failures, 0 errors, BUILD SUCCESS** (Docker was available this
+session, so this run includes every Testcontainers-backed test in the
+suite, not just the non-Docker subset). `tsc -b --force` and `vite build`
+both clean. **Live-verified against the real local dev server** (restarted
+to pick up the new compiled classes): `GET /v1/platform-admin/dashboard`,
+`GET /v1/platform-admin/tenants`, and `POST /v1/platform-admin/tenants/1/suspend`
+all correctly return 401 with no token, confirming the new routes are
+wired into the real security filter chain, not just passing in a mocked
+test context. **Not performed**: a full authenticated live click-through
+against the dev server - the platform admin account already living in the
+persistent local dev database has MFA enrolled with a secret only the
+account holder has, and creating a second throwaway account to work around
+that was judged less valuable than the 12 automated tests above, which
+already exercise every one of these endpoints authenticated, over real
+PostgreSQL, with the real Spring Security filter chain. No browser
+automation tool exists in this environment either.
+
+### Not built (Phases 3-8, and the rest of the 76-section spec) - stated, not silently dropped
+
+System Health/Incident/Error Monitoring, Support Center, Subscriptions &
+Billing (genuinely blocked without a real payment gateway - spec's own
+§24 forbids activating a paid tier from an unverified client field), 
+Security Center, Global Audit Log **viewer** (the data is already being
+written to `platform_audit_log`; no screen reads it back yet), Admin
+Team/RBAC management UI (backend RBAC already exists from CR-054 phase 1;
+no admin-facing screen to create/list other admins beyond the phase-1
+API), Feature Flags, Backup & Restore, Developer Tools, Announcements,
+Export Center, Global Search, Maintenance Mode, and Vitest/Playwright
+(this project has no frontend test runner at all, per CR-056's own
+identical note - standing one up is its own separate undertaking). Each
+is a real, separately-sized piece of work per the spec's own phase
+breakdown, not a checkbox to silently skip.
+
+## CR-057 phases 3, 4, 6 (partial), 7 (partial), 8 (partial) — System Health, Incidents, Support Center, Audit Log viewer, Security Center, Developer Tools, Feature Flags (APPLIED, 2026-09-02)
+
+Continuation of CR-057 phase 2, on the user's own explicit "do not stop
+between phases, continue automatically" instruction. Six modules built
+this round, each with real backend enforcement, a real frontend page, and
+real automated tests against PostgreSQL - none use `Math.random()`,
+hardcoded KPI values, or a fake "healthy"/"success" status. Not every
+phase from the user's 76-section spec is complete - see "Not built" at
+the end of this entry for exactly what remains and why.
+
+### Migrations
+
+V46 (`job_execution_log`, `platform_incident`), V47 (`support_ticket`,
+`support_ticket_message`), V48 (`feature_flag`). None carry a FK to
+`platform_admin` for an acting-admin column - every one of them mirrors
+`platform_audit_log.admin_id`'s own no-FK precedent (V39/CR-054), for the
+same reason: an audited row must stay readable even if the admin account
+referenced in it is later removed.
+
+### RBAC extended first, so every phase below could wire against it
+
+`PlatformPermission` grew from 3 values to the user's own stated minimum
+list (`TENANT_VIEW/MANAGE`, `USER_VIEW`, `SYSTEM_HEALTH_VIEW`,
+`INCIDENT_MANAGE`, `SUPPORT_VIEW/MANAGE`, `BILLING_VIEW/MANAGE`,
+`SECURITY_VIEW/MANAGE`, `AUDIT_VIEW`, `DEVELOPER_TOOLS_VIEW/MANAGE`,
+`BACKUP_VIEW/MANAGE`, `FEATURE_FLAG_VIEW/MANAGE`,
+`ANNOUNCEMENT_VIEW/MANAGE`, `ANALYTICS_VIEW/EXPORT`). `PlatformAdminRole`
+now grants `SUPER_ADMIN` everything, `PLATFORM_ADMIN` everything except
+`PLATFORM_ADMIN_MANAGE` (creating other admins stays SUPER_ADMIN-only),
+and every other role a `*_VIEW`-heavy, `*_MANAGE`-light set matching its
+job title - `READ_ONLY_AUDITOR` holds every `*_VIEW` permission and zero
+`*_MANAGE` ones, by design, not an oversight.
+
+### Phase 3 - System Health & Incident Monitoring
+
+`SystemHealthCheckService` computes live status for 7 services -
+Backend, Database, Authentication, Storage, WhatsApp, Email,
+Background Jobs - each from a real, safe signal: a timed `SELECT 1` for
+Database (Storage shares this result, with a stated reason: this app
+stores every file as a `bytea` column, there is no separate object store
+to check); a timed `app_user` count for Authentication; real
+`TenantWhatsAppConnection` status counts for WhatsApp (no outbound ping to
+Meta on every poll - that would be a real cost/rate-limit risk for a
+health check; it reflects connection state already recorded by real send
+attempts); `spring.mail.username` configured-or-not for Email; the most
+recent `job_execution_log` row per known job for Background Jobs.
+`SystemHealthSchedulerJob` runs this every 5 minutes (`app.system-health.check-interval-ms`),
+recording each service's result to the same `job_execution_log` table
+real business jobs use (one mechanism, not two), and opens or bumps a
+`PlatformIncident` on DOWN/DEGRADED (`PlatformIncidentService.recordFailure()`,
+one OPEN/INVESTIGATING incident per service, occurrence count and
+last-seen bumped on repeat rather than duplicated) - a return to HEALTHY
+auto-resolves it, audited under a null "system" admin (`PlatformAuditService`'s
+existing null-admin support, unused until now).
+`JobExecutionTracker` was also wired into the two pre-existing scheduled
+jobs (`TokenCleanupJob`, `ReminderSchedulerService`) so their own run
+history became real for the first time.
+Frontend: `/platform-admin/system-health` (7 live cards: status, response
+time, last checked, last failure, error count in 24h) and
+`/platform-admin/incidents` (search/filter, mark investigating/resolve/
+ignore/reopen).
+
+### Phase 4 - Support Center
+
+Genuinely two-sided, not admin-only: `support_ticket`/`support_ticket_message`
+are written by both a tenant user (`SupportTicketController`, `/v1/support-tickets`,
+ungated by permission - any signed-in tenant user, matching
+`NotificationService.contactAdmin()`'s own precedent) and a platform admin
+(`PlatformAdminSupportController`, `/v1/platform-admin/support`). Internal
+notes (`internal = true`) are filtered out of the tenant-facing read path
+(`SupportTicketService.get()`) and never appear there - proven directly in
+`SupportTicketFlowIT`, which reads both sides of the same ticket and
+asserts the tenant's own view has exactly the public messages, never the
+internal one. A tenant reply to a RESOLVED/CLOSED ticket reopens it
+automatically (the shop is saying "not actually fixed," not filing a new
+ticket) - also proven in that same test. Frontend: a new tenant-facing
+`/support` page (list + "New ticket" dialog + reply thread, linked from
+the sidebar's Administration section) and the platform-admin
+`/platform-admin/support` dashboard + detail page (priority/status
+controls, a visibly distinct amber-bordered internal-note style so an
+admin can never mistake one for a customer-visible reply).
+
+### Phase 6 (partial) - Global Audit Log viewer + Security Center
+
+The audit log itself (`platform_audit_log`) has existed since CR-054
+phase 1; this is the first screen that reads it back.
+`PlatformAuditLogQueryService.search()` batches admin-email resolution
+for a whole page in one query (not per-row - the N+1 shape this exact
+mistake was caught and fixed mid-build in `PlatformAdminSecurityService`
+too, see below) and never returns `password_hash`/`totp_secret` -
+verified directly in `PlatformAuditLogControllerIT`, which asserts the
+raw response body contains neither string.
+Security Center reuses `PlatformAdminRefreshToken` (already tracked since
+CR-054 phase 1, not a new table) for a real Sessions screen - a genuine
+per-admin "your active sessions, revoke one, revoke all others" UI, not
+a mock. Two honesty notes worth recording: "current session" is a
+documented heuristic (the most-recently-used active session), not a real
+thread of the caller's own token identity, since an access token does not
+carry the refresh-token hash that issued it; and the security dashboard's
+"active sessions" count was first written as `refreshTokenRepository.count()`
+(every session ever created, including revoked/expired ones) - caught
+before it shipped and replaced with a real `countActive()` query
+(`revokedAt is null and expiresAt > now`). `GET /v1/platform-admin/security/sessions`
+and its revoke endpoints are deliberately not permission-gated beyond
+authentication (every admin manages their own sessions, same shape as the
+tenant side's own `/auth/logout-all`); the dashboard itself requires
+`SECURITY_VIEW`.
+
+### Phase 7 (partial) - Developer Tools
+
+`DeveloperToolsService` - real Hikari pool stats
+(`HikariPoolMXBean.getActiveConnections()`/etc., not invented numbers)
+and real Flyway migration state (`Flyway.info()`), both already-loaded
+Spring beans, not new infrastructure. Background Jobs lists every
+distinct `job_execution_log.job_name` with its latest status/duration;
+exactly two jobs (`token-cleanup`, `reminder-scheduler`) are retryable
+from this screen - both are naturally idempotent, so "retry" really does
+call `TokenCleanupJob.purge()`/`ReminderSchedulerService.sendDailyReminders()`
+synchronously, proven in `PlatformAdminDeveloperToolsControllerIT` by
+retrying one and confirming a new log row appears. Health-check job names
+(`health:database` etc.) are explicitly NOT retryable from here - they
+run on their own 5-minute schedule and a manual retry button for them
+would be a confusing second trigger path for the same thing.
+**Deliberately not built**: no separate "API Diagnostics" screen (System
+Health's own per-service cards already cover this; a second screen
+duplicating the same data was judged not worth the added surface) and no
+cache diagnostics panel with real numbers - stated honestly on the page
+itself: *"No application-level cache layer (Redis/Caffeine/@Cacheable) is
+configured in this application"* - the alternative (inventing a status)
+is exactly the "fake healthy status" the user's spec explicitly forbids.
+**No arbitrary SQL execution endpoint exists anywhere in this codebase.**
+
+### Phase 8 (partial) - Feature Flags
+
+`FeatureFlagService.isEnabled(key)` is the one real backend enforcement
+point - proven in `PlatformAdminFeatureFlagControllerIT` by creating a
+flag, confirming `isEnabled()` returns false, enabling it through the
+real HTTP endpoint, then confirming `isEnabled()` flips to true through
+the same service a future feature would call. No existing feature in this
+codebase was retrofitted to check a flag (out of scope for this pass -
+the mechanism is real and ready, but wiring every candidate feature
+through it is its own separate initiative). **Honest limitation, stated
+on the `scope` field's own javadoc**: `TENANT`/`PLAN` scope is descriptive
+metadata only in this pass, not an enforced per-tenant override table -
+building real differential targeting (a `feature_flag_tenant_override`
+join table and the resolution logic on top of it) was judged a
+separately-sized piece of work, not silently included under the same flag
+CRUD.
+
+### Verified
+
+`mvn compile`/`mvn test-compile` clean after every file. New tests this
+round: `PlatformIncidentServiceTest` (10 unit), `PlatformAdminSystemHealthControllerIT` (4),
+`SupportTicketFlowIT` (3, including the internal-note-never-leaks and
+auto-reopen assertions), `PlatformAuditLogControllerIT` (2, including the
+no-secrets-in-response assertion), `PlatformAdminDeveloperToolsControllerIT` (4),
+`PlatformAdminSecurityControllerIT` (4, including cross-admin session
+isolation), `PlatformAdminFeatureFlagControllerIT` (3) - 30 new tests,
+all passing against real PostgreSQL via Testcontainers. Full `mvn test`
+after every phase boundary: 0 failures, 0 errors each time. `tsc -b --force`
+and `vite build` both clean after every phase. **Not performed**: no
+browser automation tool exists in this environment, so none of the eight
+new frontend pages (System Health, Incidents, Support ×2, Audit Log,
+Developer Tools, Security Center, Feature Flags, plus the tenant-facing
+Support pages) have been clicked through in a real browser - typechecked
+and build-verified only, same limitation stated on every other CR this
+session.
+
+### Not built this round - stated plainly, not silently dropped
+
+**Phase 5 (Subscriptions & Billing)** - not started. The user's own spec
+requires a complete Razorpay architecture (order creation, webhook
+signature verification, idempotent payment-event persistence) even
+without real credentials; this is a substantial, separately-sized build,
+not a quick addition alongside the six modules above.
+**Phase 8, the rest** (Backup Center / tenant data export, restore) - not
+started.
+**Tenant Analytics** (growth charts, activity classification, module
+usage, retention/churn, PDF/XLSX/CSV export) - not started; this is
+distinct from the Tenant *Management* list/detail CR-057 phase 2 already
+shipped.
+**Announcements, Global Search, Admin Notifications, Maintenance Mode,
+Platform Settings** - not started.
+**Vitest/Playwright** - not started; this project has no frontend test
+runner at all (repeated from CR-056's own identical note).
+**A formal, written-up full security review pass and a full tenant-side
+ERP regression click-through** were not separately performed as their own
+exercise - every phase above stayed additive-only (new tables, new
+permission constants, new endpoints under `/v1/platform-admin/**` or the
+new ungated `/v1/support-tickets`), touched no existing tenant-facing
+business logic, and the full backend suite (every pre-existing test, not
+just new ones) was re-run and green after every phase boundary - but that
+is evidence of no regression, not a substitute for the dedicated security/
+regression pass the spec's own section 74 asks for as a final step.
+
+---
+
+## CR-057 phase 9 - Subscriptions & Billing (APPLIED, 2026-09-03)
+
+Real Razorpay Orders-API architecture, built to the letter of the spec's own
+instruction to build the full architecture even without live credentials
+(order creation, client-side payment-signature verification, webhook
+signature verification, idempotent payment persistence) rather than skip
+it. Deliberately scoped to **one-time "pay to move `tenant.subscription_tier`
+up" checkout**, not a recurring Razorpay Subscriptions/auto-renewal engine -
+that is a materially different, separately-sized build (proration, dunning,
+renewal scheduling) and would be its own CR.
+
+**New** (`backend/billing` package, `V49__platform_billing.sql`):
+`platform_subscription_order` (one row per Razorpay order created to
+upgrade a tenant; never mutates `tenant.subscription_tier` itself - only a
+captured payment against it does, so an abandoned checkout has zero
+effect) and `platform_subscription_payment` (`UNIQUE (razorpay_payment_id)`
+is the idempotency guard - Razorpay redelivers webhooks, and the same
+payment can also arrive via the client-side `/verify` call before the
+webhook lands; whichever writes first wins, the second attempt finds the
+row already there and is a no-op, proven by
+`SubscriptionBillingServiceImplTest.webhookAppliesCapturedPaymentIdempotently`
+delivering the same webhook body twice).
+
+**Two independent HMAC-SHA256 checks**, mirroring the two Razorpay
+verification contracts exactly (both proven against a genuinely computed
+HMAC in tests, not mocked away):
+- Client-side: `HMAC(order_id + "|" + payment_id, key_secret)` must match
+  the signature Razorpay Checkout's own `handler` callback hands back -
+  `SubscriptionBillingService.verifyPayment()`.
+- Webhook: `HMAC(raw request body, webhook_secret)` must match
+  `X-Razorpay-Signature` - `SubscriptionBillingService.handleWebhook()`,
+  reachable at the new `/v1/webhooks/razorpay` (added to `SecurityConfig`'s
+  permitAll list next to the existing `/v1/webhooks/whatsapp`, same
+  "authenticity is the HMAC check inside the controller, not Spring
+  Security" pattern).
+
+**Fail-closed exactly like `TurnstileCaptchaService`/`WhatsAppProperties`**:
+`RazorpayProperties.active()` requires `enabled` + both key-id/key-secret;
+`webhookActive()` is independent (requires only the webhook secret, since
+Razorpay issues it separately). With no credentials configured - the
+default in every environment here - `POST /v1/billing/checkout` returns an
+honest `503 BILLING_NOT_CONFIGURED`, never a fake order.
+
+**Endpoints**: tenant-side `POST /v1/billing/checkout` (SETTINGS_MANAGE),
+`POST /v1/billing/verify` (SETTINGS_MANAGE), `GET /v1/billing/history`
+(SETTINGS_VIEW); platform-admin `GET /v1/platform-admin/billing/overview`
+and `GET /v1/platform-admin/billing/tenants/{id}` (both `BILLING_VIEW`,
+already reserved in `PlatformPermission` back in phase 2's own enum - no
+new platform permission constants needed, they were speculatively added
+before this phase existed the same way `PURCHASE_VIEW` was seeded before
+Purchase existed).
+
+**Frontend**: `BillingUpgradeCard` (settings module) - real Razorpay
+Checkout.js loaded on demand (never eagerly, same principle as the
+Turnstile widget), shows an honest "Billing is not configured" banner
+rather than a broken button when checkout 503s. `PlatformRevenueChart`
+(platform-admin module) replaces the Admin Overview page's previous "no
+billing gateway connected yet" placeholder text with a real monthly
+revenue bar chart, aggregated server-side
+(`PlatformBillingQueryService.overview()` - 12 small per-month
+COUNT/SUM queries, not raw payment rows shipped to the browser, per the
+spec's own "aggregated data, never 500,000 raw rows" rule) - shows the
+same honest "not configured" state when `razorpayConfigured` is false,
+never a chart of real zeros that would misread as "no revenue this
+month." Tenant Detail page gained a payment-history list inside its
+existing Subscription card, gated by `BILLING_VIEW`.
+
+**A real gap found while wiring this in, fixed in the same commit, not a
+separate bug report**: CR-027's self-declared plan picker
+(`SubscriptionPlanCard`, `PUT /v1/settings`) has always let an OWNER set
+`subscriptionTier` directly with zero gating, because until this phase no
+payment gateway existed to bypass. Once one is configured, that endpoint
+is a free checkout bypass - self-declare MAX, pay nothing. Fixed in
+`TenantSettingsServiceImpl.update()`: when `RazorpayProperties.active()`
+and the requested tier is a genuine upgrade (higher ordinal than the
+tenant's current tier), the request is rejected with
+`422 UPGRADE_REQUIRES_CHECKOUT` pointing at the real Billing card. A
+downgrade (including to FREE) stays fully self-service in both cases - it
+never needs a payment, so gating it would only be friction. With no
+gateway configured (every environment in this repo today), behaviour is
+byte-for-byte unchanged from before this phase - proven by
+`TenantSettingsServiceImplTest.upgradeStillAllowedWhenBillingNotConfigured`.
+
+**Verified**: backend `mvn -o test` **378/378** (up from 375 immediately
+before this phase; same 2 pre-existing BUG-ENV-002 Docker-only failures,
+unrelated - +8 `SubscriptionBillingServiceImplTest`, +3
+`TenantSettingsServiceImplTest`, the first dedicated test file for that
+service). `tsc -b --force` and `vite build` both clean. **Not performed**:
+no live Razorpay test-mode credentials exist in this environment, so the
+real order-creation HTTP call and the Checkout.js widget itself have not
+been exercised end to end against Razorpay's actual servers - only the
+fail-closed "not configured" path, the HMAC math (both directions, against
+genuinely computed signatures), and the idempotency guarantee are
+verified. A Testcontainers/Docker-backed integration test exercising the
+full `/v1/billing/**` + `/v1/webhooks/razorpay` flow through real
+PostgreSQL was not added this round, matching every other Docker-gated gap
+already noted throughout this repo (BUG-ENV-002).
+
+**Explicitly not built, stated plainly rather than silently skipped**: a
+recurring Razorpay Subscriptions/auto-renewal engine, plan proration,
+invoices/GST for the SaaS billing itself (as opposed to the ERP's own
+GST invoicing for tenants' customers, which is unrelated), refunds, and a
+platform-admin "change a tenant's plan directly" action distinct from
+`BILLING_MANAGE`'s existing reservation in `PlatformPermission` (the
+enum constant exists from phase 2 but nothing calls it yet - CR-057's
+remaining backlog, next below, still does not include it; flagged here so
+a future session does not assume `BILLING_MANAGE` is wired to anything).
+
+---
+
+## CR-057 phase 10 - Tenant Analytics (APPLIED, 2026-09-03)
+
+Growth, module adoption and churn - distinct from the Tenant *Management*
+list/detail (phase 2) and the Revenue chart (phase 9), and explicitly
+scoped away from duplicating either. Every figure is a real aggregate
+query, run at request time - no new tables, no new migration.
+
+**`TenantAnalyticsService.overview()`** (`platformadmin` package, reusing
+existing repository methods plus two new ones added for this phase -
+`SecurityAuditLogRepository.countDistinctUsersLoggedInBetween()` and
+`PlatformAuditLogRepository.countByActionAndSuccessTrueAndCreatedAtBetween()`):
+
+- **Growth** (12 months): new tenants, new users (both already-existing
+  `countByCreatedAtBetween` queries, same pattern
+  `PlatformAdminDashboardService` already used), and **active users** -
+  a genuine distinct-`LOGIN_SUCCESS`-event count from `security_audit_log`
+  per month, deliberately **not** derived from `app_user.last_login_at`
+  (which holds only the single most recent login per user and would
+  systematically under-count every month except each user's latest -
+  caught while designing this, not after building it wrong first).
+- **Module usage** (snapshot): of currently `ACTIVE` tenants, how many
+  have at least one row in each of 8 core module tables (`product`,
+  `customer`, `supplier`, `invoice`, `quotation`, `purchase`,
+  `business_expense`, `worker`) - one round-trip, 8 scalar subqueries via
+  `JdbcTemplate` (table names are a fixed internal constant list, never
+  user input - not a SQL-injection surface despite the string
+  interpolation). Proven against the real schema by
+  `PlatformAdminAnalyticsControllerIT` - a mocked `JdbcTemplate` unit test
+  cannot catch a wrong table name, an IT against real PostgreSQL can.
+- **Churn** - stated as an approximation in the DTO's own javadoc, not
+  disguised as more precise than it is: tenants suspended a given month
+  (a real `platform_audit_log` `TENANT_SUSPENDED` event count) ÷ total
+  tenants that exist by month end. Not a cohort or usage-based churn
+  measure - `tenant.status` carries no history and there is no
+  session/activity model to derive real engagement churn from; building
+  either would be its own CR, not a "while I'm in here" addition. A month
+  with zero tenants reports `churnRatePercent: null`, never a fabricated
+  `0%` or a divide-by-zero.
+
+**Export** (`TenantAnalyticsExportService`) - CSV (`commons-csv`), XLSX
+(`poi-ooxml`), PDF (`openhtmltopdf`) - all three reuse dependencies
+already on the classpath (Supplier Bill Import and the invoice/quotation
+PDF pipeline), no new library added. All three render from the exact same
+`overview()` call the on-screen charts use, so an exported file can never
+disagree with what an admin just looked at.
+
+**Endpoints**: `GET /v1/platform-admin/analytics/overview`
+(`ANALYTICS_VIEW`), `GET /v1/platform-admin/analytics/export?format=csv|xlsx|pdf`
+(`ANALYTICS_EXPORT`) - both permission constants were already reserved in
+`PlatformPermission` back in phase 2, no new ones needed.
+
+**Frontend**: new `/platform-admin/analytics` page and sidebar entry
+(gated by `ANALYTICS_VIEW`, matching every other nav item's own
+pattern) - a growth line chart, a module-adoption bar chart, a churn bar
+chart, and CSV/XLSX/PDF export buttons (`ANALYTICS_EXPORT`-gated,
+hidden rather than disabled for a role that lacks it, same convention as
+Billing's checkout button).
+
+**Verified**: backend `mvn -o test` **381/381** (up from 378 immediately
+before this phase; same 2 pre-existing BUG-ENV-002 Docker-only failures -
++3 `TenantAnalyticsServiceImplTest`, covering the aggregation shape and
+the null-vs-fabricated-zero churn math with a mocked `JdbcTemplate`).
+`tsc -b --force` and `vite build` both clean. **Docker was briefly
+available partway through this session** (a state change from every
+earlier session, which had documented BUG-ENV-002 as a standing
+environment gap) - one `mvn verify` run during that window confirmed the
+pre-existing 148 integration tests plus all unit tests genuinely green
+against real PostgreSQL, and three new IT files were written to the
+project's established pattern
+(`PlatformAdminAnalyticsControllerIT`, `PlatformAdminBillingControllerIT`,
+`SubscriptionBillingControllerIT` - the last two covering CR-057 phase 9,
+retroactively). Docker then went unavailable again before those three new
+IT files could be run - they compile cleanly (`mvn test-compile`) but are
+**unverified against real PostgreSQL**, stated plainly rather than
+claimed passing. Re-run them (`mvn -o verify`) the next time Docker is up
+in this environment before treating them as proven.
+
+---
+
+## CR-057 phase 11 - Backup Center (APPLIED, 2026-09-03)
+
+The spec's own §15 warns against pretending backup infrastructure exists
+when it does not. This app has no snapshot/blob-storage service - so
+rather than build a fake "last successful backup" dashboard, this phase
+builds the real, honest alternative: an on-demand export of a tenant's
+own core business data, triggered and logged by a platform admin.
+
+**New** (`V50__platform_tenant_export.sql`, `platformadmin` package):
+`platform_tenant_export` - a **log only**, not a blob store (the file
+itself is regenerated fresh on every request, never persisted - see the
+migration's own comment for why this is deliberately not presented as a
+retained backup). `TenantDataExportService.export()` collects flat,
+scalar-only rows (deliberately no nested line-item collections - a full
+relational dump is a materially bigger, separately-scoped feature) from
+8 core tables via a `findByTenantId` added to each of their repositories
+(`Product`, `Customer`, `Supplier`, `Invoice`, `Quotation`, `Purchase`,
+`BusinessExpense`, `Worker`), renders JSON (Jackson) or a CSV-per-module
+zip (`commons-csv` + `java.util.zip`, both already on the classpath - no
+new dependency), and logs a `COMPLETED`/`FAILED` row either way.
+
+**Endpoints**: `GET /v1/platform-admin/tenants/{id}/backups`
+(`BACKUP_VIEW`) - history; `POST /v1/platform-admin/tenants/{id}/backups?format=JSON|CSV`
+(`BACKUP_MANAGE`) - triggers and downloads. Both permission constants
+were already reserved in `PlatformPermission` back in phase 2.
+
+**Frontend**: `TenantBackupCard` on the Tenant Detail page - export
+buttons plus a history list, with copy that says plainly "no automated
+backup infrastructure is configured in this environment."
+
+**A known, stated gap, not silently left broken**: the frontend export
+call uses `responseType: 'blob'`, and axios delivers a non-2xx JSON error
+body as a `Blob` under that response type rather than parsed JSON - so a
+failed export shows a generic toast rather than the server's specific
+error message. This is a **pre-existing** pattern (the tenant-side
+`apiGetBlob`/Tally export has the same limitation) - fixing it properly
+means teaching both API clients' error interceptor to detect and parse a
+JSON-shaped Blob, which is shared infrastructure work worth its own pass,
+not a silent scope-creep addition here.
+
+**Verified**: backend `mvn -o test` **384/384** (up from 381; same 2
+pre-existing BUG-ENV-002 Docker-only failures at the time this phase was
+written - +3 `TenantDataExportServiceImplTest`, covering the JSON shape,
+the real zip structure, and the unknown-tenant refusal). `tsc -b --force`
+and `vite build` both clean.
+
+---
+
+## CR-057 phase 12 - Platform Settings: Razorpay (APPLIED, 2026-09-03)
+
+Lets a platform admin fill in real Razorpay credentials from the console
+itself - a real page, not a placeholder - instead of needing a redeploy
+with new `RAZORPAY_*` environment variables. Built directly from the
+user's own instruction: where a feature needs a value only the user can
+supply (an API key), turn it into a page they can fill in themselves,
+while keeping the whole thing genuinely working end to end.
+
+**New** (`V51__platform_razorpay_config.sql`): `platform_razorpay_config`,
+a **singleton row** (id always `1`, DB `CHECK`-constrained - one Razorpay
+account for the whole platform, never per-tenant). `key_secret`/
+`webhook_secret` are AES-256-GCM encrypted at the entity boundary via a
+new `EncryptedSecretConverter` - the exact same `FieldEncryptor` scheme
+(CR-018) `WhatsAppAccessTokenConverter` already reuses, not a new crypto
+implementation.
+
+**Precedence, not replacement**: the `RAZORPAY_*` environment variables
+(phase 9) are **not removed** - they remain a valid deployment-time
+config path and are now the fallback. New `RazorpayConfigResolver`
+(`billing` package) is the single place that decides which wins: the
+database row when present and enabled, the environment variables
+otherwise. `RazorpayOrderClientImpl`, `SubscriptionBillingServiceImpl`
+and `TenantSettingsServiceImpl` (the phase 9 checkout-bypass guard) all
+now depend on this resolver instead of reading `RazorpayProperties`
+directly - `RazorpayOrderClient.createOrder()`'s signature changed to
+accept `keyId`/`keySecret`/`apiBaseUrl` as parameters, since the caller
+is the one place that already resolved them.
+
+**Never returns a saved secret to the browser.** `RazorpayConfigResponse`
+carries `keySecretConfigured`/`webhookSecretConfigured` booleans only.
+`UpdateRazorpayConfigRequest`'s secret fields are null-means-"leave
+unchanged" (never round-tripped from a response that never carried the
+value) - a blank string is the deliberate way to clear one. The frontend
+form's password fields always start empty, matching that contract
+exactly, and show "already saved" placeholder copy rather than the value.
+
+**Endpoints**: `GET`/`PUT /v1/platform-admin/settings/razorpay`
+(`BILLING_VIEW`/`BILLING_MANAGE` - reused, no new permission constants).
+Every save is audited (`PLATFORM_SETTING_UPDATED`, a new
+`PlatformAuditAction` - the spec's own "production changes need an audit
+record" rule, and this is the one setting in the console that can move
+real money).
+
+**Frontend**: new `/platform-admin/settings` page + sidebar entry -
+enabled toggle, key ID, write-only key/webhook secret fields, pro/max
+plan pricing, and a badge naming which source (`DATABASE`/`ENVIRONMENT`/
+`NOT_CONFIGURED`) is actually in force right now.
+
+**Verified**: backend `mvn -o test` **391/391**, `BUILD SUCCESS`, **0
+Docker-gated errors this run** - Docker became available partway through
+this session (see phase 10's own note) and stayed up for this one, so
+`PermissionCodeConsistencyTest`/`SecurityFilterRegistrationTest` both ran
+and passed for real rather than being skipped. Existing
+`SubscriptionBillingServiceImplTest`/`TenantSettingsServiceImplTest` were
+updated for the `RazorpayConfigResolver` constructor change, not
+rewritten - same assertions, same coverage. `tsc -b --force`/`vite build`
+clean. **Not performed**: no dedicated unit test for
+`PlatformRazorpayConfigServiceImpl`/`RazorpayConfigResolverImpl`
+specifically (both are thin - a repository read/write and a precedence
+`if` - covered indirectly through the consumers' own tests); a Docker/IT
+test proving the DB-configured row actually overrides the environment
+variables end to end was not added this round.
+
+**A note on this session's working conditions**: for part of this phase,
+multiple other Claude Code sessions were active against this same working
+tree concurrently (a separate, unrelated "CR-058" - mandatory tenant-user
+MFA plus a soft-delete recovery feature for Product/Supplier). This
+session's own commit was deliberately held back until that concurrent
+work reached a compiling state, specifically to avoid bundling another
+session's unfinished, unrelated work into this one's commit - see
+`RESUME_POINT.md` for the exact sequence.
+
+## CR-059 — Deployment mode switch: hosted (Supabase) or self-hosted (Docker) (APPLIED, 2026-09-04)
+
+**Requirement, in the user's own words**: "work with both supabase and
+also in docker, need switch option for this because if the client not
+acquired to get hosted version they can use docker version."
+
+Two products from one codebase: the hosted multi-tenant SaaS, and an
+on-premise install a client runs on their own machine when they will not
+or cannot use a hosted service.
+
+### What was already true, and deliberately left alone
+
+The investigation that opened this CR found the hard part already done.
+**Supabase appears in this repository as a hostname and nothing else.**
+There is no Supabase SDK, no Supabase Auth, no Supabase Storage and no
+`supabase-js` anywhere in `backend/src` or `frontend/src` — the only
+occurrence before this CR was a comment in `application-prod.yml` and the
+`render.yaml` blueprint. Uploads are `bytea` in PostgreSQL, auth is this
+application's own JWT + MFA (CR-008, CR-058), and tenant export is plain
+JDBC (CR-057 phase 11).
+
+So the application layer needed **no** portability work, and none was
+done. Moving from Supabase to Neon, RDS or a self-managed instance is a
+change of `DB_HOST`. This was confirmed with the user before building:
+the alternative — Supabase Storage for uploads in hosted mode, Supabase
+Auth in hosted mode — was offered and **rejected**, because either one
+forks a core subsystem into two implementations that must then both be
+tested forever.
+
+What was actually missing was everything *around* the application: a way
+to say which deployment this is, a Docker image for the frontend, a
+compose file that starts the whole product, and correct behaviour for the
+handful of things that genuinely differ.
+
+### The switch
+
+`app.deployment.mode` — `CLOUD` or `SELF_HOSTED` (`DeploymentMode`,
+`DeploymentProperties`), normally set by activating a profile:
+
+```
+SPRING_PROFILES_ACTIVE=prod,cloud         hosted SaaS
+SPRING_PROFILES_ACTIVE=prod,selfhosted    client's own Docker box
+```
+
+Both new profiles layer **on top of** `prod`, never instead of it — `prod`
+keeps owning the security posture (springdoc off, actuator health only,
+no stack traces, no developer inspection). Being on the client's own
+hardware relaxes none of that: a shop's LAN is not a trusted network.
+
+**Defaults to `CLOUD`**, so dev, local, test and the existing Render
+deployment behave exactly as they did before this CR existed. Self-hosting
+is opt-in; nothing changed silently.
+
+### `DeploymentModeGuard` — the part that makes the switch worth having
+
+A mode property nobody validates is decoration. The guard refuses to start
+on four configurations, each of which otherwise starts happily and is
+wrong in a way nobody notices until it is expensive:
+
+| Refusal | What it prevents |
+|---|---|
+| both `cloud` and `selfhosted` active | opposite defaults, winner decided by profile ordering |
+| `SELF_HOSTED` + a managed DB host | **one client's shop data written into the multi-tenant SaaS database** |
+| `CLOUD` + a container/localhost DB | starts, serves, loses every write on the next redeploy (hosted instances have ephemeral storage) |
+| `CLOUD` + `cookie-secure=false` | a 7-day refresh credential sent over plain HTTP |
+
+All but the first are scoped to the `prod` profile, so no developer's local
+setup is affected. It also logs a startup banner naming the mode, the
+database host and kind, cookie-secure and whether billing applies — the
+username is never logged, since a pooled connection string can carry it.
+
+**It runs as a `BeanFactoryPostProcessor`, not on `ApplicationReadyEvent`** —
+and that difference from `JwtSecretGuard` is the point, not an
+inconsistency. `JwtSecretGuard` checks at application-ready because a weak
+signing key becomes dangerous only once requests are served. This guard
+cannot afford that timing: by `ApplicationReadyEvent`, Flyway has already
+run and Hibernate has already connected, so in the case that matters most
+— a self-hosted install pointed at the multi-tenant SaaS database —
+migrations would have been applied to that database before anything
+objected. A `BeanFactoryPostProcessor` runs after component scanning but
+before any singleton exists, so the refusal lands before the datasource,
+Flyway or the EntityManagerFactory are created. This was **verified in a
+real container**: the refusal appears at "Exception encountered during
+context initialization", with no Hikari pool and no Flyway line before it.
+
+That timing also dictates how it reads configuration. A
+`BeanFactoryPostProcessor` is instantiated before autowiring exists (a
+constructor argument there fails outright with "No default constructor
+found" — caught during this work when nine `@SpringBootTest` contexts
+stopped loading), so it takes the `Environment` from the bean factory and
+binds `app.deployment` with `Binder`, rather than injecting the
+`@ConfigurationProperties` beans, which do not exist yet.
+
+### Billing is off on a self-hosted licence
+
+The user's decision, confirmed before building: a self-hosted client has
+**bought the software outright**, so showing them a monthly upgrade prompt
+is simply wrong.
+
+- `SubscriptionBillingServiceImpl.createOrder`/`verifyPayment` refuse with
+  **503 `BILLING_NOT_APPLICABLE`** — deliberately distinct from the
+  existing `BILLING_NOT_CONFIGURED`, which means "this deployment does
+  bill but has no Razorpay keys", a thing an operator can fix.
+- `handleWebhook` refuses **before parsing**. `/v1/webhooks/razorpay` is
+  `permitAll` by design (Razorpay carries no JWT of ours), so on a
+  self-hosted box it is an internet-reachable path for a feature that
+  install does not have.
+- `EntitlementServiceImpl` enforces **no tier caps** when billing does not
+  apply. This was the defect that would have mattered most: a self-hosted
+  install ships on `FREE`, and without this the client who paid the most
+  would be stopped at their 101st customer and told to "upgrade the plan
+  in Shop Settings" — a dead end, since there is no checkout to reach.
+  `usageSummary()` reports `UNLIMITED` (-1) to match what is actually
+  enforced, rather than showing a ceiling that is never applied. The
+  existing Plan usage card already renders -1 as "Unlimited", so this
+  needed no frontend change.
+- Escape hatch: `app.deployment.billing-enabled=true` re-enables it, for a
+  reseller running self-hosted instances they do bill for.
+
+### Public deployment config
+
+`GET /v1/deployment-config` — public and unauthenticated, for the same
+reason `/v1/auth/captcha-config` is: the app shell renders before anyone
+signs in, and a self-hosted install must not flash a billing prompt while
+the session loads. Serves mode, `selfHosted`, `billingEnabled` and an
+operator-set installation name — **no host, credential, provider key or
+version string**, since those are reconnaissance with no benefit to a shop
+owner (the reasoning that turns springdoc off in production).
+
+The frontend is built **once** and shipped to both deployments, so this
+has to be a runtime question — a Vite env var is baked in at build time
+and would be wrong for one of the two. `useDeploymentConfig` exposes a
+`resolved` flag and Shop Settings gates on `resolved && billingEnabled`,
+so the optimistic hosted fallback cannot flash an upgrade card at a
+self-hosted client for even one frame.
+
+### The self-hosted stack
+
+`docker-compose.selfhosted.yml` — postgres + backend + frontend, one
+command, `.env.selfhosted.example` as the template. New
+`frontend/Dockerfile` (node build → nginx) and `frontend/nginx.conf`.
+
+**Only the frontend publishes a port.** The database and the API are
+reachable on the compose network and nowhere else, so a laptop on the
+shop's wifi cannot connect to PostgreSQL directly even with the password.
+nginx proxies `/api` **same-origin**, which is not a convenience: the
+refresh cookie is `SameSite=Strict`, so a split origin would break sign-in
+persistence in a way that reads as a session bug.
+
+`cookie-secure` defaults to **false** in `selfhosted`, and this is stated
+plainly rather than hidden. The common install is a LAN address with no
+certificate, and a browser never returns a Secure cookie over http — the
+symptom is a login that succeeds and instantly bounces back to the login
+page, with nothing wrong in the logs. The cost is real: the refresh token
+crosses the shop LAN unencrypted. The guard warns whenever self-hosted
+runs with `cookie-secure=true` (the opposite mistake), and both the
+profile and `.env` template say to set it true once HTTPS is in front.
+
+`sslmode` is now explicit in the JDBC URL, because the two deployments
+want opposite answers (`require` managed, `disable` container-to-container
+on a private bridge) and a driver default is the wrong place to decide it.
+
+### Backups work against both
+
+`scripts/db-target.sh` (new) resolves how to reach the database — `docker
+exec` into whichever container is running, or host `pg_dump`/`psql`
+against a managed host with `PGPASSWORD` exported (never passed as an
+argument, which would put it in `ps` output). `backup-db.sh` and
+`restore-db.sh` now share it instead of each hardcoding one container
+name; `restore-db.sh` demands the **host name** typed back, not `yes`,
+when the target is managed — on the hosted deployment that database holds
+every tenant.
+
+### Files
+
+New: `config/DeploymentMode`, `DeploymentProperties`,
+`DeploymentModeGuard`, `DeploymentConfigController`,
+`DeploymentConfigResponse`; `application-cloud.yml`,
+`application-selfhosted.yml`; `docker-compose.selfhosted.yml`,
+`.env.selfhosted.example`; `frontend/Dockerfile`, `frontend/nginx.conf`,
+`frontend/.dockerignore`; `scripts/db-target.sh`;
+`shared/types/deployment.ts`, `services/deploymentConfig.ts`,
+`shared/hooks/useDeploymentConfig.ts`; `DeploymentModeGuardTest`;
+`docs/DEPLOYMENT_MODES.md`.
+
+Modified: `application.yml` (deployment block, explicit sslmode),
+`SecurityConfig` (one public path), `SubscriptionBillingServiceImpl`,
+`EntitlementServiceImpl`, `ShopSettingsPage`, both backup scripts, and the
+two service tests whose constructors gained a parameter.
+
+**No migration.** Nothing here is persisted — the mode is a property of how
+the process was started, not of the data.
+
+### Explicitly rejected
+
+- **Supabase Storage / Supabase Auth in hosted mode** — forks uploads or
+  auth into two implementations. Offered, declined.
+- **A build-time `VITE_DEPLOYMENT_MODE`** — one frontend build serves both
+  deployments; a baked-in value is wrong for one of them.
+- **Inferring the mode from `DB_HOST`** — reads as clever, fails silently
+  the day a self-hosted client points at a managed database on purpose.
+  The mode is declared and then *checked* against the host instead.
+- **Weakening `prod` for self-hosted installs** — the client's own hardware
+  is not a reason to expose actuator, springdoc or stack traces.
+
+### Verified
+
+Everything below was executed, not assumed.
+
+**Backend unit suite**: `mvn -o test` → **430/430, BUILD SUCCESS**. That
+includes 12 new tests: `DeploymentModeGuardTest` (4 refusals, 3
+acceptances, 1 "absent config still boots"), 3 self-hosted billing tests
+in `SubscriptionBillingServiceImplTest`, 2 self-hosted entitlement tests
+in `EntitlementServiceImplTest`.
+
+**Backend integration suite**: `mvn -o verify` → **189/189, BUILD SUCCESS**,
+with the whole run green (430 unit + 189 integration).
+
+The first `verify` run during this CR surfaced one failure —
+`CustomerControllerIT.activateRequiresManage`, expecting 403 and getting
+204 — which was **not** this CR's: an untracked test file from another
+session's CR-058 work, asserting a permission boundary that does not
+exist. It was investigated and fixed on the user's instruction; recorded
+in `BUG_REGISTRY.md` as **BUG-TEST-002**. In short: no seeded role holds
+`CUSTOMER_VIEW` without `CUSTOMER_MANAGE` (V1 grants MANAGER, ACCOUNTANT
+and STAFF all three the MANAGE permission), so the test now provisions its
+own `CUSTOMER_READER` role instead of borrowing ACCOUNTANT. The seeded
+grants were deliberately **not** changed to make the old assertion pass —
+role design is a product decision, not a knob to turn for a test.
+
+**Frontend**: `tsc -b --force` and `vite build` both clean.
+
+**The self-hosted stack was actually built and run**, not just written:
+
+- `docker compose -f docker-compose.selfhosted.yml build` — both images
+  built (backend and the new nginx frontend).
+- `up -d` — all three containers reached **healthy**, in dependency order
+  (db healthy → api healthy → web).
+- `GET /healthz` → `ok`; `GET /api/actuator/health` **through the nginx
+  proxy** → `{"status":"UP"}`, confirming the same-origin `/api` proxy
+  works.
+- `GET /api/v1/deployment-config` →
+  `{"mode":"SELF_HOSTED","selfHosted":true,"billingEnabled":false,...}` —
+  which also confirms the blank `APP_BILLING_ENABLED` binds to null and
+  falls through to the mode default, rather than to `false`-by-accident or
+  a binding error.
+- The startup banner printed the mode, database, cookie-secure and
+  "billing: disabled (not applicable to this deployment)".
+- **The guard's refusal was proven for real**: the backend image run with
+  `SPRING_PROFILES_ACTIVE=prod,selfhosted` and a Supabase `DB_HOST` failed
+  with the REFUSING TO START message at "Exception encountered during
+  context initialization" — with no Hikari pool and no Flyway line ahead
+  of it, which is exactly the timing guarantee this guard exists for.
+- `down -v` removed only this project's containers, network and volume;
+  the developer's `hardware-erp-postgres` container and
+  `hardware-erp-postgres-data` volume were confirmed untouched afterwards.
+
+**Two defects were found and fixed during that verification, both mine:**
+
+1. **The compose project name collided with the development stack.** The
+   file first declared `name: hardware-erp`, which is also what Compose
+   derives for `docker-compose.yml` from the directory name — making the
+   two files two views of one project, so a `down -v` here would have
+   deleted the developer's database volume. Now `hardware-erp-selfhosted`.
+2. **The guard originally ran too late.** It was written as an
+   `ApplicationListener<ApplicationReadyEvent>`, mirroring `JwtSecretGuard`
+   — which meant Flyway would have already migrated the SaaS database
+   before the "self-hosted pointed at a managed database" refusal fired.
+   Moving it to a `BeanFactoryPostProcessor` then broke nine
+   `@SpringBootTest` contexts ("No default constructor found", because
+   BFPPs are instantiated before autowiring); resolved by taking the
+   `Environment` from the bean factory. Both re-verified green.
+
+**Not executed**: `registry/static_check.py` — `python3` is not installed
+on this machine (a standing limitation recorded in `CLAUDE.md`).

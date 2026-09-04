@@ -3,6 +3,16 @@
 #   docker compose up -d
 #   cd backend && ./mvnw spring-boot:run
 #
+# THIS FILE IS FOR DEVELOPMENT ONLY - it starts PostgreSQL alone and leaves
+# the backend and frontend to run from source with hot reload. To bring up
+# the whole product the way a client runs it, use the other file (CR-059):
+#
+#   docker compose -f docker-compose.selfhosted.yml up -d
+#
+# The two are separate Compose projects on purpose ("hardware-erp" here,
+# "hardware-erp-selfhosted" there), so neither one's `down -v` can delete
+# the other's data volume.
+#
 # The application creates no schema itself: Flyway owns it and Hibernate runs
 # with ddl-auto=validate.
 services:

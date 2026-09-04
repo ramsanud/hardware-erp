@@ -21,6 +21,7 @@ import type { CustomerCreditCheckResponse } from '@/modules/customer/types';
 import { productService } from '@/modules/product/services/productService';
 import { tenantBankAccountService } from '@/modules/settings/services/tenantBankAccountService';
 import type { TenantBankAccountResponse } from '@/modules/settings/types';
+import { useAppChrome } from '@/layouts/AppChromeProvider';
 import { ProductPicker } from '../components/ProductPicker';
 import { CreditLimitWarning } from '../components/CreditLimitWarning';
 import { PAYMENT_METHOD_OPTIONS } from '../constants';
@@ -88,6 +89,8 @@ export function InvoiceWizard({
    */
   const [labourOn, setLabourOn] = useState(false);
   const [defaultLabourPercent, setDefaultLabourPercent] = useState(0);
+  /** CR-053 backlog item 1. A shop-wide setting, not a per-invoice toggle like labourOn above - see Settings > Additional Settings. */
+  const { enableFreeQuantity } = useAppChrome();
   const [itemsError, setItemsError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -131,6 +134,7 @@ export function InvoiceWizard({
               discountPercent: line.discountPercent ?? 0,
               labourPercent: line.labourPercent ?? 0,
               discountAmountRupees: line.discountAmountRupees ?? 0,
+              freeQuantity: 0,
             });
           } else {
             skipped += 1;
@@ -245,12 +249,19 @@ export function InvoiceWizard({
       discountPercent: 0,
       labourPercent: defaultLabourPercent,
       discountAmountRupees: 0,
+      freeQuantity: 0,
     }]);
   };
 
   const updateQuantity = (lineId: string, quantity: number) => {
     setItems((current) => current.map((item) =>
       item.lineId === lineId ? { ...item, quantity } : item));
+  };
+
+  /** CR-053 backlog item 1. Never enters priceDraftLine's math - purely what prints and what leaves stock. */
+  const updateFreeQuantity = (lineId: string, freeQuantity: number) => {
+    setItems((current) => current.map((item) =>
+      item.lineId === lineId ? { ...item, freeQuantity } : item));
   };
 
   /**
@@ -323,6 +334,7 @@ export function InvoiceWizard({
           // so a stale value can never be interpreted server-side.
           discountPercent: item.discountType === 'PERCENTAGE' ? item.discountPercent : null,
           labourPercent: item.labourPercent > 0 ? item.labourPercent : null,
+          freeQuantity: item.freeQuantity > 0 ? item.freeQuantity : null,
         })),
         // PUT /v1/invoices/{id} takes neither of these. Sent as null while
         // editing so the payload matches what the server will actually act on.
@@ -450,6 +462,9 @@ export function InvoiceWizard({
                       <th className="px-3 py-2 font-medium">Product</th>
                       <th className="px-3 py-2 font-medium">Price</th>
                       <th className="w-28 px-3 py-2 font-medium">Qty</th>
+                      {enableFreeQuantity ? (
+                        <th className="w-24 px-3 py-2 font-medium">Free qty</th>
+                      ) : null}
                       <th className="w-28 px-3 py-2 font-medium">Discount</th>
                       {/* Owner-only. Never printed on a customer document -
                           the customer sees the resulting rate, not the split. */}
@@ -479,6 +494,16 @@ export function InvoiceWizard({
                             aria-label={`Quantity for ${item.productName}`}
                           />
                         </td>
+                        {enableFreeQuantity ? (
+                          <td className="px-3 py-2">
+                            <NumberInput
+                              min={0} value={item.freeQuantity}
+                              onChange={(value) => updateFreeQuantity(item.lineId, value)}
+                              className="h-8"
+                              aria-label={`Free quantity for ${item.productName}`}
+                            />
+                          </td>
+                        ) : null}
                         <td className="px-3 py-2">
                           {/* A single percentage field with a trailing %, rather
                               than a type toggle - CR-050 removed the rupee
@@ -758,7 +783,10 @@ export function InvoiceWizard({
               <ul className="divide-y rounded-md border text-sm">
                 {items.map((item) => (
                   <li key={item.lineId} className="flex justify-between px-3 py-2">
-                    <span>{item.productName} × {item.quantity}</span>
+                    <span>
+                      {item.productName} × {item.quantity}
+                      {item.freeQuantity > 0 ? ` (+${item.freeQuantity} free)` : ''}
+                    </span>
                     <span className="tabular">₹{rupees(item.sellingPriceRupees * item.quantity)}</span>
                   </li>
                 ))}

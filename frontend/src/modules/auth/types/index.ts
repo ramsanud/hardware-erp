@@ -13,9 +13,9 @@ export type AuditAction =
   | 'TOKEN_REFRESHED' | 'REFRESH_TOKEN_REUSE_DETECTED'
   | 'PASSWORD_CHANGED' | 'PASSWORD_RESET_REQUESTED' | 'PASSWORD_RESET'
   | 'PASSWORD_RESET_BY_ADMIN'
-  | 'USER_CREATED' | 'USER_UPDATED' | 'USER_DEACTIVATED'
+  | 'USER_CREATED' | 'USER_UPDATED' | 'USER_DEACTIVATED' | 'USER_RESTORED'
   | 'ROLE_CHANGED' | 'ROLE_CREATED' | 'ROLE_UPDATED' | 'ROLE_DELETED'
-  | 'RATE_LIMIT_EXCEEDED' | 'BOOTSTRAP_OWNER_CREATED';
+  | 'RATE_LIMIT_EXCEEDED' | 'BOOTSTRAP_OWNER_CREATED' | 'BANK_ACCOUNT_REVEALED';
 
 // ---- requests ----
 
@@ -99,6 +99,18 @@ export interface UserResponse {
   createdAt?: string | null;
 }
 
+/** CR-053 backlog item 6. One row per business change this user made, newest first. */
+export interface UserActivityResponse {
+  id: number;
+  moduleCode: string;
+  entityType: string;
+  entityId?: number | null;
+  entityLabel?: string | null;
+  action: string;
+  remarks?: string | null;
+  createdAt: string;
+}
+
 export interface LoginResponse {
   accessToken: string;
   /** Null in cookie transport, which is the default. */
@@ -107,6 +119,43 @@ export interface LoginResponse {
   expiresInSeconds: number;
   mustChangePassword: boolean;
   user: UserResponse;
+}
+
+/**
+ * CR-058 - what POST /v1/auth/login now returns. A correct password proves
+ * only the first factor; the session arrives from /mfa/verify or
+ * /mfa/enroll/confirm.
+ */
+export interface LoginChallengeResponse {
+  /** Null when MFA is disabled server-side (CR-060) - there is no challenge to identify. */
+  mfaToken: string | null;
+  /** True for an account that has not set up an authenticator app yet. */
+  enrollmentRequired: boolean;
+  expiresInSeconds: number;
+  /**
+   * CR-060 - the completed session, present ONLY when the server has
+   * app.security.mfa-required=false and the password was therefore the only
+   * factor. Null whenever a second factor is being demanded.
+   *
+   * Exactly one of `session` and `mfaToken` is ever populated, so the caller
+   * branches on this one field rather than inferring the mode from config the
+   * browser cannot see.
+   */
+  session: LoginResponse | null;
+}
+
+export interface MfaEnrollResponse {
+  otpAuthUri: string;
+  /** PNG bytes, base64 - render as data:image/png;base64,... */
+  qrCodePngBase64: string;
+  /** Manual-entry fallback for an app that cannot scan a QR code. */
+  secretBase32: string;
+}
+
+export interface MfaConfirmResponse {
+  session: LoginResponse;
+  /** One-time recovery codes. Shown exactly once, here. */
+  backupCodes: string[];
 }
 
 export interface RoleResponse {
@@ -160,6 +209,19 @@ export interface SecurityAuditLogResponse {
 }
 
 // ---- query params ----
+
+/**
+ * CR-058 - the recycle-bin projection. Like UserResponse it never carries
+ * security state (token version, failed attempts, lockout).
+ */
+export interface UserDeletedResponse {
+  id: number;
+  fullName: string;
+  mobileNo: string;
+  employeeCode?: string | null;
+  roleName?: string | null;
+  deletedAt: string;
+}
 
 export interface UserSearchParams {
   search?: string;

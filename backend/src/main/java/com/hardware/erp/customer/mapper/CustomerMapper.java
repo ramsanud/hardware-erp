@@ -25,6 +25,7 @@ public class CustomerMapper {
                 customer.getPincode(),
                 IndianCurrencyFormat.rupees(customer.getCreditLimitPaise()),
                 customer.getStatus(),
+                customer.isWhatsappOptIn(),
                 customer.getCreatedAt());
     }
 

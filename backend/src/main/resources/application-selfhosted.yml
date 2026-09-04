@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------
+# SELF_HOSTED - the client's own machine or server, in Docker (CR-059).
+#
+#   SPRING_PROFILES_ACTIVE=prod,selfhosted
+#   docker compose -f docker-compose.selfhosted.yml up -d
+#
+# Layered ON TOP of application-prod.yml: 'prod' still owns the security
+# posture (no springdoc, no actuator beyond health, no stack traces, no
+# developer inspection). Being on the client's own hardware relaxes none of
+# that - a shop's LAN is not a trusted network, and the same staff accounts
+# and permissions apply either way.
+#
+# What genuinely differs from the hosted product:
+#   - the database is a container on this machine's private docker network
+#   - there is usually no certificate, so the browser reaches this over http
+#   - the client bought the software; there is nothing to subscribe to
+# ---------------------------------------------------------------------
+spring:
+  datasource:
+    # 'postgres' is the service name in docker-compose.selfhosted.yml, and
+    # 5432 is the port INSIDE that network - the 5433 host mapping is only
+    # how a developer on the host reaches it, and is irrelevant here.
+    #
+    # sslmode=disable is correct and not a weakening: this connection never
+    # leaves the docker bridge network, and the postgres:16-alpine image
+    # ships no server certificate, so 'prefer' would attempt a TLS handshake
+    # on every connection and fall back anyway. An operator who runs the
+    # database on a separate host must set DB_SSL_MODE=require.
+    url: jdbc:postgresql://${DB_HOST:postgres}:${DB_PORT:5432}/${DB_NAME:hardware_erp}?reWriteBatchedInserts=true&sslmode=${DB_SSL_MODE:disable}
+    hikari:
+      # The database is on the same machine with no pooler in front of it and
+      # exactly one application instance, so PostgreSQL's own default
+      # max_connections of 100 is the only ceiling. 20 matches
+      # application-prod.yml and leaves room for psql and the backup job.
+      maximum-pool-size: ${DB_POOL_SIZE:20}
+      minimum-idle: 5
+
+app:
+  deployment:
+    mode: SELF_HOSTED
+    installation-name: ${APP_INSTALLATION_NAME:}
+  security:
+    # Defaults to false because the overwhelmingly common self-hosted setup
+    # is a LAN address with no certificate (http://192.168.1.10), and a
+    # Secure cookie is simply never returned by the browser over http - the
+    # symptom is a login that succeeds and instantly bounces back to the
+    # login page, with nothing wrong in the logs.
+    #
+    # This is a real reduction in protection and is stated plainly rather
+    # than hidden: the refresh token crosses the shop's LAN unencrypted. Any
+    # operator who puts this install behind HTTPS (a reverse proxy with a
+    # certificate, or a Tailscale/VPN address) should set COOKIE_SECURE=true.
+    cookie-secure: ${COOKIE_SECURE:false}
+    # Same-origin by default: docker-compose.selfhosted.yml serves the built
+    # frontend and proxies /api through one nginx, so the browser makes no
+    # cross-origin request and CORS is not involved. Set CORS_ORIGINS only
+    # for direct API access from another machine.
+    allowed-origins: ${CORS_ORIGINS:http://localhost}
+
+  # The client paid for this installation outright. Subscription checkout is
+  # refused with BILLING_NOT_APPLICABLE and the upgrade card is hidden, so
+  # nobody is ever shown an upsell for software they already own. A reseller
+  # who does bill their own self-hosted instances sets APP_BILLING_ENABLED=true.
+  razorpay:
+    enabled: false
+
+  # Password-reset links must point at the frontend this install serves, not
+  # at a hosted URL the client cannot reach. There is no sensible default for
+  # a LAN address, so this is expected to be set in .env - and when SMTP is
+  # unconfigured the owner can still reset a password from Users anyway.
+  password-reset:
+    reset-url-base: ${RESET_URL:http://localhost/reset-password}

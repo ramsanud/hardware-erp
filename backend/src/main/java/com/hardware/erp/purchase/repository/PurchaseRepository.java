@@ -16,6 +16,15 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
 
     Optional<Purchase> findByIdAndTenantId(Long id, Long tenantId);
 
+    /** Platform Admin tenant data export (CR-057 phase 11). */
+    List<Purchase> findByTenantId(Long tenantId);
+
+    /** Platform Admin tenant usage summary. */
+    long countByTenantId(Long tenantId);
+
+    /** Platform Admin overview KPI - "purchases today" across every tenant, not scoped to one. */
+    long countByPurchaseDate(LocalDate purchaseDate);
+
     @Query("""
            select p from Purchase p
            where p.tenant.id = :tenantId
@@ -53,4 +62,15 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
            where p.tenant.id = :tenantId and p.status <> 'CANCELLED'
            """)
     List<Object[]> tenantPurchaseSummary(@Param("tenantId") Long tenantId);
+
+    /** CR-053 backlog item 2 (Tally export). Cancelled purchases excluded - a cancelled bill never really happened. */
+    @Query("""
+           select p from Purchase p
+           where p.tenant.id = :tenantId and p.status <> 'CANCELLED'
+             and p.purchaseDate >= :fromDate and p.purchaseDate <= :toDate
+           order by p.purchaseDate asc, p.id asc
+           """)
+    List<Purchase> findForExport(@Param("tenantId") Long tenantId,
+                                 @Param("fromDate") LocalDate fromDate,
+                                 @Param("toDate") LocalDate toDate);
 }

@@ -87,7 +87,8 @@ public class InvoiceMapper {
                 rupees(item.getDiscountAmountPaise()),
                 // Gross is derived, not stored: subtotal is already net of the
                 // discount, so adding it back is the one honest source.
-                rupees(lineGross(item)));
+                rupees(lineGross(item)),
+                item.getFreeQuantity());
     }
 
     public PaymentResponse toResponse(Payment payment) {

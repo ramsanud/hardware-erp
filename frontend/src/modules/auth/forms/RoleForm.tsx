@@ -15,6 +15,11 @@ import { roleSchema, type RoleValues } from '../validation/schemas';
 import type { PermissionGroupResponse, RoleResponse } from '../types';
 import { PermissionPicker } from '../components/PermissionPicker';
 
+/** CR-053 backlog item 6 - common role labels a hardware shop actually uses, offered as suggestions on the free-text name field. */
+const ROLE_NAME_SUGGESTIONS = [
+  'Partner', 'Salesman', 'Stock Manager', 'Delivery Boy', 'CA', 'Cashier', 'Godown Staff',
+];
+
 interface RoleFormProps {
   role?: RoleResponse;
   permissionGroups: PermissionGroupResponse[];
@@ -84,9 +89,17 @@ export function RoleForm({ role, permissionGroups, onSubmit, onCancel }: RoleFor
                  aria-invalid={Boolean(errors.code)} {...register('code')} />
         </FormField>
 
-        <FormField id="name" label="Display name" error={errors.name?.message} required>
-          <Input id="name" placeholder="Stock Clerk" aria-invalid={Boolean(errors.name)}
-                 {...register('name')} />
+        <FormField id="name" label="Display name" error={errors.name?.message} required
+                   hint={isSystemRole
+                     ? 'Renaming this is purely cosmetic - the underlying code and permissions are unaffected.'
+                     : undefined}>
+          <Input id="name" list="role-name-suggestions" placeholder="Stock Clerk"
+                 aria-invalid={Boolean(errors.name)} {...register('name')} />
+          {/* CR-053 backlog item 6. Suggestions only, not a fixed enum - free
+              text still works for a shop whose roles don't match any of these. */}
+          <datalist id="role-name-suggestions">
+            {ROLE_NAME_SUGGESTIONS.map((option) => <option key={option} value={option} />)}
+          </datalist>
         </FormField>
 
         <FormField id="description" label="Description" error={errors.description?.message}

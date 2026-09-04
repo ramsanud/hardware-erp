@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Boxes } from 'lucide-react';
+import { Boxes, MessageCircle } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import { Card } from '@/shared/components/ui/card';
@@ -44,6 +44,7 @@ export function StockListPage() {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   const [adjusting, setAdjusting] = useState<StockResponse | null>(null);
+  const [sendingAlert, setSendingAlert] = useState(false);
 
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
 
@@ -59,6 +60,23 @@ export function StockListPage() {
   const {
     register, handleSubmit, reset, formState: { errors, isSubmitting },
   } = useForm<AdjustValues>({ resolver: zodResolver(adjustSchema), defaultValues: { quantityChange: '', notes: '' } });
+
+  /** CR-056 §11 - manual trigger, in addition to the daily 8am scheduled digest. Never sent to customers - the shop's own contact number only. */
+  const handleSendLowStockAlert = async () => {
+    setSendingAlert(true);
+    try {
+      const count = await stockService.sendLowStockAlert();
+      if (count > 0) {
+        toast.success(`Low-stock alert sent for ${count} product(s).`);
+      } else {
+        toast.info('No products are currently at or below their reorder level.');
+      }
+    } catch (caught) {
+      toast.error(caught, 'Could not send the low-stock alert.');
+    } finally {
+      setSendingAlert(false);
+    }
+  };
 
   const submitAdjust = handleSubmit(async (values) => {
     if (!adjusting) return;
@@ -78,7 +96,18 @@ export function StockListPage() {
 
   return (
     <>
-      <PageHeader title="Stock" description="Current quantity on hand for every product." />
+      <PageHeader
+        title="Stock"
+        description="Current quantity on hand for every product."
+        actions={
+          hasPermission(PERMISSIONS.INVENTORY_VIEW) ? (
+            <Button variant="outline" loading={sendingAlert} onClick={() => void handleSendLowStockAlert()}>
+              <MessageCircle className="h-4 w-4" />
+              <span className="hidden sm:inline">Send WhatsApp Alert</span>
+            </Button>
+          ) : undefined
+        }
+      />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <SearchInput value={search} onChange={setSearch} placeholder="Product name or code…" />

@@ -22,5 +22,7 @@ public record InvoiceItemResponse(
         /** Authoritative money figure for both types, formatted like every other amount. */
         String discountDisplay,
         /** quantity x unit price, before the discount - what the PDF prints as the struck-through amount. */
-        String lineGrossDisplay
+        String lineGrossDisplay,
+        /** CR-053 backlog item 1. Zero when the shop does not use free quantities. */
+        BigDecimal freeQuantity
 ) {}

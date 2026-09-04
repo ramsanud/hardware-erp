@@ -14,6 +14,16 @@ interface AppChromeContextValue {
   avatarVersion: number;
   /** Null until the first fetch resolves - treat as "unknown yet", not as FREE. */
   subscriptionTier: SubscriptionTier | null;
+  /** CR-053 backlog item 1. False until the first fetch resolves - same "assume off" default every other toggle here uses while unknown. */
+  showPriceHistory: boolean;
+  enableFreeQuantity: boolean;
+  /** CR-053 backlog item 3. Informational only - see TenantBrandResponse's own comment. */
+  tdsEnabled: boolean;
+  tdsRatePercent: number;
+  tcsEnabled: boolean;
+  tcsRatePercent: number;
+  /** CR-053 backlog item 4. */
+  einvoiceEnabled: boolean;
   /** Called by ShopSettingsPage after a save or logo change, so the Sidebar reflects it without a page reload. */
   refreshBrand: () => Promise<void>;
   bumpAvatarVersion: () => void;
@@ -34,6 +44,13 @@ export function AppChromeProvider({ children }: { children: ReactNode }) {
   const [logoVersion, setLogoVersion] = useState(0);
   const [avatarVersion, setAvatarVersion] = useState(0);
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier | null>(null);
+  const [showPriceHistory, setShowPriceHistory] = useState(false);
+  const [enableFreeQuantity, setEnableFreeQuantity] = useState(false);
+  const [tdsEnabled, setTdsEnabled] = useState(false);
+  const [tdsRatePercent, setTdsRatePercent] = useState(0);
+  const [tcsEnabled, setTcsEnabled] = useState(false);
+  const [tcsRatePercent, setTcsRatePercent] = useState(0);
+  const [einvoiceEnabled, setEinvoiceEnabled] = useState(false);
 
   const refreshBrand = useCallback(async () => {
     try {
@@ -41,6 +58,13 @@ export function AppChromeProvider({ children }: { children: ReactNode }) {
       setBrandName(brand.name);
       setHasLogo(brand.hasLogo);
       setSubscriptionTier(brand.subscriptionTier);
+      setShowPriceHistory(brand.showPriceHistory);
+      setEnableFreeQuantity(brand.enableFreeQuantity);
+      setTdsEnabled(brand.tdsEnabled);
+      setTdsRatePercent(brand.tdsRatePercent);
+      setTcsEnabled(brand.tcsEnabled);
+      setTcsRatePercent(brand.tcsRatePercent);
+      setEinvoiceEnabled(brand.einvoiceEnabled);
     } catch {
       // falls back to the static APP_NAME shown by SidebarBrand
     }
@@ -53,9 +77,13 @@ export function AppChromeProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppChromeContextValue>(
     () => ({
-      brandName, hasLogo, logoVersion, avatarVersion, subscriptionTier, refreshBrand, bumpAvatarVersion,
+      brandName, hasLogo, logoVersion, avatarVersion, subscriptionTier,
+      showPriceHistory, enableFreeQuantity, tdsEnabled, tdsRatePercent, tcsEnabled, tcsRatePercent,
+      einvoiceEnabled, refreshBrand, bumpAvatarVersion,
     }),
-    [brandName, hasLogo, logoVersion, avatarVersion, subscriptionTier, refreshBrand, bumpAvatarVersion],
+    [brandName, hasLogo, logoVersion, avatarVersion, subscriptionTier,
+      showPriceHistory, enableFreeQuantity, tdsEnabled, tdsRatePercent, tcsEnabled, tcsRatePercent,
+      einvoiceEnabled, refreshBrand, bumpAvatarVersion],
   );
 
   return <AppChromeContext.Provider value={value}>{children}</AppChromeContext.Provider>;

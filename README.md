@@ -58,6 +58,36 @@ that environment is allowed to disclose.
 > automated suite and the QA deployment are the same environment conceptually,
 > and only one of them is ever loaded at a time.
 
+### Deployment mode — hosted or self-hosted (CR-059)
+
+Orthogonal to the four profiles above. A profile says *which environment*;
+the deployment mode says *whose infrastructure*:
+
+| Mode | Activated with | Database | Billing |
+|---|---|---|---|
+| `CLOUD` | `SPRING_PROFILES_ACTIVE=prod,cloud` | managed PostgreSQL (Supabase) | live |
+| `SELF_HOSTED` | `SPRING_PROFILES_ACTIVE=prod,selfhosted` | a container on the client's machine | off — they bought it outright |
+
+Both layer **on top of** `prod`, never instead of it: self-hosting on the
+client's own hardware relaxes none of `prod`'s security posture.
+
+A whole self-hosted installation, for a shop that will not use a hosted
+service, is one command:
+
+```bash
+cp .env.selfhosted.example .env    # fill in 5 required values
+docker compose -f docker-compose.selfhosted.yml up -d
+```
+
+That starts PostgreSQL, the API and the frontend together; only the web
+port is published. `docs/DEPLOYMENT_MODES.md` is the full guide.
+
+**Supabase here is a managed PostgreSQL endpoint and nothing more** — no
+Supabase SDK, Auth or Storage exists in this codebase, so switching
+managed database provider is a change of `DB_HOST`. `DeploymentModeGuard`
+refuses to boot on an incoherent combination, above all a `SELF_HOSTED`
+process pointed at the hosted SaaS database.
+
 ### Configuration
 
 Every secret comes from the environment. Copy `.env.example` to `.env` and fill

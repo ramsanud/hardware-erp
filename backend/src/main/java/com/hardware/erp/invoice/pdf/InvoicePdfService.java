@@ -6,6 +6,8 @@ import com.hardware.erp.common.util.IndianStates;
 import com.hardware.erp.customer.entity.Customer;
 import com.hardware.erp.invoice.entity.Invoice;
 import com.hardware.erp.invoice.entity.InvoiceItem;
+import com.hardware.erp.product.entity.ProductImage;
+import com.hardware.erp.product.repository.ProductImageRepository;
 import com.hardware.erp.tenant.entity.InvoiceTheme;
 import com.hardware.erp.tenant.entity.Tenant;
 import com.hardware.erp.tenant.entity.TenantBankAccount;
@@ -14,6 +16,7 @@ import com.hardware.erp.tenant.entity.TenantLogo;
 import com.hardware.erp.tenant.entity.TenantSignature;
 import com.hardware.erp.tenant.entity.TenantUpiQr;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
@@ -23,6 +26,8 @@ import java.math.RoundingMode;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Builds a multi-page GST tax invoice as HTML and renders it to PDF
@@ -39,9 +44,14 @@ import java.util.List;
  * threshold would not.
  */
 @Service
+@RequiredArgsConstructor
 public class InvoicePdfService {
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("hh:mm a");
+
+    /** Only touched when Tenant.showItemImage is on - see buildHtml()'s image lookup. */
+    private final ProductImageRepository productImageRepository;
 
     public byte[] render(Invoice invoice, Tenant tenant) {
         return render(invoice, tenant, null, null, null);
@@ -88,6 +98,16 @@ public class InvoicePdfService {
         // owes two different figures, and "GST ₹1,234" does not tell the buyer
         // or the auditor which is which.
         java.util.Map<java.math.BigDecimal, long[]> taxByRate = new java.util.TreeMap<>();
+
+        // CR-053 backlog item 1. One batch lookup for the whole invoice, not
+        // one query per line - only actually runs when the toggle is on.
+        boolean showImage = tenant.isShowItemImage();
+        Map<Long, ProductImage> imagesByProductId = showImage
+                ? productImageRepository.findAllById(invoice.getItems().stream()
+                        .map(i -> i.getProduct().getId()).collect(Collectors.toSet()))
+                    .stream().collect(Collectors.toMap(ProductImage::getProductId, i -> i))
+                : Map.of();
+
         for (InvoiceItem item : invoice.getItems()) {
             String hsn = item.getProduct() != null && item.getProduct().getHsnCode() != null
                     ? item.getProduct().getHsnCode() : "-";
@@ -105,11 +125,12 @@ public class InvoicePdfService {
             bucket[2] += lineIgst;
 
             rows.append("<tr>")
+                    .append(showImage ? imageCell(imagesByProductId.get(item.getProduct().getId())) : "")
                     .append(textCell(String.valueOf(serial++)))
-                    .append(textCell(escape(item.getProductNameSnapshot())))
+                    .append(textCell(itemNameCell(item, tenant)))
                     .append(textCell(escape(hsn)))
                     .append(textCell(escape(item.getUnit())))
-                    .append(cell(item.getQuantity().stripTrailingZeros().toPlainString()))
+                    .append(quantityCell(item))
                     .append(cell(IndianCurrencyFormat.rupees(item.getUnitPricePaise())))
                     // CR-047. Taxable Value below is already NET of this
                     // discount, so this column is disclosure only - it never
@@ -188,7 +209,9 @@ public class InvoicePdfService {
             + "    <td style=\"width:4%\"></td>\n"
             + "    <td class=\"box\">\n"
             + "      <div><b>Invoice No:</b> " + escape(invoice.getInvoiceNumber()) + "</div>\n"
-            + "      <div><b>Invoice Date:</b> " + invoice.getInvoiceDate().format(DATE_FORMAT) + "</div>\n"
+            + "      <div><b>Invoice Date:</b> " + invoice.getInvoiceDate().format(DATE_FORMAT)
+            + (tenant.isShowInvoiceTime() && invoice.getCreatedAt() != null
+                ? " " + invoice.getCreatedAt().toLocalTime().format(TIME_FORMAT) : "") + "</div>\n"
             + "      <div><b>Place of Supply:</b> " + escape(orNotSet(IndianStates.nameOrCode(customer.getStateCode()))) + "</div>\n"
             + "      <div><b>Country of Supply:</b> India</div>\n"
             + "    </td>\n"
@@ -196,6 +219,7 @@ public class InvoicePdfService {
             + (hasShipment ? shipmentBlock(invoice) : "")
             + "  <table class=\"items\">\n"
             + "    <thead><tr>\n"
+            + (showImage ? "      <th>Img</th>\n" : "")
             + "      <th>#</th><th>Item Description</th><th>HSN/SAC</th><th>UQC</th><th class=\"num\">Qty</th>\n"
             + "      <th class=\"num\">Rate</th><th class=\"num\">Disc.</th><th class=\"num\">Taxable Value</th>\n"
             + "      <th class=\"num\">CGST</th><th class=\"num\">SGST</th><th class=\"num\">IGST</th><th class=\"num\">Total</th>\n"
@@ -276,6 +300,16 @@ public class InvoicePdfService {
             // The rate sits above the amount in each tax cell - smaller and
             // grey, so the money still reads first.
             + "  .taxrate { font-size: 7pt; color: #667085; }\n"
+            // CR-053 backlog item 1. Same treatment as .taxrate - a sub-line
+            // under the main cell value, small and grey, never competing
+            // with it for attention.
+            + "  .item-desc { font-size: 7pt; color: #667085; }\n"
+            // openhtmltopdf does not support object-fit (confirmed via a
+            // console warning during rendering) - max-height/max-width, the
+            // same approach .logo and .signature-img already use elsewhere
+            // in this stylesheet, scales without distorting instead.
+            + "  .item-thumb { max-height: 26px; max-width: 26px; border-radius: 2px; }\n"
+            + "  .tagline { font-style: italic; font-size: 9px; color: " + t.titleColor + "; margin-bottom: 2px; }\n"
             + "  table.totals { width: 40%; margin-left: 60%; border-collapse: collapse; margin-top: 6px; }\n"
             + "  table.totals td { padding: 3px 5px; }\n"
             + "  table.totals td.label { text-align: right; color: #555; }\n"
@@ -344,6 +378,9 @@ public class InvoicePdfService {
                     .append(";base64,").append(base64).append("\" alt=\"").append(escape(tenant.getName())).append(" logo\" />\n");
         }
         sb.append("    <h1>").append(escape(tenant.getName())).append("</h1>\n");
+        if (tenant.getInvoiceTagline() != null && !tenant.getInvoiceTagline().isBlank()) {
+            sb.append("    <div class=\"tagline\">").append(escape(tenant.getInvoiceTagline())).append("</div>\n");
+        }
         sb.append("    <div class=\"muted\">").append(addressLines(tenant)).append("</div>\n");
         sb.append("    <div><b>GSTIN:</b> ").append(escape(orNotSet(tenant.getGstNo())))
                 .append("&#160;&#160;&#160;<b>PAN:</b> ").append(escape(orNotSet(tenant.getPanNo()))).append("</div>\n");
@@ -543,6 +580,54 @@ public class InvoicePdfService {
 
     private static String orNotSet(String value) {
         return (value == null || value.isBlank()) ? "Not set" : value;
+    }
+
+    /**
+     * CR-053 backlog item 1. Product name plus optional muted sub-lines -
+     * description and/or the alternate-unit conversion, each only when its
+     * own tenant toggle is on AND the product actually has the data.
+     */
+    private static String itemNameCell(InvoiceItem item, Tenant tenant) {
+        StringBuilder sb = new StringBuilder("<b>").append(escape(item.getProductNameSnapshot())).append("</b>");
+        var product = item.getProduct();
+        if (tenant.isShowItemDescription() && product != null
+                && product.getDescription() != null && !product.getDescription().isBlank()) {
+            sb.append("<br/><span class=\"item-desc\">").append(escape(product.getDescription())).append("</span>");
+        }
+        if (tenant.isShowAlternateUnit() && product != null
+                && product.getAltUnitLabel() != null && product.getAltUnitConversionFactor() != null) {
+            sb.append("<br/><span class=\"item-desc\">1 ").append(escape(product.getAltUnitLabel()))
+                    .append(" = ").append(product.getAltUnitConversionFactor().stripTrailingZeros().toPlainString())
+                    .append(" ").append(escape(item.getUnit())).append("</span>");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * CR-053 backlog item 1. Free units print whenever the line actually has
+     * some - independent of Tenant.enableFreeQuantity, which only gates the
+     * data-entry field. Stock was genuinely deducted for these units, so
+     * hiding them from an already-created invoice would misstate what the
+     * customer received.
+     */
+    private static String quantityCell(InvoiceItem item) {
+        String qty = item.getQuantity().stripTrailingZeros().toPlainString();
+        BigDecimal free = item.getFreeQuantity();
+        if (free == null || free.signum() <= 0) {
+            return cell(qty);
+        }
+        return "<td class=\"num\">" + qty + "<br/><span class=\"item-desc\">+"
+                + free.stripTrailingZeros().toPlainString() + " Free</span></td>";
+    }
+
+    /** CR-053 backlog item 1. Blank cell when the product has no uploaded photo - never a broken image icon. */
+    private static String imageCell(ProductImage image) {
+        if (image == null) {
+            return "<td></td>";
+        }
+        String base64 = Base64.getEncoder().encodeToString(image.getImageData());
+        return "<td><img class=\"item-thumb\" src=\"data:" + image.getContentType()
+                + ";base64," + base64 + "\" alt=\"\" /></td>";
     }
 
     /**

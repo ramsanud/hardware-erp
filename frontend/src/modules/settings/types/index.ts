@@ -29,6 +29,33 @@ export interface TenantSettingsResponse {
   subscriptionTrialExpiresAt?: string | null;
   /** CR-053 phase 1. */
   invoiceTheme: InvoiceTheme;
+
+  /** CR-053 backlog item 1 - "Additional Settings" (myBillBook parity). */
+  showItemDescription: boolean;
+  showAlternateUnit: boolean;
+  /** Gates the Price History section on the Product Detail page, not the invoice PDF. */
+  showPriceHistory: boolean;
+  /** Gates whether the "Free Qty" field appears at all on invoice line entry. */
+  enableFreeQuantity: boolean;
+  showInvoiceTime: boolean;
+  showItemImage: boolean;
+  /** Presence is the toggle - blank prints nothing on the invoice. */
+  invoiceTagline?: string | null;
+
+  /** CR-053 backlog item 3. Informational only - never applied to a stored total. */
+  tdsEnabled: boolean;
+  tdsSectionCode?: string | null;
+  tdsRatePercent: number;
+  tcsEnabled: boolean;
+  tcsSectionCode?: string | null;
+  tcsRatePercent: number;
+
+  /** CR-053 backlog item 4. Shows the e-Invoice review section on Invoice detail - generation itself always stays disabled. */
+  einvoiceEnabled: boolean;
+
+  /** CR-053 backlog item 5. Read once a day by the backend's ReminderSchedulerService. */
+  paymentDueReminderEnabled: boolean;
+  lowStockAlertEnabled: boolean;
 }
 
 export type SubscriptionCouponStatus = 'ACTIVE' | 'INACTIVE';
@@ -62,6 +89,48 @@ export interface SubscriptionCouponResponse {
 export interface SubscriptionCouponRedemptionResponse {
   grantedTier: SubscriptionTier;
   trialExpiresAt: string;
+}
+
+// ---------------------------------------------------------------
+// CR-057 phase 9 - Razorpay checkout to move a tenant's own plan up.
+// Mirrors backend/billing/dto/*.java.
+// ---------------------------------------------------------------
+
+export type SubscriptionOrderStatus = 'CREATED' | 'PAID' | 'FAILED' | 'CANCELLED';
+export type SubscriptionPaymentStatus = 'CAPTURED' | 'FAILED';
+export type PaymentSource = 'CLIENT_VERIFY' | 'WEBHOOK';
+
+export interface SubscriptionOrderResponse {
+  orderId: number;
+  razorpayOrderId: string;
+  /** Public key - safe to hand to Razorpay's Checkout.js widget. */
+  razorpayKeyId: string;
+  requestedTier: SubscriptionTier;
+  amountPaise: number;
+  currency: string;
+  status: SubscriptionOrderStatus;
+}
+
+export interface VerifyPaymentRequest {
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+}
+
+export interface SubscriptionPaymentResponse {
+  paymentId: number;
+  orderId: number;
+  requestedTier: SubscriptionTier;
+  amountPaise: number;
+  currency: string;
+  status: SubscriptionPaymentStatus;
+  source: PaymentSource;
+  capturedAt?: string | null;
+}
+
+export interface TenantBillingHistoryResponse {
+  currentTier: SubscriptionTier;
+  payments: SubscriptionPaymentResponse[];
 }
 
 /** CR-031 (Customer 360 §27-40) - usage against the tenant's tier entitlement limits. A limit of -1 means unlimited (MAX tier) - never render it as a 0% bar. */
@@ -128,4 +197,48 @@ export interface TenantSettingsRequest {
   subscriptionTier?: SubscriptionTier | null;
   /** CR-053 phase 1. Null means "leave unchanged", same convention as subscriptionTier above. */
   invoiceTheme?: InvoiceTheme | null;
+
+  /** CR-053 backlog item 1. Unlike invoiceTheme, plain booleans with no "leave unchanged" state - always sent. */
+  showItemDescription: boolean;
+  showAlternateUnit: boolean;
+  showPriceHistory: boolean;
+  enableFreeQuantity: boolean;
+  showInvoiceTime: boolean;
+  showItemImage: boolean;
+  invoiceTagline?: string | null;
+
+  /** CR-053 backlog item 3. */
+  tdsEnabled: boolean;
+  tdsSectionCode?: string | null;
+  tdsRatePercent: number;
+  tcsEnabled: boolean;
+  tcsSectionCode?: string | null;
+  tcsRatePercent: number;
+
+  /** CR-053 backlog item 4. */
+  einvoiceEnabled: boolean;
+
+  /** CR-053 backlog item 5. */
+  paymentDueReminderEnabled: boolean;
+  lowStockAlertEnabled: boolean;
+}
+
+/** Mirrors backend notification/entity/WhatsAppConnectionStatus.java. */
+export type WhatsAppConnectionStatus = 'CONNECTED' | 'DISCONNECTED' | 'NEEDS_ATTENTION';
+
+/** Mirrors backend notification/dto/WhatsAppConnectionResponse.java - never carries an access token. */
+export interface WhatsAppConnectionResponse {
+  connected: boolean;
+  status: WhatsAppConnectionStatus;
+  businessName?: string | null;
+  phoneNumberMasked?: string | null;
+  connectedAt?: string | null;
+  lastVerifiedAt?: string | null;
+}
+
+/** Mirrors backend notification/dto/WhatsAppConnectionRequest.java. */
+export interface WhatsAppConnectionRequest {
+  businessAccountId: string;
+  phoneNumberId: string;
+  accessToken: string;
 }

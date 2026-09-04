@@ -11,6 +11,16 @@ public interface ActivityLogRepository extends JpaRepository<ActivityLog, Long> 
     Page<ActivityLog> findByEntityTypeAndEntityIdOrderByCreatedAtDesc(
             String entityType, Long entityId, Pageable pageable);
 
+    /**
+     * CR-053 backlog item 6 (per-user activity feed). activity_log carries
+     * no tenant_id of its own (a pre-existing gap, not introduced here -
+     * see SECURITY_REGISTRY.md) - safe here only because the caller
+     * verifies userId belongs to its own tenant before ever reaching this
+     * query (see UserActivityService). Never expose this repository method
+     * behind an endpoint that takes an unverified userId directly.
+     */
+    Page<ActivityLog> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
+
     @Query("""
            select a from ActivityLog a
            where (:moduleCode is null or a.moduleCode = :moduleCode)

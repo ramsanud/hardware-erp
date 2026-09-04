@@ -3,6 +3,11 @@ package com.hardware.erp.support;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hardware.erp.auth.dto.LoginRequest;
+import com.hardware.erp.auth.dto.MfaTokenRequest;
+import com.hardware.erp.auth.dto.MfaVerifyRequest;
+import com.hardware.erp.auth.entity.User;
+import com.hardware.erp.auth.repository.UserRepository;
+import com.hardware.erp.security.totp.TotpService;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -67,6 +72,8 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired protected MockMvc mockMvc;
     @Autowired protected ObjectMapper objectMapper;
+    @Autowired protected TotpService totpService;
+    @Autowired protected UserRepository userRepository;
 
     @BeforeEach
     void resetSecurityContext() {
@@ -81,13 +88,53 @@ public abstract class AbstractIntegrationTest {
         return objectMapper.readTree(body);
     }
 
-    /** Full login, returning the parsed data node so tests can pull either token. */
+    /**
+     * Full login, transparently completing the CR-058 mandatory-MFA
+     * challenge, and returning the parsed final-session data node so every
+     * existing caller (accessToken/bearer, or a test reading refreshToken)
+     * keeps working unchanged against the new two-step contract.
+     *
+     * Every seeded user starts with mfaEnabled=false, so the first call for
+     * a given identifier in a test run enrolls it (the container is reused
+     * across the suite via @ServiceConnection withReuse(true), so a later
+     * call for the same identifier finds mfaEnabled already true and takes
+     * the plain verify path instead).
+     */
     protected JsonNode login(String identifier, String password) throws Exception {
-        String body = mockMvc.perform(post("/v1/auth/login")
+        String challengeBody = mockMvc.perform(post("/v1/auth/login")
                         .contentType(APPLICATION_JSON)
                         .content(json(new LoginRequest(identifier, password))))
                 .andReturn().getResponse().getContentAsString();
-        return tree(body).path("data");
+        JsonNode challenge = tree(challengeBody).path("data");
+        String mfaToken = challenge.path("mfaToken").asText(null);
+        if (mfaToken == null || mfaToken.isBlank()) {
+            // A non-200 login (wrong password, locked, etc.) - let the caller
+            // see the raw error body exactly as before this helper existed.
+            return tree(challengeBody).path("data");
+        }
+
+        if (challenge.path("enrollmentRequired").asBoolean(false)) {
+            String enrollBody = mockMvc.perform(post("/v1/auth/mfa/enroll")
+                            .contentType(APPLICATION_JSON)
+                            .content(json(new MfaTokenRequest(mfaToken))))
+                    .andReturn().getResponse().getContentAsString();
+            String secret = tree(enrollBody).path("data").path("secretBase32").asText();
+            String code = totpService.currentCode(secret);
+
+            String confirmBody = mockMvc.perform(post("/v1/auth/mfa/enroll/confirm")
+                            .contentType(APPLICATION_JSON)
+                            .content(json(new MfaVerifyRequest(mfaToken, code))))
+                    .andReturn().getResponse().getContentAsString();
+            return tree(confirmBody).path("data").path("session");
+        }
+
+        User user = userRepository.findByIdentifier(identifier).orElseThrow();
+        String code = totpService.currentCode(user.getTotpSecret());
+        String verifyBody = mockMvc.perform(post("/v1/auth/mfa/verify")
+                        .contentType(APPLICATION_JSON)
+                        .content(json(new MfaVerifyRequest(mfaToken, code))))
+                .andReturn().getResponse().getContentAsString();
+        return tree(verifyBody).path("data");
     }
 
     protected String accessToken(String identifier, String password) throws Exception {

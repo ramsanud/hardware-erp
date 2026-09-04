@@ -72,5 +72,14 @@ public record ProductRequest(
 
         @Schema(example = "ACTIVE")
         @NotNull(message = "Status is required")
-        ProductStatus status
+        ProductStatus status,
+
+        @Schema(description = "CR-053 backlog item 1. Secondary unit label, e.g. \"BOX\" - null if this product has no alternate unit.",
+                example = "BOX")
+        @Size(max = 30) String altUnitLabel,
+
+        @Schema(description = "How many of `unit` make one `altUnitLabel`, e.g. 12 for \"1 BOX = 12 PCS\". Must be set together with altUnitLabel or not at all.",
+                example = "12")
+        @DecimalMin(value = "0.0001", message = "Alternate unit conversion factor must be greater than zero")
+        BigDecimal altUnitConversionFactor
 ) {}

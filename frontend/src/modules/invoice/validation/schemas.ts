@@ -60,6 +60,8 @@ export interface InvoiceLineDraft {
    * as its own line on a customer document.
    */
   labourPercent: number;
+  /** CR-053 backlog item 1. Bonus units given free - never priced (see priceDraftLine below), only ever shown/sent when the shop has turned this on. */
+  freeQuantity: number;
 }
 
 /**

@@ -24,5 +24,8 @@ public record RateLimitProperties(
         int refreshPerIpPerMinute,
 
         /** New tenant signups per IP per hour (CR-028) - registration creates a tenant + owner account, a far heavier action than a login attempt. */
-        int registerPerIpPerHour
+        int registerPerIpPerHour,
+
+        /** Platform Admin Console login attempts per IP per minute (CR-054). */
+        int platformAdminLoginPerIpPerMinute
 ) {}

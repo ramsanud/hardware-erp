@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MoreHorizontal, Pencil, Users, UserPlus } from 'lucide-react';
+import { MoreHorizontal, Pencil, UserCheck, Users, UserPlus, UserX } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Card } from '@/shared/components/ui/card';
 import {
@@ -97,6 +97,21 @@ export function CustomerListPage() {
     }
   };
 
+  /**
+   * CR-058. Customer has no soft delete, so reactivating is a plain status
+   * change and, like Worker's Reactivate, acts immediately: there is nothing
+   * destructive to confirm.
+   */
+  const handleActivate = async (customer: CustomerSummaryResponse) => {
+    try {
+      await customerService.activate(customer.id);
+      toast.success(`${customer.customerName} reactivated.`);
+      await reload();
+    } catch (caught) {
+      toast.error(caught, 'Could not reactivate this customer.');
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -176,9 +191,17 @@ export function CustomerListPage() {
                                 <Pencil className="h-4 w-4" />
                                 Edit
                               </DropdownMenuItem>
-                              <DropdownMenuItem destructive onClick={() => setDeactivating(row)}>
-                                Deactivate
-                              </DropdownMenuItem>
+                              {row.status === 'ACTIVE' ? (
+                                <DropdownMenuItem destructive onClick={() => setDeactivating(row)}>
+                                  <UserX className="h-4 w-4" />
+                                  Deactivate
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem onClick={() => handleActivate(row)}>
+                                  <UserCheck className="h-4 w-4" />
+                                  Reactivate
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </PermissionGate>

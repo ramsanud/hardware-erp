@@ -469,3 +469,165 @@ unchanged, same convention `subscriptionTier` already uses on this DTO.
 `GET /v1/settings` echoes the current value back. `GET /v1/invoices/{id}/pdf`
 is unchanged in shape — it now simply renders using whichever theme the
 tenant has set.
+
+---
+
+## CR-054 phase 1 — Platform Admin Console: identity & auth
+
+A completely separate base path, `/v1/platform-admin/**`, matched by its
+own `@Order(0)` Spring Security filter chain (`PlatformAdminSecurityConfig`)
+before the tenant chain ever sees the request. A tenant access token is
+refused here and a platform-admin access token is refused on every
+`/v1/auth/**` path — both directions live-verified in
+`PlatformAdminAuthControllerIT`, not assumed from the code.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/v1/platform-admin/auth/login` | public | body `{email, password}`. Never returns a session — returns a short-lived `mfaToken` + `enrollmentRequired`. Rate limited per IP (`PLATFORM_ADMIN_LOGIN_PER_IP`, 10/min). Identical response for unknown email, wrong password, and a locked/inactive account. |
+| POST | `/v1/platform-admin/auth/mfa/verify` | `mfaToken` in body | 6-digit TOTP code or a 10-digit backup code. Exchanges the challenge for a real session. |
+| POST | `/v1/platform-admin/auth/mfa/enroll` | `mfaToken` in body | Only for an account with `enrollmentRequired: true`. Generates a new TOTP secret (stored encrypted, `mfaEnabled` stays false) and returns `{otpAuthUri, qrCodePngBase64, secretBase32}`. Calling again before confirming replaces the pending secret. |
+| POST | `/v1/platform-admin/auth/mfa/enroll/confirm` | `mfaToken` in body | Proves the code was captured. On success: `mfaEnabled` flips true, 10 backup codes are issued (shown once, in the response), and a real session is returned immediately. |
+| POST | `/v1/platform-admin/auth/refresh` | refresh token in body | No HttpOnly-cookie transport in Phase 1 — the raw refresh token travels in the JSON body both ways. Rotation + reuse detection mirrors `/v1/auth/refresh` exactly. |
+| POST | `/v1/platform-admin/auth/logout` | authenticated | This device/token only. |
+| POST | `/v1/platform-admin/auth/logout-all` | authenticated | All sessions, bumps `token_version`. |
+| GET | `/v1/platform-admin/auth/me` | authenticated | Identity + role + effective permissions from the security context. |
+| POST | `/v1/platform-admin/admins` | `PLATFORM_ADMIN_MANAGE` (SUPER_ADMIN only) | Creates another platform admin. Starts with `mfaEnabled: false` — enrolls on its own first login, same as every account. |
+| GET | `/v1/platform-admin/admins` | `PLATFORM_ADMIN_MANAGE` (SUPER_ADMIN only) | Lists all platform admin accounts. |
+
+No tenant-facing endpoint changed. No endpoint here accepts or reads a
+`tenant_id` in any form.
+
+## CR-056 — Tenant-owned WhatsApp Business API integration
+
+Every endpoint below resolves the tenant from
+`SecurityUtils.requireCurrentTenantId()` (JWT-derived) - none accepts a
+`tenantId`/`phoneNumberId`/`connectionId` in the request. See
+`WhatsAppConnectionSecurityIT` for the cross-tenant proof.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/settings/whatsapp` | `SETTINGS_VIEW` | Connection status for the caller's own tenant only. Never returns the access token. |
+| POST | `/v1/settings/whatsapp/connect` | `SETTINGS_MANAGE` | Body: `businessAccountId`, `phoneNumberId`, `accessToken` (the tenant's own, obtained from their own Meta Business Manager - phase 1 manual entry, not OAuth). Verifies live against Meta's Graph API before saving; 409 if `phoneNumberId` already belongs to another tenant. |
+| POST | `/v1/settings/whatsapp/disconnect` | `SETTINGS_MANAGE` | Keeps the row (business name/phone/history), revokes the stored token, marks `DISCONNECTED`. |
+| POST | `/v1/settings/whatsapp/test-send` | `SETTINGS_MANAGE` | Body: `toMobileNo`. Throws immediately (never a fake success) if not connected. |
+| POST | `/v1/invoices/{id}/share/whatsapp` | `INVOICE_VIEW` | Manual resend of the invoice-created message, distinct from the automatic on-create send. |
+| POST | `/v1/invoices/{id}/payments/{paymentId}/share/whatsapp` | `PAYMENT_MANAGE` | Manual only - no auto-send toggle exists, so "do not automatically send" is satisfied by this never firing on its own. |
+| POST | `/v1/invoices/{id}/remind` | `INVOICE_VIEW` | Pre-existing (Task 05 / superseded CR-055) - now sends through the tenant's own connection instead of a shared one. |
+| POST | `/v1/inventory/low-stock/send-alert` | `INVENTORY_VIEW` | Manual trigger for the same digest `ReminderSchedulerService` already sends daily at 8am - to the shop's own contact number, never a customer. |
+| GET | `/v1/notifications/log` | `SETTINGS_VIEW` | Pre-existing, gained an optional `channel` query param for the Message History page. |
+| GET / POST | `/v1/webhooks/whatsapp` | public, self-verified | Meta's one callback URL for this whole app. GET is the one-time `hub.verify_token` handshake; POST is inbound delivery-status events, HMAC-verified (`X-Hub-Signature-256` against `WHATSAPP_APP_SECRET`), routed to a tenant by `phone_number_id`, idempotent (only advances a `notification_log` row's status forward). See `WhatsAppWebhookController`'s own javadoc for the real limitation this carries for a tenant connected through a different Meta app than this one's. |
+
+Customer create/update (`POST`/`PUT /v1/customers`) gained an optional
+`whatsappOptIn` field, defaulting to `true` when omitted.
+
+## CR-057 phase 9 — Subscriptions & Billing
+
+Tenant-side endpoints resolve the tenant from `SecurityUtils.requireCurrentTenantId()` only - no request accepts a `tenantId`.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/v1/billing/checkout` | `SETTINGS_MANAGE` | Body: `requestedTier`. Creates a real Razorpay order for the caller's own tenant; `503 BILLING_NOT_CONFIGURED` if no gateway credentials are set. Rejects `FREE` (nothing to buy). |
+| POST | `/v1/billing/verify` | `SETTINGS_MANAGE` | Body: `razorpayOrderId`/`razorpayPaymentId`/`razorpaySignature` - Razorpay Checkout's own callback shape. Applies the tier upgrade only on a genuine HMAC match against `key_secret`; `400 PAYMENT_SIGNATURE_INVALID` otherwise. |
+| GET | `/v1/billing/history` | `SETTINGS_VIEW` | Current tier + this tenant's own payment history only. |
+| POST | `/v1/webhooks/razorpay` | public, self-verified | Inbound Razorpay webhook - authenticity is the `X-Razorpay-Signature` HMAC against the webhook secret inside `SubscriptionBillingService`, not Spring Security (same pattern as `/v1/webhooks/whatsapp`). Idempotent via `UNIQUE(razorpay_payment_id)`. |
+| GET | `/v1/platform-admin/billing/overview` | `BILLING_VIEW` | Cross-tenant revenue chart data - last 12 months, aggregated server-side, never raw payment rows. |
+| GET | `/v1/platform-admin/billing/tenants/{tenantId}` | `BILLING_VIEW` | One tenant's current plan + payment history, for the Tenant Detail page. |
+
+`PUT /v1/settings` — `subscriptionTier` in the request body now rejects a
+self-declared *upgrade* with `422 UPGRADE_REQUIRES_CHECKOUT` once Razorpay
+billing is configured (a downgrade, including to `FREE`, still applies
+freely in both cases). Unchanged with no gateway configured. See
+`CHANGE_REQUEST_REGISTRY.md`'s CR-057 phase 9 entry.
+
+## CR-057 phase 10 — Tenant Analytics
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/platform-admin/analytics/overview` | `ANALYTICS_VIEW` | 12 months of growth (new tenants/users, real distinct-login active-user count) and churn, plus a module-adoption snapshot - all aggregated server-side. |
+| GET | `/v1/platform-admin/analytics/export?format=csv\|xlsx\|pdf` | `ANALYTICS_EXPORT` | Same data as `overview()`, rendered as a file - never disagrees with the on-screen charts. |
+
+## CR-057 phase 11 — Backup Center
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/platform-admin/tenants/{id}/backups` | `BACKUP_VIEW` | Export history for one tenant - who exported what, when, success/failure. |
+| POST | `/v1/platform-admin/tenants/{id}/backups?format=JSON\|CSV` | `BACKUP_MANAGE` | Generates and downloads a fresh export of the tenant's core data; logs the attempt either way. Never stores the file itself. |
+
+## CR-057 phase 12 — Platform Settings (Razorpay)
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/platform-admin/settings/razorpay` | `BILLING_VIEW` | Current config - `keySecretConfigured`/`webhookSecretConfigured` booleans only, never the secret itself. `source` names whether the database row or the `RAZORPAY_*` env vars are actually in force. |
+| PUT | `/v1/platform-admin/settings/razorpay` | `BILLING_MANAGE` | Body: `enabled`, `keyId`, `keySecret`/`webhookSecret` (omitted = leave unchanged, `""` = clear), `proPlanAmountPaise`, `maxPlanAmountPaise`. Audited (`PLATFORM_SETTING_UPDATED`).
+
+## CR-058 — Deleted-record recovery (Supplier / Product / User) and Customer reactivation
+
+| Method | Path | Permission | Success |
+|---|---|---|---|
+| GET | `/v1/suppliers/deleted` | SUPPLIER_MANAGE | 200 |
+| POST | `/v1/suppliers/{id}/restore` | SUPPLIER_MANAGE | 204 |
+| GET | `/v1/products/deleted` | PRODUCT_MANAGE | 200 |
+| POST | `/v1/products/{id}/restore` | PRODUCT_MANAGE | 204 |
+| GET | `/v1/users/deleted` | USER_MANAGE | 200 |
+| POST | `/v1/users/{id}/restore` | USER_MANAGE | 204 |
+| POST | `/v1/customers/{id}/activate` | CUSTOMER_MANAGE | 204 |
+
+**Permission choice.** All three deleted-record endpoints are gated on the
+module's `_MANAGE` permission, not `_VIEW`. Only someone who can restore a
+record has a reason to see the deleted list, and the list itself discloses
+that a record was deleted and when. No new permission was introduced —
+`_MANAGE` was already the correct authorization boundary. `POST
+/v1/customers/{id}/activate` matches the `CUSTOMER_MANAGE` its existing
+`DELETE` counterpart already requires.
+
+**Response shape.** The three `/deleted` endpoints return an unpaginated
+`ApiResponse<List<…DeletedResponse>>` — a shop's deleted list is short by
+nature, and paginating it would imply a search surface that deliberately does
+not exist. Each row carries identification plus `deletedAt`, and nothing else:
+`SupplierDeletedResponse` omits credit limit/GST/bank details,
+`ProductDeletedResponse` omits every price (cost and selling alike), and
+`UserDeletedResponse` omits all security state, exactly as `UserResponse`
+does. The four action endpoints return **204** with no body, matching the
+established `POST /v1/workers/{id}/activate` convention.
+
+**404 semantics, deliberately uniform.** Restore is one guarded `UPDATE …
+WHERE <pk> = ? AND tenant_id = ? AND deleted_at IS NOT NULL`. A row belonging
+to another tenant, a row that was never deleted, and an id that does not exist
+all update zero rows and all return `404 NOT_FOUND` — indistinguishable, so
+restore cannot be used to probe which records exist at other shops. A second
+restore of an already-restored row is therefore also 404, not a silent
+success. Cross-tenant access is never `403`, matching CR-016's rule across
+the codebase.
+
+**Route precedence.** `/deleted` is a literal segment and takes precedence
+over `/{id}` under Spring's most-specific-pattern matching — the same way
+`/v1/suppliers/cities` already coexists with `/v1/suppliers/{id}`. No existing
+route changed.
+
+**Customer has no `/deleted` endpoint, by design.** `customer` carries no
+`deleted_at` and no `@SQLRestriction`, so an INACTIVE customer was never
+hidden and there is nothing to recover — see the CR-058 entry in
+`CHANGE_REQUEST_REGISTRY.md`. |
+
+## CR-059 — Deployment mode (hosted SaaS vs self-hosted Docker)
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/v1/deployment-config` | public (permitAll) | Which installation this is: `{mode, selfHosted, billingEnabled, installationName}`. Public for the same reason `/v1/auth/captcha-config` is — the app shell renders before anyone signs in, and a self-hosted install must not flash a billing prompt while the session loads. Deliberately serves **no** host, credential, provider key or version string. |
+
+**Effect on the CR-057 phase 9 billing endpoints above.** On a self-hosted
+installation (`app.deployment.mode=SELF_HOSTED`, and `billing-enabled` not
+forced true):
+
+- `POST /v1/billing/checkout` and `POST /v1/billing/verify` return
+  **`503 BILLING_NOT_APPLICABLE`** — distinct from `BILLING_NOT_CONFIGURED`,
+  which means "this deployment does bill but has no Razorpay keys". The
+  client bought the software outright; there is nothing to subscribe to.
+- `POST /v1/webhooks/razorpay` rejects before parsing the body. It is
+  `permitAll` by design, so on a self-hosted box it is otherwise an
+  internet-reachable path for a feature that install does not have.
+- `GET /v1/billing/history` still works and simply returns nothing.
+- `GET /v1/settings/usage` reports every limit as `-1` (UNLIMITED), because
+  `EntitlementService` enforces no tier cap on a self-hosted install — the
+  summary must describe what is actually enforced, not a ceiling that is
+  never applied.

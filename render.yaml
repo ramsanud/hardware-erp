@@ -31,8 +31,14 @@ services:
     healthCheckPath: /api/actuator/health
 
     envVars:
+      # 'prod' owns the security posture; 'cloud' adds what is specific to a
+      # managed database (CR-059): sslmode=require, pooler-shaped connection
+      # defaults, a Hikari pool sized for a pooler rather than for a local
+      # PostgreSQL, and cookie-secure pinned true. Without ',cloud' this
+      # deploys but connects with the driver's default sslmode and a pool
+      # sized for a local database.
       - key: SPRING_PROFILES_ACTIVE
-        value: prod
+        value: prod,cloud
 
       # ---- database (Supabase) -------------------------------------------
       # Use the SESSION pooler, not the transaction pooler. Transaction-mode
@@ -57,6 +63,18 @@ services:
       # JwtSecretGuard refuses to start on the built-in placeholder, so a
       # missing value fails the deploy loudly instead of shipping a known key.
       - key: JWT_SECRET
+        generateValue: true
+
+      # The Platform Admin Console signs with its own key and its own issuer
+      # (CR-054). This was MISSING here until 2026-09-04, which meant a deploy
+      # from this blueprint fell back to the placeholder committed in
+      # application.yml - anyone with the source could forge a platform-admin
+      # session and reach tenant management, data export and billing for every
+      # shop. JwtSecretGuard now refuses to start on that placeholder, and also
+      # refuses if this ends up equal to JWT_SECRET; generateValue gives each a
+      # separate random value, which is exactly what the two trust boundaries
+      # require.
+      - key: PLATFORM_ADMIN_JWT_SECRET
         generateValue: true
 
       - key: COOKIE_SECURE
@@ -103,7 +121,10 @@ services:
       # Free Postgres tiers cap connections tightly and this app is one
       # instance - 20 (the application-prod.yml default) is more than the
       # free pooler will grant.
-      - key: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE
+      # application-cloud.yml reads this (default 10). Setting the Spring
+      # property directly also works, but going through one documented knob
+      # keeps the pool size in a single place per CR-059.
+      - key: DB_POOL_SIZE
         value: "5"
 
       # Free instances are memory-capped at 512MB. Without this the JVM sizes

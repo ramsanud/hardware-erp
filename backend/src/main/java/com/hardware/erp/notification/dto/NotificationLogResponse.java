@@ -17,5 +17,7 @@ public record NotificationLogResponse(
         @Schema(example = "LOGGED_ONLY") NotificationStatus status,
         @Schema(example = "INVOICE") String relatedEntityType,
         @Schema(example = "42") Long relatedEntityId,
+        @Schema(description = "The provider's own message id on a real send (e.g. WhatsApp's wamid). Null for LOGGED_ONLY/FAILED.", example = "wamid.HBgLOTE5ODc2NTAwMDAxFQIAERgSNzY2RjQ4RTdBRUY0RjNCQzk1AA==")
+        String providerMessageId,
         @Schema(example = "2026-08-22T09:14:22.331") LocalDateTime createdAt
 ) {}

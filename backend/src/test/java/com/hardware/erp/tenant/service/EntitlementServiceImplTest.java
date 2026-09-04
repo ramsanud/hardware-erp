@@ -6,6 +6,8 @@ import com.hardware.erp.auth.entity.User;
 import com.hardware.erp.auth.entity.UserStatus;
 import com.hardware.erp.auth.repository.UserRepository;
 import com.hardware.erp.common.exception.BusinessException;
+import com.hardware.erp.config.DeploymentMode;
+import com.hardware.erp.config.DeploymentProperties;
 import com.hardware.erp.customer.entity.CustomerStatus;
 import com.hardware.erp.customer.repository.CustomerRepository;
 import com.hardware.erp.product.entity.ProductStatus;
@@ -55,10 +57,22 @@ class EntitlementServiceImplTest {
 
     private EntitlementServiceImpl entitlementService;
 
+    /** CR-059 - the hosted deployment, where tier limits apply. What every pre-CR-059 test assumed. */
+    private static final DeploymentProperties CLOUD_DEPLOYMENT =
+            new DeploymentProperties(DeploymentMode.CLOUD, "", null);
+
+    /** CR-059 - a client's own Docker install: bought outright, so no caps. */
+    private static final DeploymentProperties SELF_HOSTED_DEPLOYMENT =
+            new DeploymentProperties(DeploymentMode.SELF_HOSTED, "", null);
+
+    private EntitlementServiceImpl entitlementServiceFor(DeploymentProperties deployment) {
+        return new EntitlementServiceImpl(
+                deployment, subscriptionService, userRepository, customerRepository, supplierRepository, productRepository);
+    }
+
     @BeforeEach
     void setUp() {
-        entitlementService = new EntitlementServiceImpl(
-                subscriptionService, userRepository, customerRepository, supplierRepository, productRepository);
+        entitlementService = entitlementServiceFor(CLOUD_DEPLOYMENT);
 
         Tenant tenant = Tenant.builder().id(1L).slug("default").name("Default").status(TenantStatus.ACTIVE).build();
         Role role = Role.builder().id(1L).code("OWNER").name("Owner").systemRole(true)
@@ -141,6 +155,49 @@ class EntitlementServiceImplTest {
             entitlementService.requireCanAddProduct();
             entitlementService.requireCanAddOwner();
         }).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("CR-059 - a self-hosted install enforces no tier limit, however low the tier")
+    void selfHostedIgnoresTierLimits() {
+        // The install ships on FREE unless somebody changes it, and there is
+        // no checkout to reach on a self-hosted box. Without this, the shop
+        // that paid the most would be stopped at its 101st customer and told
+        // to "upgrade the plan in Shop Settings" - a dead end.
+        var selfHosted = entitlementServiceFor(SELF_HOSTED_DEPLOYMENT);
+        when(subscriptionService.currentTier()).thenReturn(SubscriptionTier.FREE);
+        when(customerRepository.countByStatusAndTenantId(CustomerStatus.ACTIVE, 1L)).thenReturn(5_000L);
+        when(supplierRepository.countByStatusAndTenantId(SupplierStatus.ACTIVE, 1L)).thenReturn(5_000L);
+        when(productRepository.countByStatusAndTenantId(ProductStatus.ACTIVE, 1L)).thenReturn(50_000L);
+        when(userRepository.countActiveOwners(1L)).thenReturn(5L);
+
+        assertThatCode(() -> {
+            selfHosted.requireCanAddCustomer();
+            selfHosted.requireCanAddSupplier();
+            selfHosted.requireCanAddProduct();
+            selfHosted.requireCanAddOwner();
+        }).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("CR-059 - a self-hosted usageSummary reports UNLIMITED, not a cap it will never enforce")
+    void selfHostedUsageSummaryReportsUnlimited() {
+        var selfHosted = entitlementServiceFor(SELF_HOSTED_DEPLOYMENT);
+        when(subscriptionService.currentTier()).thenReturn(SubscriptionTier.FREE);
+        when(userRepository.countActiveOwners(1L)).thenReturn(2L);
+        when(customerRepository.countByStatusAndTenantId(CustomerStatus.ACTIVE, 1L)).thenReturn(142L);
+        when(supplierRepository.countByStatusAndTenantId(SupplierStatus.ACTIVE, 1L)).thenReturn(7L);
+        when(productRepository.countByStatusAndTenantId(ProductStatus.ACTIVE, 1L)).thenReturn(300L);
+
+        UsageSummaryResponse usage = selfHosted.usageSummary();
+
+        // Real counts stay real - only the ceilings go away, so the Plan usage
+        // card still shows how much data the shop holds.
+        assertThat(usage.customerCount()).isEqualTo(142L);
+        assertThat(usage.maxCustomers()).isEqualTo(SubscriptionTier.UNLIMITED);
+        assertThat(usage.maxSuppliers()).isEqualTo(SubscriptionTier.UNLIMITED);
+        assertThat(usage.maxProducts()).isEqualTo(SubscriptionTier.UNLIMITED);
+        assertThat(usage.maxOwners()).isEqualTo(SubscriptionTier.UNLIMITED);
     }
 
     @Test

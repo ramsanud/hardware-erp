@@ -38,6 +38,18 @@ public class UserMapper {
                 user.getCreatedAt());
     }
 
+    /** CR-058 recycle bin. Identification and the deletion date only - never security state. */
+    public UserDeletedResponse toDeletedResponse(User user) {
+        Role role = user.getRole();
+        return new UserDeletedResponse(
+                user.getId(),
+                user.getFullName(),
+                user.getMobileNo(),
+                user.getEmployeeCode(),
+                role == null ? null : role.getName(),
+                user.getDeletedAt());
+    }
+
     public RoleResponse toRoleResponse(Role role, long userCount) {
         return new RoleResponse(
                 role.getId(),

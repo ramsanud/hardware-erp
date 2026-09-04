@@ -6,7 +6,14 @@ import java.util.List;
 
 public interface AuthService {
 
-    LoginResponse login(LoginRequest request);
+    /** CR-058 - a successful password check never returns a session directly; it returns an MFA challenge. */
+    LoginChallengeResponse login(LoginRequest request);
+
+    MfaEnrollResponse enrollMfa(MfaTokenRequest request);
+
+    MfaConfirmResponse confirmMfaEnroll(MfaVerifyRequest request);
+
+    LoginResponse verifyMfa(MfaVerifyRequest request);
 
     LoginResponse refresh(String rawRefreshToken);
 

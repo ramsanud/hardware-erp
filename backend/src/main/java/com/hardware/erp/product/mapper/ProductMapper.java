@@ -1,6 +1,7 @@
 package com.hardware.erp.product.mapper;
 
 import com.hardware.erp.common.util.IndianCurrencyFormat;
+import com.hardware.erp.product.dto.ProductDeletedResponse;
 import com.hardware.erp.product.dto.ProductResponse;
 import com.hardware.erp.product.dto.ProductSummaryResponse;
 import com.hardware.erp.product.entity.Product;
@@ -41,7 +42,9 @@ public class ProductMapper {
                 product.getStatus(),
                 product.getCreatedAt(),
                 product.getUpdatedAt(),
-                hasImage);
+                hasImage,
+                product.getAltUnitLabel(),
+                product.getAltUnitConversionFactor());
     }
 
     public ProductSummaryResponse toSummary(Product product, boolean hasImage) {
@@ -56,6 +59,17 @@ public class ProductMapper {
                 product.getGstRatePercent() == null ? "0.00" : product.getGstRatePercent().toPlainString(),
                 product.getStatus(),
                 hasImage);
+    }
+
+    /** CR-058 recycle bin. Identification and the deletion date only - no prices. */
+    public ProductDeletedResponse toDeletedResponse(Product product) {
+        return new ProductDeletedResponse(
+                product.getId(),
+                product.getProductCode(),
+                product.getProductName(),
+                product.getCategory() == null ? null : product.getCategory().getCategoryName(),
+                product.getBrand() == null ? null : product.getBrand().getBrandName(),
+                product.getDeletedAt());
     }
 
     /** Paise to a displayable rupee string, Indian grouping. */

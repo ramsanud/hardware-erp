@@ -39,4 +39,8 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
                        @Param("search") String search,
                        @Param("lowStockOnly") boolean lowStockOnly,
                        Pageable pageable);
+
+    /** CR-053 backlog item 5 (low-stock reminder job). Same predicate as search()'s lowStockOnly flag, non-paged for the scheduled job's own use. */
+    @Query("select count(s) from Stock s where s.tenant.id = :tenantId and s.quantityOnHand <= s.product.reorderLevel")
+    long countLowStock(@Param("tenantId") Long tenantId);
 }

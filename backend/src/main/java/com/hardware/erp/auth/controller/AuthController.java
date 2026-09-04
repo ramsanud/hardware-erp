@@ -52,28 +52,24 @@ public class AuthController {
                     inactive account all return the identical 401 response, so the
                     endpoint cannot be used to discover which accounts exist.
 
+                    A correct password never returns a session by itself (CR-058:
+                    MFA is mandatory for every user). It returns an MFA challenge
+                    token instead - `enrollmentRequired=true` routes the frontend to
+                    `/mfa/enroll`, `false` routes it to `/mfa/verify`.
+
                     Five failed attempts lock the account for 15 minutes.
                     Rate limited to 10/min per IP and 5/min per identifier.""")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "200", description = "Signed in",
-                    content = @Content(schema = @Schema(implementation = LoginResponse.class),
+                    responseCode = "200", description = "Password check passed - MFA challenge issued",
+                    content = @Content(schema = @Schema(implementation = LoginChallengeResponse.class),
                             examples = @ExampleObject(name = "Success", value = """
                     {
                       "success": true,
                       "data": {
-                        "accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwidHYiOjB9.sig",
-                        "refreshToken": null,
-                        "tokenType": "Bearer",
-                        "expiresInSeconds": 900,
-                        "mustChangePassword": false,
-                        "user": {
-                          "id": 1, "fullName": "Saravanan M", "mobileNo": "9876543210",
-                          "email": "owner@sarahardware.in", "employeeCode": "EMP001",
-                          "roleId": 1, "roleCode": "OWNER", "roleName": "Owner",
-                          "permissions": ["USER_MANAGE","PRODUCT_VIEW_COST"],
-                          "status": "ACTIVE", "mustChangePassword": false
-                        }
+                        "mfaToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwicHVycG9zZSI6IkxPR0lOIn0.sig",
+                        "enrollmentRequired": false,
+                        "expiresInSeconds": 600
                       },
                       "timestamp": "2026-08-13T09:14:22.331+05:30"
                     }""")))
@@ -105,7 +101,7 @@ public class AuthController {
                     responseCode = "429", description = "Rate limit exceeded",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
-    public ResponseEntity<ApiResponse<LoginResponse>> login(
+    public ResponseEntity<ApiResponse<LoginChallengeResponse>> login(
             @Valid @RequestBody LoginRequest request,
             HttpServletRequest httpRequest,
             HttpServletResponse response) {
@@ -114,7 +110,65 @@ public class AuthController {
         // passwords while failing the challenge. RateLimitFilter already ran.
         captchaService.verify(request.captchaToken(), SecurityUtils.clientIp(httpRequest));
 
-        LoginResponse result = authService.login(request);
+        // CR-058 - a correct password normally issues no session by itself; it
+        // proves the first factor and returns an MFA challenge, with no
+        // refresh-token cookie, because there is no session yet.
+        LoginChallengeResponse result = authService.login(request);
+
+        // CR-060 - unless MFA is switched off, in which case the password was
+        // the only factor and sign-in is already complete. The refresh cookie
+        // must be written here, exactly as /mfa/verify does it: it is the same
+        // session, reached by a shorter path, and the cookie is what carries it
+        // (the body value is masked by the same helper).
+        if (result.isSignedIn()) {
+            cookieService.write(response, result.session().refreshToken());
+            return ResponseEntity.ok(ApiResponse.ok(
+                    LoginChallengeResponse.signedIn(withMaskedRefreshToken(result.session()))));
+        }
+
+        return ResponseEntity.ok(ApiResponse.ok(result));
+    }
+
+    @PostMapping("/mfa/enroll")
+    @Operation(
+            summary = "Begin mandatory MFA enrollment",
+            description = """
+                    Called with the mfaToken from a login response whose
+                    enrollmentRequired is true. Returns a QR code (as a PNG,
+                    base64) and the same secret as manual-entry text, for an
+                    authenticator app that cannot scan a QR code.""")
+    public ResponseEntity<ApiResponse<MfaEnrollResponse>> enrollMfa(
+            @Valid @RequestBody MfaTokenRequest request) {
+        return ResponseEntity.ok(ApiResponse.ok(authService.enrollMfa(request)));
+    }
+
+    @PostMapping("/mfa/enroll/confirm")
+    @Operation(
+            summary = "Confirm MFA enrollment with a code from the authenticator app",
+            description = """
+                    Confirms the secret returned by /mfa/enroll is really
+                    loaded into the user's authenticator app, then signs the
+                    user in and returns ten one-time recovery codes - shown
+                    exactly once, here.""")
+    public ResponseEntity<ApiResponse<MfaConfirmResponse>> confirmMfaEnroll(
+            @Valid @RequestBody MfaVerifyRequest request,
+            HttpServletResponse response) {
+        MfaConfirmResponse result = authService.confirmMfaEnroll(request);
+        cookieService.write(response, result.session().refreshToken());
+        return ResponseEntity.ok(ApiResponse.ok(
+                new MfaConfirmResponse(withMaskedRefreshToken(result.session()), result.backupCodes())));
+    }
+
+    @PostMapping("/mfa/verify")
+    @Operation(
+            summary = "Complete sign-in with a TOTP or backup code",
+            description = "Called with the mfaToken from a login response whose "
+                        + "enrollmentRequired is false. Accepts either a live "
+                        + "6-digit authenticator code or a one-time backup code.")
+    public ResponseEntity<ApiResponse<LoginResponse>> verifyMfa(
+            @Valid @RequestBody MfaVerifyRequest request,
+            HttpServletResponse response) {
+        LoginResponse result = authService.verifyMfa(request);
         cookieService.write(response, result.refreshToken());
         return ResponseEntity.ok(ApiResponse.ok(withMaskedRefreshToken(result)));
     }

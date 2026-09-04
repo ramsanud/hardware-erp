@@ -26,7 +26,7 @@ class JwtServiceTest {
 
     @BeforeEach
     void setUp() {
-        jwtService = new JwtService(new JwtProperties(SECRET, "hardware-erp", 15, 7));
+        jwtService = new JwtService(new JwtProperties(SECRET, "hardware-erp", 15, 7, 10));
     }
 
     @Nested
@@ -82,7 +82,7 @@ class JwtServiceTest {
         @DisplayName("a token signed with another key is rejected")
         void invalidSignature() {
             JwtService other = new JwtService(
-                    new JwtProperties(OTHER_SECRET, "hardware-erp", 15, 7));
+                    new JwtProperties(OTHER_SECRET, "hardware-erp", 15, 7, 10));
             assertThat(jwtService.parse(other.generateAccessToken(42L, 0))).isEmpty();
         }
 
@@ -101,7 +101,7 @@ class JwtServiceTest {
         @DisplayName("a token from a different issuer is rejected")
         void wrongIssuer() {
             JwtService other = new JwtService(
-                    new JwtProperties(SECRET, "someone-else", 15, 7));
+                    new JwtProperties(SECRET, "someone-else", 15, 7, 10));
             assertThat(jwtService.parse(other.generateAccessToken(42L, 0))).isEmpty();
         }
 
@@ -188,7 +188,7 @@ class JwtServiceTest {
     @DisplayName("a secret shorter than 32 bytes fails at construction, not at first use")
     void shortSecretFailsFast() {
         assertThatThrownBy(() -> new JwtService(
-                new JwtProperties("c2hvcnQ=", "hardware-erp", 15, 7)))
+                new JwtProperties("c2hvcnQ=", "hardware-erp", 15, 7, 10)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("32 bytes");
     }

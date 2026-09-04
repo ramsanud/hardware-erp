@@ -19,6 +19,7 @@ import { PermissionGate } from '@/routes/RequirePermission';
 import { PERMISSIONS } from '@/modules/auth/constants';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { useToast } from '@/modules/auth/hooks/useToast';
+import { useAppChrome } from '@/layouts/AppChromeProvider';
 import { PRODUCT_ROUTES } from '../constants';
 import { categoryService } from '../services/categoryService';
 import { brandService } from '../services/brandService';
@@ -26,7 +27,7 @@ import { productService } from '../services/productService';
 import { ProductForm } from '../forms/ProductForm';
 import { ProductStatusBadge } from '../components/ProductStatusBadge';
 import { toProductRequest } from '../lib/toProductRequest';
-import type { BrandResponse, CategoryResponse, ProductResponse } from '../types';
+import type { BrandResponse, CategoryResponse, ProductPriceHistoryResponse, ProductResponse } from '../types';
 import type { ProductValues } from '../validation/schemas';
 
 function useProductDetail(id: number) {
@@ -65,6 +66,8 @@ export function ProductDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [categories, setCategories] = useState<CategoryResponse[]>([]);
   const [brands, setBrands] = useState<BrandResponse[]>([]);
+  const { showPriceHistory } = useAppChrome();
+  const [priceHistory, setPriceHistory] = useState<ProductPriceHistoryResponse[] | null>(null);
 
   const validId = Boolean(params.id) && !Number.isNaN(id);
   const { product, loading, error, reload } = useProductDetail(validId ? id : -1);
@@ -76,6 +79,12 @@ export function ProductDetailPage() {
       try { setBrands(await brandService.list()); } catch { setBrands([]); }
     })();
   }, []);
+
+  // Only fetched when the shop has turned this on - see AdditionalSettingsCard.
+  useEffect(() => {
+    if (!validId || !showPriceHistory) { setPriceHistory(null); return; }
+    productService.priceHistory(id).then(setPriceHistory).catch(() => setPriceHistory([]));
+  }, [validId, showPriceHistory, id]);
 
   if (!validId) {
     return <Navigate to={PRODUCT_ROUTES.list} replace />;
@@ -203,6 +212,14 @@ export function ProductDetailPage() {
                 <span className="text-muted-foreground">HSN/SAC code</span>
                 <span className="tabular">{product.hsnCode ?? '—'}</span>
               </div>
+              {product.altUnitLabel && product.altUnitConversionFactor ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Alternate unit</span>
+                  <span className="tabular">
+                    1 {product.altUnitLabel} = {product.altUnitConversionFactor} {product.unit}
+                  </span>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -244,6 +261,48 @@ export function ProductDetailPage() {
                 <CardTitle className="text-base">Description</CardTitle>
               </CardHeader>
               <CardContent className="text-sm">{product.description}</CardContent>
+            </Card>
+          ) : null}
+
+          {showPriceHistory ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Price history</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {priceHistory === null ? (
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading" />
+                  </div>
+                ) : priceHistory.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No sales recorded for this product yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-muted-foreground">
+                          <th className="py-2 font-normal">Date</th>
+                          <th className="py-2 font-normal">Invoice</th>
+                          <th className="py-2 font-normal">Customer</th>
+                          <th className="py-2 text-right font-normal">Qty</th>
+                          <th className="py-2 text-right font-normal">Rate</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {priceHistory.map((row) => (
+                          <tr key={`${row.invoiceNumber}-${row.invoiceDate}`} className="border-b last:border-0">
+                            <td className="py-2 tabular">{row.invoiceDate}</td>
+                            <td className="py-2">{row.invoiceNumber}</td>
+                            <td className="py-2">{row.customerName}</td>
+                            <td className="py-2 text-right tabular">{row.quantity}</td>
+                            <td className="py-2 text-right tabular">₹{row.unitPriceDisplay}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
             </Card>
           ) : null}
         </div>

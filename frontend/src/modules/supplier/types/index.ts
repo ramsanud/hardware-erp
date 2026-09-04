@@ -110,6 +110,20 @@ export interface SupplierSummaryResponse {
   status: SupplierStatus;
 }
 
+/**
+ * CR-058 - the recycle-bin projection. Deliberately narrower than
+ * SupplierSummaryResponse: a deleted row is only being identified and
+ * restored, so no credit limit, GST number or contact details are sent.
+ */
+export interface SupplierDeletedResponse {
+  id: number;
+  supplierCode: string;
+  supplierName: string;
+  mobileNo: string;
+  city?: string | null;
+  deletedAt: string;
+}
+
 // ---- query params ----
 
 export interface SupplierSearchParams {

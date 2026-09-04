@@ -22,11 +22,19 @@ public interface NotificationProvider {
      * Sends (or, when unconfigured, logs) one message. {@code subject} is
      * null for channels that have no notion of one (SMS, WhatsApp).
      *
-     * Returns {@link NotificationStatus#SENT} or
-     * {@link NotificationStatus#LOGGED_ONLY} - never {@code FAILED}. A
+     * Returns {@link NotificationSendResult} carrying
+     * {@link NotificationStatus#SENT} (with the provider's own message id)
+     * or {@link NotificationStatus#LOGGED_ONLY} - never {@code FAILED}. A
      * provider that cannot deliver throws instead; the caller is the one
      * that records FAILED, so every attempt - success or failure - is
      * written to notification_log exactly once, in exactly one place.
+     *
+     * {@code tenantId} (CR-056) is who this message is sent as - required so
+     * {@link com.hardware.erp.notification.service.impl.WhatsAppBusinessProvider}
+     * can resolve which tenant's own WhatsApp Business connection to send
+     * through. Every other provider ignores it; it is still on the shared
+     * interface rather than a WhatsApp-only overload so NotificationServiceImpl
+     * keeps discovering providers uniformly by channel, not by type.
      */
-    NotificationStatus send(NotificationChannel channel, String toAddress, String subject, String body);
+    NotificationSendResult send(Long tenantId, NotificationChannel channel, String toAddress, String subject, String body);
 }

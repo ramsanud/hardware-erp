@@ -30,6 +30,7 @@ import { formatDateTime } from '@/shared/lib/utils';
 import { PermissionGate } from '@/routes/RequirePermission';
 import { PERMISSIONS } from '@/modules/auth/constants';
 import { useToast } from '@/modules/auth/hooks/useToast';
+import { useAppChrome } from '@/layouts/AppChromeProvider';
 import { PURCHASE_ROUTES, PAYMENT_METHOD_OPTIONS } from '../constants';
 import { purchaseService } from '../services/purchaseService';
 import { PurchaseStatusBadge } from '../components/PurchaseStatusBadge';
@@ -72,6 +73,7 @@ export function PurchaseDetailPage() {
   const toast = useToast();
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const { tdsEnabled, tdsRatePercent } = useAppChrome();
 
   const { purchase, loading, error, reload } = usePurchaseDetail(id);
 
@@ -211,6 +213,24 @@ export function PurchaseDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {tdsEnabled ? (
+            <Card>
+              <CardHeader><CardTitle className="text-base">TDS (informational)</CardTitle></CardHeader>
+              <CardContent className="space-y-1.5 text-sm">
+                <p className="text-muted-foreground">
+                  Not deducted from the total above - a reminder of what you would withhold before paying this supplier.
+                </p>
+                <div className="flex justify-between pt-1">
+                  <span className="text-muted-foreground">TDS @ {tdsRatePercent}%</span>
+                  <span className="tabular">
+                    ₹{(Number(purchase.subtotalDisplay.replace(/,/g, '')) * (tdsRatePercent / 100))
+                      .toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
           {purchase.payments.length > 0 ? (
             <Card>

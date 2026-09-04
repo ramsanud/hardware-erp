@@ -2,6 +2,7 @@ package com.hardware.erp.tenant.service.impl;
 
 import com.hardware.erp.auth.repository.UserRepository;
 import com.hardware.erp.common.exception.BusinessException;
+import com.hardware.erp.config.DeploymentProperties;
 import com.hardware.erp.customer.entity.CustomerStatus;
 import com.hardware.erp.customer.repository.CustomerRepository;
 import com.hardware.erp.product.entity.ProductStatus;
@@ -22,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class EntitlementServiceImpl implements EntitlementService {
 
+    private final DeploymentProperties deployment;
     private final SubscriptionService subscriptionService;
     private final UserRepository userRepository;
     private final CustomerRepository customerRepository;
@@ -68,15 +70,36 @@ public class EntitlementServiceImpl implements EntitlementService {
     public UsageSummaryResponse usageSummary() {
         Long tenantId = SecurityUtils.requireCurrentTenantId();
         SubscriptionTier tier = subscriptionService.currentTier();
+
+        // CR-059. Report the caps that are actually enforced, not the ones the
+        // tier nominally carries - a self-hosted install would otherwise show
+        // "142 / 200 customers" and an amber warning bar for a ceiling that
+        // require() never applies. The UI already renders UNLIMITED (-1) as
+        // "Unlimited" with no progress bar, so this needs no frontend change.
+        boolean capped = deployment.billingApplies();
         return new UsageSummaryResponse(
                 tier,
-                userRepository.countActiveOwners(tenantId), tier.maxOwners(),
-                customerRepository.countByStatusAndTenantId(CustomerStatus.ACTIVE, tenantId), tier.maxCustomers(),
-                supplierRepository.countByStatusAndTenantId(SupplierStatus.ACTIVE, tenantId), tier.maxSuppliers(),
-                productRepository.countByStatusAndTenantId(ProductStatus.ACTIVE, tenantId), tier.maxProducts());
+                userRepository.countActiveOwners(tenantId), cap(capped, tier.maxOwners()),
+                customerRepository.countByStatusAndTenantId(CustomerStatus.ACTIVE, tenantId), cap(capped, tier.maxCustomers()),
+                supplierRepository.countByStatusAndTenantId(SupplierStatus.ACTIVE, tenantId), cap(capped, tier.maxSuppliers()),
+                productRepository.countByStatusAndTenantId(ProductStatus.ACTIVE, tenantId), cap(capped, tier.maxProducts()));
+    }
+
+    private int cap(boolean capped, int tierLimit) {
+        return capped ? tierLimit : SubscriptionTier.UNLIMITED;
     }
 
     private void require(int limit, long currentCount, String noun, SubscriptionTier tier) {
+        // CR-059. Subscription tiers are a property of the hosted product. On a
+        // self-hosted install the client has bought the software outright,
+        // there is no checkout to reach, and the FREE-tier default would
+        // otherwise stop them adding their 51st customer with a message
+        // telling them to "upgrade the plan in Shop Settings" - a dead end
+        // that would make the product unusable for exactly the customer who
+        // paid the most for it.
+        if (!deployment.billingApplies()) {
+            return;
+        }
         if (limit == SubscriptionTier.UNLIMITED) {
             return;
         }

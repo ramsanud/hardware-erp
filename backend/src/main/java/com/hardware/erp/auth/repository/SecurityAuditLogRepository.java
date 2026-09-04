@@ -45,4 +45,16 @@ public interface SecurityAuditLogRepository extends JpaRepository<SecurityAuditL
     @Modifying
     @Query("delete from SecurityAuditLog a where a.createdAt < :cutoff")
     int deleteOlderThan(@Param("cutoff") LocalDateTime cutoff);
+
+    /**
+     * Platform Admin Tenant Analytics (CR-057 phase 10) - "monthly active
+     * users" counted from real LOGIN_SUCCESS events, not from
+     * app_user.last_login_at (which only ever holds the single most recent
+     * login and would systematically under-count every month except a
+     * user's latest).
+     */
+    @Query("select count(distinct a.userId) from SecurityAuditLog a "
+            + "where a.action = com.hardware.erp.auth.entity.AuditAction.LOGIN_SUCCESS "
+            + "and a.createdAt between :from and :to")
+    long countDistinctUsersLoggedInBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 }

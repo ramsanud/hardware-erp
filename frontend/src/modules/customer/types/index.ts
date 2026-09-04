@@ -12,6 +12,8 @@ export interface CustomerRequest {
   pincode?: string | null;
   creditLimitPaise?: number | null;
   status: CustomerStatus;
+  /** CR-056 §16 - null is treated as true (opted in) by the backend. */
+  whatsappOptIn?: boolean | null;
 }
 
 export interface CustomerResponse {
@@ -28,6 +30,7 @@ export interface CustomerResponse {
   pincode?: string | null;
   creditLimitDisplay: string;
   status: CustomerStatus;
+  whatsappOptIn: boolean;
   createdAt: string;
 }
 

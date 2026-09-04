@@ -16,6 +16,9 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     Optional<Invoice> findByIdAndTenantId(Long id, Long tenantId);
 
+    /** Platform Admin tenant data export (CR-057 phase 11). */
+    List<Invoice> findByTenantId(Long tenantId);
+
     @Query("""
            select i from Invoice i
            where i.tenant.id = :tenantId
@@ -80,6 +83,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     long countByTenantIdAndCustomerId(Long tenantId, Long customerId);
 
+    /** Platform Admin tenant usage summary. */
+    long countByTenantId(Long tenantId);
+
+    /** Platform Admin overview KPI - "invoices today" across every tenant, not scoped to one. */
+    long countByInvoiceDate(LocalDate invoiceDate);
+
     /** Cancelled invoices excluded, same as customerFinancialSummary - they carry no real financial weight. */
     @Query("""
            select coalesce(sum(i.totalPaise), 0), coalesce(sum(i.balancePaise), 0)
@@ -94,4 +103,23 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
            where i.tenant.id = :tenantId and i.status <> 'CANCELLED' and i.invoiceDate = :today
            """)
     long todaySales(@Param("tenantId") Long tenantId, @Param("today") LocalDate today);
+
+    /** CR-053 backlog item 2 (Tally export). Cancelled invoices excluded - a cancelled sale never really happened. */
+    @Query("""
+           select i from Invoice i
+           where i.tenant.id = :tenantId and i.status <> 'CANCELLED'
+             and i.invoiceDate >= :fromDate and i.invoiceDate <= :toDate
+           order by i.invoiceDate asc, i.id asc
+           """)
+    List<Invoice> findForExport(@Param("tenantId") Long tenantId,
+                                @Param("fromDate") LocalDate fromDate,
+                                @Param("toDate") LocalDate toDate);
+
+    /** CR-053 backlog item 5 (payment-due reminder job). */
+    @Query("""
+           select count(i), coalesce(sum(i.balancePaise), 0)
+           from Invoice i
+           where i.tenant.id = :tenantId and i.status <> 'CANCELLED' and i.balancePaise > 0
+           """)
+    List<Object[]> outstandingSummary(@Param("tenantId") Long tenantId);
 }

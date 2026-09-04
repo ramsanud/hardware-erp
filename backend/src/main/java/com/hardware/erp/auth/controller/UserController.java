@@ -147,6 +147,21 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.ok(userService.get(id)));
     }
 
+    @GetMapping("/{id}/activity")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).USER_VIEW)")
+    @Operation(
+            summary = "Recent business-record changes made by this user",
+            description = "CR-053 backlog item 6. Newest first. Security events (login, "
+                        + "password changes) are not included - see the Security log page.")
+    public ResponseEntity<ApiResponse<PageResponse<UserActivityResponse>>> activity(
+            @Parameter(example = "11") @PathVariable Long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        var pageable = PageRequest.of(Math.max(page, 0), safeSize);
+        return ResponseEntity.ok(ApiResponse.ok(userService.activity(id, pageable)));
+    }
+
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).USER_MANAGE)")
     @Operation(
@@ -195,6 +210,44 @@ public class UserController {
                         + "You cannot delete your own account or the last owner.")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         userService.softDelete(id, SecurityUtils.requireCurrentUser().getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/deleted")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).USER_MANAGE)")
+    @Operation(
+            summary = "Deleted user accounts, for recovery (CR-058)",
+            description = "Soft-deleted rows are hidden from every other endpoint by "
+                        + "`@SQLRestriction`, which until now made a mistaken deactivation "
+                        + "irreversible from the UI. Gated on USER_MANAGE, not USER_VIEW: "
+                        + "only someone who can restore an account has any reason to see the "
+                        + "deleted list. Carries no security state. Not paginated.")
+    public ResponseEntity<ApiResponse<java.util.List<UserDeletedResponse>>> listDeleted() {
+        return ResponseEntity.ok(ApiResponse.ok(userService.listDeleted()));
+    }
+
+    @PostMapping("/{id}/restore")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).USER_MANAGE)")
+    @Operation(
+            summary = "Restore a deleted user account (CR-058)",
+            description = """
+                    Clears deleted_at/deleted_by, returns the account to ACTIVE and clears
+                    any lockout left over from before the deletion, in place: the same
+                    user_id, so created_by on every past document still resolves.
+
+                    Deliberately does not revive the old sessions. The tokens invalidated
+                    when the account was deleted stay invalid - the account comes back able
+                    to sign in afresh, and nothing more. An account that is not deleted, or
+                    belongs to another shop, gives 404.""")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "204", description = "Restored"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "Not deleted, unknown, or another tenant's",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<Void> restore(@Parameter(example = "12") @PathVariable Long id) {
+        userService.restore(id);
         return ResponseEntity.noContent().build();
     }
 }

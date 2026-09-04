@@ -136,3 +136,31 @@ became self-service, which CR-016 always anticipated as a deferred follow-up.
 - Backup/restore, notification centre, document management and approval
   workflow are recorded in FEATURE_REGISTRY as post-Module-11 work. They are
   not folded into Module 1.
+
+## Deployment modes (CR-059, 2026-09-04)
+
+This project ships as **one codebase in two shapes**, selected at startup:
+
+| | `CLOUD` | `SELF_HOSTED` |
+|---|---|---|
+| Profiles | `SPRING_PROFILES_ACTIVE=prod,cloud` | `SPRING_PROFILES_ACTIVE=prod,selfhosted` |
+| Database | managed PostgreSQL (Supabase session pooler) | PostgreSQL container on the client's machine |
+| Entry point | Render + Vercel, `render.yaml` | `docker compose -f docker-compose.selfhosted.yml up -d` |
+| Subscription billing | live | off (`BILLING_NOT_APPLICABLE`, no tier caps) |
+| Refresh cookie | `Secure` mandatory | `Secure` off by default (LAN http) |
+
+Both layer **on top of** the `prod` profile; neither replaces it, and
+self-hosting relaxes none of `prod`'s security posture.
+
+**Supabase is a managed PostgreSQL endpoint and nothing else.** There is
+no Supabase SDK, Supabase Auth or Supabase Storage anywhere in this
+codebase — uploads are `bytea`, auth is this application's own JWT + MFA.
+Changing managed database provider is a change of `DB_HOST`. Do not
+introduce a vendor SDK on either side of this switch without a new CR: it
+would fork a core subsystem into two implementations that must then both
+be maintained and tested forever.
+
+`DeploymentModeGuard` refuses to start on an incoherent combination —
+most importantly a `SELF_HOSTED` process pointed at a managed database
+host, which would write one client's shop data into the multi-tenant SaaS
+database. See `docs/DEPLOYMENT_MODES.md` and CR-059.

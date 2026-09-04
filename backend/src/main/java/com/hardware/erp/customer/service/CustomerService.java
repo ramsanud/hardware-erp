@@ -27,6 +27,9 @@ public interface CustomerService {
 
     void deactivate(Long id);
 
+    /** CR-058: the inverse of deactivate. Customer carries no deleted_at, so this is a plain status change, exactly like WorkerService.activate. */
+    void activate(Long id);
+
     CustomerFinancialSummaryResponse financialSummary(Long id);
 
     PageResponse<InvoiceSummaryResponse> recentInvoices(Long id, Pageable pageable);

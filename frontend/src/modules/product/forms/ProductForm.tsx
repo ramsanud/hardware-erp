@@ -108,6 +108,8 @@ export function ProductForm({
       minimumStock: product?.minimumStock ?? 0,
       reorderLevel: product?.reorderLevel ?? 0,
       status: product?.status ?? 'ACTIVE',
+      altUnitLabel: product?.altUnitLabel ?? '',
+      altUnitConversionFactor: product?.altUnitConversionFactor ?? 0,
     },
   });
 
@@ -395,6 +397,29 @@ export function ProductForm({
                    className="sm:col-span-2">
           <Input id="description" aria-invalid={Boolean(errors.description)}
                  {...register('description')} />
+        </FormField>
+
+        {/* CR-053 backlog item 1. Optional - both left blank means this
+            product has no alternate unit. Printed on the invoice PDF only
+            when the shop turns on "Show alternate unit" in Settings. */}
+        <FormField id="altUnitLabel" label="Alternate unit label" error={errors.altUnitLabel?.message}
+                   hint='e.g. "BOX" if this product is also sold by the box'>
+          <Input id="altUnitLabel" placeholder="BOX" aria-invalid={Boolean(errors.altUnitLabel)}
+                 {...register('altUnitLabel')} />
+        </FormField>
+
+        <FormField id="altUnitConversionFactor" label="Units per alternate unit"
+                   error={errors.altUnitConversionFactor?.message}
+                   hint="e.g. 12 if 1 BOX = 12 PCS">
+          <Controller
+            control={control}
+            name="altUnitConversionFactor"
+            render={({ field }) => (
+              <NumberInput id="altUnitConversionFactor" min={0}
+                           aria-invalid={Boolean(errors.altUnitConversionFactor)}
+                           value={field.value} onChange={field.onChange} onBlur={field.onBlur} />
+            )}
+          />
         </FormField>
       </div>
 

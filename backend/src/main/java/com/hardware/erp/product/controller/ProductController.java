@@ -95,6 +95,18 @@ public class ProductController {
         return ResponseEntity.ok(ApiResponse.ok(productService.get(id)));
     }
 
+    @GetMapping("/{id}/price-history")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).PRODUCT_VIEW)")
+    @Operation(
+            summary = "Recent invoice lines for this product",
+            description = "CR-053 backlog item 1. Up to the 20 most recent non-cancelled sales, "
+                        + "newest first. Gated on the frontend by Tenant.showPriceHistory - this "
+                        + "endpoint itself only requires PRODUCT_VIEW.")
+    public ResponseEntity<ApiResponse<java.util.List<ProductPriceHistoryResponse>>> priceHistory(
+            @Parameter(example = "42") @PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(productService.priceHistory(id)));
+    }
+
     @PostMapping
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).PRODUCT_MANAGE)")
     @Operation(
@@ -130,6 +142,39 @@ public class ProductController {
                         + "reference product_id permanently.")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         productService.softDelete(id, SecurityUtils.requireCurrentUser().getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/deleted")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).PRODUCT_MANAGE)")
+    @Operation(
+            summary = "Deleted products, for recovery (CR-058)",
+            description = "Soft-deleted rows are hidden from every other endpoint by "
+                        + "`@SQLRestriction`, which until now made a mistaken deactivation "
+                        + "irreversible from the UI. Gated on PRODUCT_MANAGE, not PRODUCT_VIEW: "
+                        + "only someone who can restore a record has any reason to see the "
+                        + "deleted list. Carries no prices at all. Not paginated.")
+    public ResponseEntity<ApiResponse<java.util.List<ProductDeletedResponse>>> listDeleted() {
+        return ResponseEntity.ok(ApiResponse.ok(productService.listDeleted()));
+    }
+
+    @PostMapping("/{id}/restore")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).PRODUCT_MANAGE)")
+    @Operation(
+            summary = "Restore a deleted product (CR-058)",
+            description = "Clears deleted_at/deleted_by and returns the product to ACTIVE, "
+                        + "in place: the same product_id, the same code, its stock row and "
+                        + "every invoice and purchase line that already references it. A "
+                        + "product that is not deleted, or belongs to another shop, gives 404.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "204", description = "Restored"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "Not deleted, unknown, or another tenant's",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<Void> restore(@Parameter(example = "42") @PathVariable Long id) {
+        productService.restore(id);
         return ResponseEntity.noContent().build();
     }
 }

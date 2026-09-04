@@ -7,9 +7,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -73,6 +75,44 @@ public interface UserRepository extends JpaRepository<User, Long> {
                       @Param("roleId") Long roleId,
                       Pageable pageable);
 
+    /**
+     * CR-058. Native on purpose - see SupplierRepository.findDeletedByTenantId:
+     * User's own {@code @SQLRestriction("deleted_at is null")} rewrites every
+     * JPQL/derived query in this file, so a soft-deleted account is unreachable
+     * through the ORM and was therefore unrecoverable (BUG-SUP-006). Still
+     * tenant-scoped: a deleted account from another shop must stay invisible.
+     */
+    @Query(value = """
+           select * from app_user
+           where tenant_id = :tenantId and deleted_at is not null
+           order by deleted_at desc
+           """, nativeQuery = true)
+    List<User> findDeletedByTenantId(@Param("tenantId") Long tenantId);
+
+    /**
+     * CR-058. One atomic guarded statement - the WHERE clause is the
+     * authorisation check, so another tenant's account, an account that was
+     * never deleted, and a nonexistent id all update zero rows and 404
+     * identically rather than confirming which case applied.
+     *
+     * token_version is deliberately NOT reset. User.softDelete() incremented
+     * it, which is what invalidated every access token the account still had
+     * out; putting it back would hand those tokens their permissions again.
+     * failed_login_attempts and locked_until are cleared so the restored
+     * account is not born inside a lockout it can never sign in to clear.
+     * `version` is incremented by hand because a native update bypasses
+     * @Version.
+     */
+    @Modifying
+    @Query(value = """
+           update app_user
+           set deleted_at = null, deleted_by = null, status = 'ACTIVE',
+               failed_login_attempts = 0, locked_until = null,
+               version = version + 1
+           where user_id = :id and tenant_id = :tenantId and deleted_at is not null
+           """, nativeQuery = true)
+    int restoreDeleted(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
     long countByRoleId(Long roleId);
 
     /** Used to invalidate sessions for every holder of a role after a permission change. */
@@ -104,4 +144,27 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Query("select count(u) from User u where u.tenant.id = :tenantId and u.role.code = 'OWNER' " +
            "and u.status = com.hardware.erp.auth.entity.UserStatus.ACTIVE")
     long countActiveOwners(@Param("tenantId") Long tenantId);
+
+    // ---------------------------------------------------------------
+    // Platform Admin Console (CR-054 phase 2). Cross-tenant by design -
+    // the platform admin's own security boundary, distinct from every
+    // other query in this file which is deliberately tenant.id-scoped.
+    // ---------------------------------------------------------------
+
+    /** Tenant Management "Users" column and Tenant Detail "Users" usage count. Excludes soft-deleted rows automatically (User's own @SQLRestriction). */
+    long countByTenantId(Long tenantId);
+
+    long countByTenantIdAndStatus(Long tenantId, com.hardware.erp.auth.entity.UserStatus status);
+
+    /** Overview KPI - active users platform-wide. */
+    long countByStatus(com.hardware.erp.auth.entity.UserStatus status);
+
+    /** Overview KPI - new users today, platform-wide. */
+    long countByCreatedAtBetween(LocalDateTime from, LocalDateTime to);
+
+    /** Tenant Management "Last Active" column / Tenant Detail "last login" - null when nobody at this tenant has ever signed in. */
+    @Query("select max(u.lastLoginAt) from User u where u.tenant.id = :tenantId")
+    LocalDateTime lastLoginAtForTenant(@Param("tenantId") Long tenantId);
+
+    Optional<User> findFirstByTenantIdAndRole_CodeOrderByIdAsc(Long tenantId, String roleCode);
 }

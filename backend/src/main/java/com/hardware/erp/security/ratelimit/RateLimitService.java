@@ -78,6 +78,7 @@ public class RateLimitService {
             case RESET_PASSWORD_PER_IP -> properties.resetPasswordPerIpPerHour();
             case REFRESH_PER_IP -> properties.refreshPerIpPerMinute();
             case REGISTER_PER_IP -> properties.registerPerIpPerHour();
+            case PLATFORM_ADMIN_LOGIN_PER_IP -> properties.platformAdminLoginPerIpPerMinute();
         };
     }
 

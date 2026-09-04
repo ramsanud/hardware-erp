@@ -17,6 +17,9 @@ public interface WorkerRepository extends JpaRepository<Worker, Long> {
 
     List<Worker> findByTenantIdAndStatusOrderByNameAsc(Long tenantId, WorkerStatus status);
 
+    /** Platform Admin tenant data export (CR-057 phase 11). */
+    List<Worker> findByTenantId(Long tenantId);
+
     // Deliberately keyed on mobile number, not name: two workers called
     // "Ramesh" on one crew is ordinary and must stay allowed, whereas the same
     // mobile number twice is almost always the same person entered twice.

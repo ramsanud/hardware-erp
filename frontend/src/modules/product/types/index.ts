@@ -70,6 +70,10 @@ export interface ProductRequest {
   minimumStock: number;
   reorderLevel: number;
   status: ProductStatus;
+
+  /** CR-053 backlog item 1. Both set together or both left blank - see the form's own validation. */
+  altUnitLabel?: string | null;
+  altUnitConversionFactor?: number | null;
 }
 
 export interface ProductResponse {
@@ -108,6 +112,19 @@ export interface ProductResponse {
   createdAt?: string | null;
   updatedAt?: string | null;
   hasImage: boolean;
+
+  /** CR-053 backlog item 1. */
+  altUnitLabel?: string | null;
+  altUnitConversionFactor?: number | null;
+}
+
+/** CR-053 backlog item 1 - one row per past invoice line for this product, newest first. */
+export interface ProductPriceHistoryResponse {
+  invoiceDate: string;
+  invoiceNumber: string;
+  customerName: string;
+  quantity: number;
+  unitPriceDisplay: string;
 }
 
 /** The list-screen projection. Purchase price is omitted unconditionally - see SupplierSummaryResponse. */
@@ -122,6 +139,16 @@ export interface ProductSummaryResponse {
   gstRatePercent: string;
   status: ProductStatus;
   hasImage: boolean;
+}
+
+/** CR-058 - the recycle-bin projection. Carries no price at all, cost or selling. */
+export interface ProductDeletedResponse {
+  id: number;
+  productCode: string;
+  productName: string;
+  categoryName?: string | null;
+  brandName?: string | null;
+  deletedAt: string;
 }
 
 // ---- bulk import (CR-036) ----

@@ -1,0 +1,18 @@
+export const PLATFORM_ADMIN_ROUTES = {
+  login: '/platform-admin/login',
+  mfaVerify: '/platform-admin/mfa',
+  mfaEnroll: '/platform-admin/enroll',
+  dashboard: '/platform-admin/dashboard',
+  tenants: '/platform-admin/tenants',
+  tenantDetail: (id: number | string) => `/platform-admin/tenants/${id}`,
+  systemHealth: '/platform-admin/system-health',
+  incidents: '/platform-admin/incidents',
+  support: '/platform-admin/support',
+  supportDetail: (id: number | string) => `/platform-admin/support/${id}`,
+  auditLog: '/platform-admin/audit-logs',
+  developerTools: '/platform-admin/developer-tools',
+  security: '/platform-admin/security',
+  featureFlags: '/platform-admin/feature-flags',
+  analytics: '/platform-admin/analytics',
+  settings: '/platform-admin/settings',
+} as const;

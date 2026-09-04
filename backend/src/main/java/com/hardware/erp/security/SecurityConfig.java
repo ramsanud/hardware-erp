@@ -7,6 +7,7 @@ import com.hardware.erp.security.ratelimit.RateLimitService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -67,7 +68,15 @@ public class SecurityConfig {
         return new RateLimitFilter(rateLimitService, objectMapper);
     }
 
+    /**
+     * @Order(1): PlatformAdminSecurityConfig's chain is @Order(0) and
+     * securityMatcher-scoped to /v1/platform-admin/**, so it is evaluated
+     * first for that prefix. This chain's anyRequest().authenticated() would
+     * otherwise also match a platform-admin path and authenticate it with
+     * the tenant JwtService - wrong signing key, wrong principal type.
+     */
     @Bean
+    @Order(1)
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
             // Stateless bearer API: no cookie-backed session for a forged form
@@ -100,11 +109,30 @@ public class SecurityConfig {
                             // The sign-in page must learn whether to render a
                             // challenge before anyone has signed in.
                             "/v1/auth/captcha-config",
+                            // CR-059 - same reason: the app shell decides
+                            // whether this installation has billing at all
+                            // before a session exists. Serves only the
+                            // deployment mode, never a host or credential.
+                            "/v1/deployment-config",
                             "/v1/auth/refresh",
                             "/v1/auth/forgot-password",
                             "/v1/auth/reset-password",
+                            // CR-058 - carry the MFA challenge token from
+                            // login in the body; there is no session yet.
+                            "/v1/auth/mfa/enroll",
+                            "/v1/auth/mfa/enroll/confirm",
+                            "/v1/auth/mfa/verify",
                             "/v1/tenants/register",
-                            "/v1/tenants/register/slug-available").permitAll()
+                            "/v1/tenants/register/slug-available",
+                            // Meta calls this with no JWT of ours - authenticity is
+                            // enforced inside WhatsAppWebhookController itself (the
+                            // GET handshake's hub.verify_token, the POST's
+                            // X-Hub-Signature-256 HMAC), not by Spring Security.
+                            "/v1/webhooks/whatsapp",
+                            // Razorpay calls this with no JWT of ours either -
+                            // authenticity is the X-Razorpay-Signature HMAC check
+                            // inside SubscriptionBillingService.handleWebhook().
+                            "/v1/webhooks/razorpay").permitAll()
                     // /actuator/health is the hosting platform's liveness probe
                     // and must answer before anyone signs in. The API browser is
                     // public only where it is served at all - application-prod.yml

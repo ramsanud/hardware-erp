@@ -24,6 +24,8 @@ public class JwtService {
 
     /** Token version. Two characters because every request carries it. */
     public static final String CLAIM_TOKEN_VERSION = "tv";
+    /** CR-058 - present only on an MFA challenge token, never on a real session token. */
+    public static final String CLAIM_PURPOSE = "purpose";
 
     private static final int REFRESH_TOKEN_BYTES = 48;
     private static final int MIN_SECRET_BYTES = 32;
@@ -60,6 +62,34 @@ public class JwtService {
                 .expiration(Date.from(now.plusSeconds(accessTokenSeconds())))
                 .signWith(signingKey, Jwts.SIG.HS256)
                 .compact();
+    }
+
+    /**
+     * CR-058 - proves only "the password check for this user id already
+     * passed". Carries no token version and no authorities, and is never
+     * accepted by JwtAuthenticationFilter for a protected endpoint - only
+     * the absence of {@link #CLAIM_PURPOSE} marks a token as a real session.
+     */
+    public String generateMfaToken(Long userId, MfaTokenPurpose purpose) {
+        Instant now = Instant.now();
+        return Jwts.builder()
+                .issuer(properties.issuer())
+                .subject(String.valueOf(userId))
+                .claim(CLAIM_PURPOSE, purpose.name())
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plusSeconds(mfaTokenSeconds())))
+                .signWith(signingKey, Jwts.SIG.HS256)
+                .compact();
+    }
+
+    /** Empty for a real session token, which carries no purpose claim at all. */
+    public Optional<MfaTokenPurpose> purposeFrom(Claims claims) {
+        try {
+            String raw = claims.get(CLAIM_PURPOSE, String.class);
+            return raw == null ? Optional.empty() : Optional.of(MfaTokenPurpose.valueOf(raw));
+        } catch (RuntimeException ex) {
+            return Optional.empty();
+        }
     }
 
     public Optional<Claims> parse(String token) {
@@ -126,5 +156,9 @@ public class JwtService {
 
     public long refreshTokenDays() {
         return properties.refreshTokenDays();
+    }
+
+    public long mfaTokenSeconds() {
+        return properties.mfaTokenMinutes() * 60;
     }
 }

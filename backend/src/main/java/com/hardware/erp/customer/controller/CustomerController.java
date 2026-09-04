@@ -82,6 +82,19 @@ public class CustomerController {
         customerService.deactivate(id);
     }
 
+    /**
+     * CR-058. Customer carries no deleted_at, so there is nothing to "restore"
+     * here and no deleted-records endpoint - an inactive customer was never
+     * hidden in the first place. This is the plain inverse of deactivate,
+     * shaped exactly like WorkerController.activate.
+     */
+    @PostMapping("/{id}/activate")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).CUSTOMER_MANAGE)")
+    public void activate(@PathVariable Long id) {
+        customerService.activate(id);
+    }
+
     @GetMapping("/{id}/financial-summary")
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).CUSTOMER_VIEW)")
     public ApiResponse<CustomerFinancialSummaryResponse> financialSummary(@PathVariable Long id) {

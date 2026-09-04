@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface CustomerRepository extends JpaRepository<Customer, Long> {
@@ -16,7 +17,13 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     Optional<Customer> findByIdAndTenantId(Long id, Long tenantId);
 
+    /** Platform Admin tenant data export (CR-057 phase 11). */
+    List<Customer> findByTenantId(Long tenantId);
+
     long countByStatusAndTenantId(CustomerStatus status, Long tenantId);
+
+    /** Platform Admin tenant usage summary. */
+    long countByTenantId(Long tenantId);
 
     @Query("""
            select c from Customer c

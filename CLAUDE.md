@@ -267,6 +267,25 @@ false picture.
 - npm script shims fail under Git Bash with `'"node"' is not recognized`.
   Invoke the tool directly — `node ./node_modules/typescript/bin/tsc -b --force`
   — or run `npm run` scripts from PowerShell.
+- **`openssl` is available in Git Bash but not in PowerShell.** Git for
+  Windows bundles it at `/mingw64/bin/openssl`, which is on Git Bash's PATH
+  and not on PowerShell's. Documentation that says `openssl rand -base64 32`
+  is correct in one shell and fails with "not recognized" in the other, so
+  give both forms — `scripts/new-secret.ps1` is the PowerShell equivalent.
+- **`docker` is on PATH in Git Bash but not in a `-NoProfile` PowerShell**,
+  and the Docker credential helper is invisible to the docker CLI launched
+  from Git Bash (`docker-credential-desktop: executable file not found`).
+  Work around it with an isolated config dir holding an empty `config.json`
+  and `DOCKER_CONFIG` pointing at it — the project's images are public, so no
+  credential is needed.
+- **Two Java language servers may be installed.** The Apache NetBeans one
+  cannot initialise Lombok (`Could not initialize class lombok.javac.Javac`)
+  and floods every Lombok-using file with phantom "cannot find symbol"
+  errors — getters, `builder()`, the `@Slf4j` `log` field, the
+  `@RequiredArgsConstructor` constructor — in code that compiles cleanly with
+  Maven. Always confirm with `mvn -o clean compile` before believing an IDE
+  error here. `.vscode/extensions.json` marks it as unwanted; the Red Hat
+  Java pack is the supported one.
 
 ### Known open defects
 

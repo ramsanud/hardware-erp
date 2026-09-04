@@ -1,0 +1,101 @@
+Product Name,Product Code,Category,Brand,Unit,HSN Code,GST %,Purchase Price,Selling Price,MRP,Minimum Stock,Reorder Level
+Claw Hammer,HW-001,Hand Tools,Havells,PCS,5955,12,624.52,799.39,863.34,14,21
+Screwdriver Set,HW-002,Hand Tools,Pidilite,SET,3819,18,2801.97,3278.3,3671.7,8,18
+Adjustable Wrench,HW-003,Hand Tools,Tata Steel,PCS,6077,28,976.4,1191.21,1274.59,15,21
+Combination Plier,HW-004,Hand Tools,Hettich,SET,4989,5,1819.51,2110.63,2385.01,7,17
+Hacksaw Blade,HW-005,Hand Tools,Hindware,PCS,4514,12,761.86,944.71,1001.39,16,24
+Measuring Tape 5m,HW-006,Hand Tools,Havells,SET,8335,18,2074.15,2364.53,2671.92,12,19
+"Spirit Level 24""",HW-007,Hand Tools,Pidilite,PCS,4779,28,481.16,596.64,656.3,10,25
+Hex Key Set,HW-008,Hand Tools,Tata Steel,SET,6032,5,2165.38,2598.46,2806.34,25,33
+Chisel Set,HW-009,Hand Tools,Hettich,PCS,6758,12,1354.34,1584.58,1901.5,11,21
+Wire Cutter,HW-010,Hand Tools,Hindware,SET,6667,18,999.46,1349.27,1470.7,16,28
+Impact Drill Machine,HW-011,Power Tools,UltraTech,PCS,3543,28,3849.6,4581.02,5176.55,18,30
+"Angle Grinder 4""",HW-012,Power Tools,Crompton,SET,3640,5,1197.95,1485.46,1708.28,18,23
+Jigsaw Machine,HW-013,Power Tools,Taparia,PCS,4861,12,2131.29,2706.74,3112.75,6,11
+Rotary Hammer Drill,HW-014,Power Tools,Asian Paints,SET,6860,18,2673.65,3395.54,3599.27,6,14
+Bench Grinder,HW-015,Power Tools,Finolex,PCS,5523,28,2605.48,2944.19,3120.84,11,23
+Circular Saw,HW-016,Power Tools,UltraTech,SET,6790,5,275.64,311.47,339.5,19,28
+Heat Gun,HW-017,Power Tools,Crompton,PCS,5664,12,347.82,413.91,476,14,26
+Cordless Screwdriver,HW-018,Power Tools,Taparia,SET,4341,18,1258.1,1610.37,1787.51,19,29
+Orbital Sander,HW-019,Power Tools,Asian Paints,PCS,4612,28,2749.84,3354.8,3858.02,14,21
+Electric Planer,HW-020,Power Tools,Finolex,SET,4931,5,1752.34,2243,2512.16,9,16
+MS Bolt M8x50,HW-021,Fasteners,Havells,BOX,3812,12,2697.71,3318.18,3583.63,10,18
+MS Nut M8,HW-022,Fasteners,Pidilite,KG,3402,18,1857.61,2173.4,2369.01,11,17
+"Wood Screw 1.5""",HW-023,Fasteners,Tata Steel,PCS,6950,28,871.13,1027.93,1130.72,7,12
+Self Tapping Screw,HW-024,Fasteners,Hettich,BOX,5356,5,1073.64,1277.63,1354.29,5,17
+Anchor Fastener 10mm,HW-025,Fasteners,Hindware,KG,8407,12,1311.24,1494.81,1569.55,19,28
+Washer M8,HW-026,Fasteners,Havells,PCS,6591,18,476.14,533.28,618.6,13,28
+Machine Screw M6,HW-027,Fasteners,Pidilite,BOX,4270,28,170.38,218.09,242.08,25,36
+Carriage Bolt M10,HW-028,Fasteners,Tata Steel,KG,6357,5,2817.01,3408.58,4090.3,18,25
+Rivet 4mm,HW-029,Fasteners,Hettich,PCS,5455,12,1628.03,2197.84,2527.52,9,20
+Threaded Rod M10,HW-030,Fasteners,Hindware,BOX,4102,18,3903.73,4957.74,5354.36,17,26
+"PVC Ball Valve 1""",HW-031,Plumbing,UltraTech,PCS,6096,28,2549.34,2957.23,3371.24,13,19
+"Brass Gate Valve 1/2""",HW-032,Plumbing,Crompton,MTR,7825,5,818,1030.68,1144.05,8,18
+PTFE Tape,HW-033,Plumbing,Taparia,PCS,5931,12,2373.9,2896.16,3098.89,16,30
+"Pipe Wrench 14""",HW-034,Plumbing,Asian Paints,MTR,5980,18,1702.22,1974.58,2231.28,23,33
+Flexible Hose Pipe,HW-035,Plumbing,Finolex,PCS,7730,28,692.69,858.94,1013.55,15,25
+Bib Cock,HW-036,Plumbing,UltraTech,MTR,5804,5,2179.41,2876.82,3250.81,15,29
+"PVC Elbow 1""",HW-037,Plumbing,Crompton,PCS,8236,12,3469.64,4302.35,4861.66,22,32
+Angle Valve,HW-038,Plumbing,Taparia,MTR,4769,18,2057.1,2550.8,3009.94,15,30
+Water Filter Cartridge,HW-039,Plumbing,Asian Paints,PCS,6385,28,2093.2,2763.02,3094.58,24,32
+"Foot Valve 1""",HW-040,Plumbing,Finolex,MTR,8433,5,3398.47,4180.12,5016.14,11,22
+Modular Switch 6A,HW-041,Electrical,Havells,PCS,3469,12,1962.87,2630.25,2866.97,17,32
+MCB 32A Single Pole,HW-042,Electrical,Pidilite,ROLL,7730,18,3776.41,4493.93,5123.08,25,30
+LED Bulb 9W,HW-043,Electrical,Tata Steel,BOX,6617,28,1189.93,1499.31,1799.17,6,20
+Ceiling Fan Regulator,HW-044,Electrical,Hettich,PCS,3727,5,2395.95,3234.53,3396.26,22,34
+Extension Board 4-Socket,HW-045,Electrical,Hindware,ROLL,7459,12,3922.78,4432.74,5230.63,18,24
+Electrical Tape,HW-046,Electrical,Havells,BOX,4843,18,220.5,291.06,334.72,7,20
+Two Pin Socket,HW-047,Electrical,Pidilite,PCS,4335,28,3398.47,4316.06,4575.02,21,29
+Distribution Board 8-Way,HW-048,Electrical,Tata Steel,ROLL,7626,5,2568.39,2927.96,3425.71,11,18
+Tube Light 20W,HW-049,Electrical,Hettich,BOX,7186,12,412.99,541.02,589.71,9,23
+Doorbell Switch,HW-050,Electrical,Hindware,PCS,6386,18,3195.96,3803.19,4107.45,22,35
+Emulsion Paint White,HW-051,Paint,UltraTech,LTR,8280,28,1245.07,1456.73,1718.94,20,31
+Enamel Paint Blue,HW-052,Paint,Crompton,KG,5010,5,866.12,1134.62,1316.16,17,32
+Wood Primer,HW-053,Paint,Taparia,LTR,3529,12,3321.27,4284.44,4884.26,24,32
+Wall Putty,HW-054,Paint,Asian Paints,KG,5596,18,2992.45,3770.49,4524.59,12,17
+Distemper Paint,HW-055,Paint,Finolex,LTR,7967,28,2395.95,3210.57,3531.63,6,15
+Metal Primer Red Oxide,HW-056,Paint,UltraTech,KG,8439,5,3808.49,4570.19,4798.7,14,28
+Textured Paint,HW-057,Paint,Crompton,LTR,5862,12,1369.38,1547.4,1733.09,23,38
+Waterproof Paint,HW-058,Paint,Taparia,KG,5549,18,265.62,324.06,385.63,25,35
+Spray Paint Black,HW-059,Paint,Asian Paints,LTR,5848,28,1806.48,2402.62,2883.14,15,24
+Anti-Rust Paint,HW-060,Paint,Finolex,KG,4520,5,3574.91,4826.13,5405.27,14,24
+Fevicol SH Adhesive,HW-061,Adhesives & Sealants,Havells,PCS,5249,12,3927.79,4831.18,5410.92,15,22
+Silicone Sealant Clear,HW-062,Adhesives & Sealants,Pidilite,KG,3235,18,2004.98,2446.08,2739.61,10,19
+Epoxy Adhesive,HW-063,Adhesives & Sealants,Tata Steel,PCS,6648,28,1771.39,2178.81,2353.11,13,18
+Araldite Standard,HW-064,Adhesives & Sealants,Hettich,KG,7286,5,1994.95,2334.09,2590.84,5,17
+PVC Pipe Solvent Cement,HW-065,Adhesives & Sealants,Hindware,PCS,6515,12,1004.47,1215.41,1276.18,18,31
+M-Seal Epoxy Putty,HW-066,Adhesives & Sealants,Havells,KG,5737,18,1548.83,1734.69,1994.89,21,32
+Fevi Kwik Instant Adhesive,HW-067,Adhesives & Sealants,Pidilite,PCS,6705,28,46.07,58.51,68.46,18,28
+Tile Adhesive,HW-068,Adhesives & Sealants,Tata Steel,KG,4555,5,2591.44,3368.87,3840.51,14,26
+Foam Sealant Spray,HW-069,Adhesives & Sealants,Hettich,PCS,6804,12,3066.64,3863.97,4327.65,18,25
+Rubber Gasket Adhesive,HW-070,Adhesives & Sealants,Hindware,KG,3610,18,2492.2,3065.41,3525.22,10,22
+Wash Basin White,HW-071,Sanitary Ware,UltraTech,PCS,4695,28,1911.74,2427.91,2646.42,19,24
+Health Faucet,HW-072,Sanitary Ware,Crompton,SET,5963,5,2633.55,3107.59,3573.73,6,14
+Shower Head,HW-073,Sanitary Ware,Taparia,PCS,6261,12,1030.53,1319.08,1398.22,10,20
+Toilet Seat Cover,HW-074,Sanitary Ware,Asian Paints,SET,8468,18,2707.74,3059.75,3335.13,15,26
+Kitchen Sink Single Bowl,HW-075,Sanitary Ware,Finolex,PCS,7010,28,325.77,384.41,434.38,17,32
+Basin Mixer Tap,HW-076,Sanitary Ware,UltraTech,SET,5366,5,1134.8,1407.15,1604.15,25,37
+Overhead Shower Arm,HW-077,Sanitary Ware,Crompton,PCS,8010,12,2080.16,2600.2,3120.24,19,28
+Urinal Flush Valve,HW-078,Sanitary Ware,Taparia,SET,4963,18,2302.72,3108.67,3606.06,13,27
+Soap Dispenser,HW-079,Sanitary Ware,Asian Paints,PCS,6362,28,3948.85,5094.02,5654.36,23,31
+Towel Rod,HW-080,Sanitary Ware,Finolex,SET,7468,5,2861.12,3461.96,4119.73,11,22
+"Door Hinge 4""",HW-081,Hinges & Fittings,Havells,PCS,7446,12,1635.05,2174.62,2392.08,17,30
+Cabinet Hinge Soft Close,HW-082,Hinges & Fittings,Pidilite,BOX,4422,18,3607.99,4293.51,4894.6,21,34
+"Drawer Channel 18""",HW-083,Hinges & Fittings,Tata Steel,DOZEN,8547,28,1334.3,1681.22,1967.03,21,28
+Furniture Handle,HW-084,Hinges & Fittings,Hettich,PCS,6278,5,2377.91,3115.06,3644.62,9,24
+Door Stopper,HW-085,Hinges & Fittings,Hindware,BOX,8284,12,3202.98,4195.9,4531.57,25,36
+Sliding Door Roller,HW-086,Hinges & Fittings,Havells,DOZEN,7533,18,3186.94,3728.72,4474.46,17,32
+"Tower Bolt 6""",HW-087,Hinges & Fittings,Pidilite,PCS,5690,28,931.28,1257.23,1433.24,24,37
+Piano Hinge 6ft,HW-088,Hinges & Fittings,Tata Steel,BOX,6380,5,4007.99,5009.99,6011.99,22,32
+Cabinet Lock Catch,HW-089,Hinges & Fittings,Hettich,DOZEN,6509,12,2315.75,3103.11,3630.64,14,25
+Curtain Bracket,HW-090,Hinges & Fittings,Hindware,PCS,4471,18,3811.5,4993.07,5592.24,17,28
+Mortise Lock Set,HW-091,Locks & Security,UltraTech,PCS,8340,28,3251.1,3998.85,4558.69,17,24
+Padlock 50mm,HW-092,Locks & Security,Crompton,SET,6750,5,1877.65,2365.84,2697.06,9,24
+Door Latch,HW-093,Locks & Security,Taparia,PCS,6446,12,2391.94,3013.84,3254.95,25,37
+Digital Door Lock,HW-094,Locks & Security,Asian Paints,SET,7146,18,2488.18,2911.17,3493.4,18,29
+Cupboard Lock,HW-095,Locks & Security,Finolex,PCS,7997,28,968.38,1307.31,1503.41,17,30
+Hasp & Staple,HW-096,Locks & Security,UltraTech,SET,5967,5,3853.61,4894.08,5579.25,20,34
+Chain Lock,HW-097,Locks & Security,Crompton,PCS,4724,12,2667.64,3361.23,3899.03,23,33
+Night Latch,HW-098,Locks & Security,Taparia,SET,6521,18,2441.07,3148.98,3747.29,15,23
+Drawer Lock,HW-099,Locks & Security,Asian Paints,PCS,3842,28,2963.38,3941.3,4453.67,10,21
+Gate Latch,HW-100,Locks & Security,Finolex,SET,7438,5,3597.97,4461.48,4863.01,18,24

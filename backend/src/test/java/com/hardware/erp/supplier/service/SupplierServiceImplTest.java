@@ -7,6 +7,7 @@ import com.hardware.erp.auth.entity.Role;
 import com.hardware.erp.auth.entity.RoleStatus;
 import com.hardware.erp.auth.entity.User;
 import com.hardware.erp.auth.entity.UserStatus;
+import com.hardware.erp.common.activity.ActivityAction;
 import com.hardware.erp.common.activity.ActivityLogService;
 import com.hardware.erp.common.exception.BusinessException;
 import com.hardware.erp.common.exception.DuplicateResourceException;
@@ -272,6 +273,7 @@ class SupplierServiceImplTest {
         }
     }
 
+
     @Nested
     @DisplayName("contacts")
     class Contacts {
@@ -334,6 +336,94 @@ class SupplierServiceImplTest {
         @DisplayName("null is treated as zero rather than throwing")
         void nullIsZero() {
             assertThat(supplierMapper.rupees(null)).isEqualTo("0.00");
+        }
+    }
+
+    /**
+     * CR-058. The restore path's authorisation lives entirely in
+     * SupplierRepository.restoreDeleted's WHERE clause, so these tests assert
+     * on what the service does with its return value: a row count of 1 means
+     * the guarded update matched; 0 means it did not match for ANY reason
+     * (wrong tenant, never deleted, no such id) and every one of those must
+     * surface identically as 404, so ids cannot be probed. The SQL semantics
+     * themselves are proven against real PostgreSQL in SupplierControllerIT.
+     */
+    @Nested
+    @DisplayName("restore (CR-058)")
+    class Restore {
+
+        @Test
+        @DisplayName("a genuinely deleted supplier is restored, keeping its original id, and is audit-logged")
+        void restoresDeletedSupplier() {
+            when(supplierRepository.restoreDeleted(7L, 1L)).thenReturn(1);
+
+            supplierService.restore(7L);
+
+            // Tenant comes from the security context, never from the caller.
+            verify(supplierRepository).restoreDeleted(7L, 1L);
+            // Restored in place: no new row is ever saved on this path.
+            verify(supplierRepository, never()).save(argThat(s -> s.getId() == null));
+            verify(activityLog).action(eq("SUPPLIER"), eq("SUPPLIER"), eq(7L),
+                    eq("Sri Balaji Hardware Agencies"),
+                    eq(ActivityAction.RESTORE), anyString());
+        }
+
+        @Test
+        @DisplayName("a supplier that was never deleted gives 404 and writes no audit entry")
+        void notDeletedGives404() {
+            when(supplierRepository.restoreDeleted(7L, 1L)).thenReturn(0);
+
+            assertThatThrownBy(() -> supplierService.restore(7L))
+                    .isInstanceOf(ResourceNotFoundException.class);
+
+            verifyNoInteractions(activityLog);
+        }
+
+        @Test
+        @DisplayName("a nonexistent id gives 404, indistinguishable from the not-deleted case")
+        void unknownIdGives404() {
+            when(supplierRepository.restoreDeleted(4242L, 1L)).thenReturn(0);
+
+            assertThatThrownBy(() -> supplierService.restore(4242L))
+                    .isInstanceOf(ResourceNotFoundException.class);
+
+            verifyNoInteractions(activityLog);
+        }
+
+        @Test
+        @DisplayName("another tenant's deleted supplier cannot be restored - the tenant id is always the caller's own")
+        void cannotRestoreAnotherTenantsSupplier() {
+            // The signed-in principal is tenant 1. Supplier 7 here belongs to
+            // tenant 2, so the guarded UPDATE matches nothing.
+            when(supplierRepository.restoreDeleted(7L, 1L)).thenReturn(0);
+            when(supplierRepository.restoreDeleted(7L, 2L)).thenReturn(1);
+
+            assertThatThrownBy(() -> supplierService.restore(7L))
+                    .isInstanceOf(ResourceNotFoundException.class);
+
+            // The service never even asked about tenant 2 - no caller-supplied
+            // value can redirect it at another shop's rows.
+            verify(supplierRepository, never()).restoreDeleted(7L, 2L);
+            verifyNoInteractions(activityLog);
+        }
+
+        @Test
+        @DisplayName("listDeleted reads only the caller's own tenant and maps the deletion date through")
+        void listDeletedIsTenantScoped() {
+            Supplier deleted = Supplier.builder().id(13L).supplierCode("SUP-0013")
+                    .supplierName("Old Ganesh Hardware").mobileNo("9840199887").city("Madurai")
+                    .status(SupplierStatus.INACTIVE)
+                    .deletedAt(java.time.LocalDateTime.now()).deletedBy(1L).build();
+            when(supplierRepository.findDeletedByTenantId(1L)).thenReturn(List.of(deleted));
+
+            var rows = supplierService.listDeleted();
+
+            assertThat(rows).hasSize(1);
+            assertThat(rows.get(0).id()).isEqualTo(13L);
+            assertThat(rows.get(0).supplierCode()).isEqualTo("SUP-0013");
+            assertThat(rows.get(0).deletedAt()).isNotNull();
+            verify(supplierRepository).findDeletedByTenantId(1L);
+            verify(supplierRepository, never()).findDeletedByTenantId(2L);
         }
     }
 }

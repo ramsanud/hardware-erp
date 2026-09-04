@@ -1,8 +1,10 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { AppLayout } from '@/layouts/AppLayout';
 import { AUTH_ROUTES, PERMISSIONS } from '@/modules/auth/constants';
 import { LoginPage } from '@/modules/auth/pages/LoginPage';
+import { MfaEnrollPage } from '@/modules/auth/pages/MfaEnrollPage';
+import { MfaVerifyPage } from '@/modules/auth/pages/MfaVerifyPage';
 import { ForgotPasswordPage } from '@/modules/auth/pages/ForgotPasswordPage';
 import { ResetPasswordPage } from '@/modules/auth/pages/ResetPasswordPage';
 import { ForceChangePasswordPage } from '@/modules/auth/pages/ForceChangePasswordPage';
@@ -34,6 +36,8 @@ import { PurchaseCreatePage } from '@/modules/purchase/pages/PurchaseCreatePage'
 import { DashboardPage } from '@/modules/dashboard/pages/DashboardPage';
 import { SETTINGS_ROUTES } from '@/modules/settings/constants';
 import { ShopSettingsPage } from '@/modules/settings/pages/ShopSettingsPage';
+import { WhatsAppSettingsPage } from '@/modules/settings/pages/WhatsAppSettingsPage';
+import { NotificationHistoryPage } from '@/modules/notification/pages/NotificationHistoryPage';
 import { AppearancePage } from '@/modules/settings/pages/AppearancePage';
 import { QUOTATION_ROUTES } from '@/modules/quotation/constants';
 import { QuotationListPage } from '@/modules/quotation/pages/QuotationListPage';
@@ -60,7 +64,32 @@ import { AttendancePage } from '@/modules/labour/pages/AttendancePage';
 import { RegisterPage } from '@/modules/tenant/pages/RegisterPage';
 import { DEVELOPER_ROUTES } from '@/modules/developer/constants';
 import { DeveloperInspectionPage } from '@/modules/developer/pages/DeveloperInspectionPage';
+import { TOOLS_ROUTES } from '@/modules/tools/constants';
+import { GstCalculatorPage } from '@/modules/tools/pages/GstCalculatorPage';
+import { TallyExportPage } from '@/modules/tools/pages/TallyExportPage';
 import { NotFoundPage } from '@/shared/components/NotFoundPage';
+import { PlatformAdminAuthProvider } from '@/modules/platform-admin/hooks/PlatformAdminAuthProvider';
+import { PlatformAdminLoginPage } from '@/modules/platform-admin/pages/PlatformAdminLoginPage';
+import { PlatformAdminMfaVerifyPage } from '@/modules/platform-admin/pages/PlatformAdminMfaVerifyPage';
+import { PlatformAdminMfaEnrollPage } from '@/modules/platform-admin/pages/PlatformAdminMfaEnrollPage';
+import { PlatformAdminDashboardPage } from '@/modules/platform-admin/pages/PlatformAdminDashboardPage';
+import { PlatformAdminTenantListPage } from '@/modules/platform-admin/pages/PlatformAdminTenantListPage';
+import { PlatformAdminTenantDetailPage } from '@/modules/platform-admin/pages/PlatformAdminTenantDetailPage';
+import { PlatformAdminSystemHealthPage } from '@/modules/platform-admin/pages/PlatformAdminSystemHealthPage';
+import { PlatformAdminIncidentsPage } from '@/modules/platform-admin/pages/PlatformAdminIncidentsPage';
+import { PlatformAdminSupportListPage } from '@/modules/platform-admin/pages/PlatformAdminSupportListPage';
+import { PlatformAdminSupportDetailPage } from '@/modules/platform-admin/pages/PlatformAdminSupportDetailPage';
+import { PlatformAdminAuditLogPage } from '@/modules/platform-admin/pages/PlatformAdminAuditLogPage';
+import { PlatformAdminDeveloperToolsPage } from '@/modules/platform-admin/pages/PlatformAdminDeveloperToolsPage';
+import { PlatformAdminSecurityPage } from '@/modules/platform-admin/pages/PlatformAdminSecurityPage';
+import { PlatformAdminFeatureFlagsPage } from '@/modules/platform-admin/pages/PlatformAdminFeatureFlagsPage';
+import { PlatformAdminAnalyticsPage } from '@/modules/platform-admin/pages/PlatformAdminAnalyticsPage';
+import { PlatformAdminSettingsPage } from '@/modules/platform-admin/pages/PlatformAdminSettingsPage';
+import { SUPPORT_ROUTES } from '@/modules/support/constants';
+import { SupportTicketListPage } from '@/modules/support/pages/SupportTicketListPage';
+import { SupportTicketDetailPage } from '@/modules/support/pages/SupportTicketDetailPage';
+import { PlatformAdminLayout } from '@/modules/platform-admin/layouts/PlatformAdminLayout';
+import { PlatformAdminProtectedRoute } from '@/modules/platform-admin/routes/PlatformAdminProtectedRoute';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RequirePermission } from './RequirePermission';
 
@@ -71,9 +100,58 @@ import { RequirePermission } from './RequirePermission';
 export function AppRoutes() {
   return (
     <Routes>
+      {/*
+        Platform Admin Console (CR-054) - deliberately outside AuthLayout/
+        AppLayout and the tenant AuthProvider entirely. Its own provider
+        wraps just this subtree, so a tenant session and a platform-admin
+        session never share state even if both are open in the same browser.
+      */}
+      <Route
+        path="/platform-admin/*"
+        element={<PlatformAdminAuthProvider><Outlet /></PlatformAdminAuthProvider>}
+      >
+        <Route path="login" element={<PlatformAdminLoginPage />} />
+        <Route path="mfa" element={<PlatformAdminMfaVerifyPage />} />
+        <Route path="enroll" element={<PlatformAdminMfaEnrollPage />} />
+        <Route element={<PlatformAdminProtectedRoute />}>
+          <Route element={<PlatformAdminLayout />}>
+            <Route path="dashboard" element={<PlatformAdminDashboardPage />} />
+            <Route path="tenants" element={<PlatformAdminTenantListPage />} />
+            <Route path="tenants/:id" element={<PlatformAdminTenantDetailPage />} />
+            <Route path="system-health" element={<PlatformAdminSystemHealthPage />} />
+            <Route path="incidents" element={<PlatformAdminIncidentsPage />} />
+            <Route path="support" element={<PlatformAdminSupportListPage />} />
+            <Route path="support/:id" element={<PlatformAdminSupportDetailPage />} />
+            <Route path="audit-logs" element={<PlatformAdminAuditLogPage />} />
+            <Route path="developer-tools" element={<PlatformAdminDeveloperToolsPage />} />
+            <Route path="security" element={<PlatformAdminSecurityPage />} />
+            <Route path="feature-flags" element={<PlatformAdminFeatureFlagsPage />} />
+            <Route path="analytics" element={<PlatformAdminAnalyticsPage />} />
+            <Route path="settings" element={<PlatformAdminSettingsPage />} />
+          </Route>
+        </Route>
+        <Route index element={<Navigate to="login" replace />} />
+      </Route>
+
       {/* Public */}
       <Route element={<AuthLayout />}>
         <Route path={AUTH_ROUTES.login} element={<LoginPage />} />
+        {/*
+          CR-058 - the second factor. Public on purpose: a correct password
+          clears only the first factor, so at this point there is no session
+          yet, just a short-lived MFA challenge token. Putting these behind
+          ProtectedRoute would be a deadlock - the user cannot obtain the
+          session the guard demands without first passing through here.
+
+          These two were written but never registered, which made MFA
+          mandatory *and* unreachable: LoginPage navigates to
+          AUTH_ROUTES.mfaEnroll/mfaVerify, React Router matched nothing, and
+          every sign-in on a fresh database dead-ended on "page not found".
+          The platform-admin equivalents above were wired up; these were the
+          pair that got missed.
+        */}
+        <Route path={AUTH_ROUTES.mfaEnroll} element={<MfaEnrollPage />} />
+        <Route path={AUTH_ROUTES.mfaVerify} element={<MfaVerifyPage />} />
         <Route path={AUTH_ROUTES.register} element={<RegisterPage />} />
         <Route path={AUTH_ROUTES.forgotPassword} element={<ForgotPasswordPage />} />
         <Route path={AUTH_ROUTES.resetPassword} element={<ResetPasswordPage />} />
@@ -91,6 +169,8 @@ export function AppRoutes() {
         <Route element={<AppLayout />}>
           <Route path={AUTH_ROUTES.profile} element={<ProfilePage />} />
           <Route path={AUTH_ROUTES.appearance} element={<AppearancePage />} />
+          <Route path={SUPPORT_ROUTES.list} element={<SupportTicketListPage />} />
+          <Route path="/support/:id" element={<SupportTicketDetailPage />} />
 
           <Route element={<RequirePermission permission={PERMISSIONS.USER_VIEW} />}>
             <Route path={AUTH_ROUTES.users} element={<UserManagementPage />} />
@@ -183,6 +263,8 @@ export function AppRoutes() {
 
           <Route element={<RequirePermission permission={PERMISSIONS.SETTINGS_VIEW} />}>
             <Route path={SETTINGS_ROUTES.shop} element={<ShopSettingsPage />} />
+            <Route path={SETTINGS_ROUTES.whatsapp} element={<WhatsAppSettingsPage />} />
+            <Route path={SETTINGS_ROUTES.whatsappHistory} element={<NotificationHistoryPage />} />
           </Route>
 
           {/* Developer inspection (CR-045). This gate is convenience only:
@@ -190,6 +272,14 @@ export function AppRoutes() {
               DEVELOPER_INSPECT, and refuse everyone in production. */}
           <Route element={<RequirePermission permission={PERMISSIONS.DEVELOPER_INSPECT} />}>
             <Route path={DEVELOPER_ROUTES.inspection} element={<DeveloperInspectionPage />} />
+          </Route>
+
+          {/* CR-053 backlog item 7 - no permission gate, same reasoning as
+              its sidebar entry: pure client-side arithmetic, no tenant data. */}
+          <Route path={TOOLS_ROUTES.gstCalculator} element={<GstCalculatorPage />} />
+
+          <Route element={<RequirePermission permission={PERMISSIONS.REPORT_FINANCIAL} />}>
+            <Route path={TOOLS_ROUTES.tallyExport} element={<TallyExportPage />} />
           </Route>
 
           {/* Every role can reach the dashboard - it only renders the cards

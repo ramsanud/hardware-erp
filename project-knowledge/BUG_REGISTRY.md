@@ -1639,3 +1639,377 @@ A security control that no test can reach is indistinguishable from one that is
 switched off. When a filter keys on a request attribute, prefer one whose value
 is the same in tests as in production — otherwise the test suite quietly stops
 being evidence.
+
+## BUG-TEST-001 — `mvn test` silently skips every `*IT.java`, and `WhatsAppConnectionSecurityIT` had never actually run
+
+**Module:** Testing / Build / WhatsApp connection security
+**Severity:** MEDIUM (process gap: a real, previously-written integration test
+had never executed against real Postgres in any environment that had Docker,
+because every "full suite" check this session used the wrong Maven goal)
+**Layer:** BACKEND ONLY (one test file's seed data; no production code changed)
+**Status:** Fixed (CR-057 phases 3-8)
+**Found:** 2026-09-02, running `mvn verify` (not `mvn test`) for the first time
+this session as a deliberate final check before reporting CR-057 complete.
+
+### Symptom
+
+Repeated "full suite green" checkpoints this session (`mvn test`, run after
+every CR-057 phase) reported a stable, believable-looking number and
+`BUILD SUCCESS` every time. Running `mvn verify` instead - the goal that
+actually invokes the Failsafe plugin bound to run `*IT.java` classes, per
+`pom.xml`'s own comment at the Failsafe binding warning about exactly this
+trap - failed immediately:
+
+```
+WhatsAppConnectionSecurityIT.eachTenantSeesOnlyItsOwnConnection
+WhatsAppConnectionSecurityIT.cannotClaimAnotherTenantsPhoneNumber
+WhatsAppConnectionSecurityIT.disconnectIsTenantScoped
+  DataIntegrityViolationException: value too long for type character varying(20)
+```
+
+### Root cause (two, layered)
+
+1. **Process**: Maven Surefire's default include pattern is `**/*Test.java`
+   only. `*IT.java` classes are conventionally run by Failsafe during the
+   `integration-test`/`verify` phases, not `test`. Every `mvn test` run this
+   session (and, per `pom.xml`'s own pre-existing comment, apparently in
+   earlier sessions too - this was already known and fixed for the *build*,
+   just not remembered when choosing which goal to run for a manual
+   check) silently excluded all ~25 `*IT.java` classes, both this session's
+   new ones and every pre-existing one, from the reported test count.
+   Individually running each new IT via `-Dtest=ClassName` (done throughout
+   this session) worked around this by accident - `-Dtest` overrides
+   Surefire's own default include filter - which is why every individual
+   phase's tests were genuinely verified even though the aggregate
+   checkpoints were not.
+2. **The actual bug this uncovered**: `WhatsAppConnectionSecurityIT.seedConnection()`
+   built `display_phone_number` (schema: `VARCHAR(20)`, sized for a real
+   value like `"+91 90000 12345"`, 16 characters) by concatenating the
+   test's own synthetic `phoneNumberId` parameter directly onto it -
+   `"+91 90000 " + phoneNumberId"`. That parameter was written as a longer,
+   human-readable test id (`"PNI-TENANT-A-001"`, 17 characters, meant to
+   exercise the real Meta-side opaque `phone_number_id` column, which is
+   `VARCHAR(50)` and comfortably wide enough) - not a value ever meant to
+   also stand in as a display phone number. The combined string (27
+   characters) always overflowed the 20-character column. Because this
+   test could never previously reach a real Postgres instance in this
+   environment (CR-056's own registry entry states plainly: "could not be
+   run in this environment" - no Docker), this defect existed from the
+   moment the test was written and was never exercised until this session's
+   Docker became available and `mvn verify` was finally run.
+
+### Fix
+
+`seedConnection()` now builds `display_phone_number` from the tenant id
+alone (`"+91 90000 " + String.format("%05d", tenantId)`), decoupled from
+whatever length the test's own synthetic `phoneNumberId` parameter happens
+to be. No schema or production code changed - the column width is correct
+for real data; only the test's own synthetic value construction was wrong.
+
+### Regression test
+
+The same three `WhatsAppConnectionSecurityIT` tests, now genuinely passing
+against real PostgreSQL - re-run standalone (10/10... 3/3 in that class) and
+as part of a full `mvn verify` (148 integration tests, 0 failures).
+
+### Lesson
+
+**`mvn verify`, never bare `mvn test`, is the only command that proves this
+project's integration test suite passes** - `pom.xml` already said so in a
+comment before this session started, and running the wrong goal repeatedly
+produced a false sense of "374/374 green" that never touched roughly a
+third of the suite. A "full suite" checkmark is only as good as the command
+that produced it; when a comment in the build file explains a footgun by
+name, read it before trusting a green result.
+
+## BUG-SET-001 — self-declared plan picker was a free checkout bypass once billing existed
+
+**Module:** Settings / Subscriptions & Billing
+**Severity:** MEDIUM (no production impact - no environment in this repo has
+ever had real Razorpay credentials configured, so the bypass was never
+exploitable in practice; caught while building the feature that would have
+made it exploitable, not after)
+**Layer:** BACKEND ONLY
+**Status:** Fixed (CR-057 phase 9)
+**Found:** 2026-09-03, while wiring real Razorpay checkout - not from a bug
+report.
+
+### Symptom (would-be)
+
+Once Razorpay billing is configured, an OWNER could still call
+`PUT /v1/settings` with `subscriptionTier: "MAX"` directly - the same
+self-declared picker CR-027 shipped before any payment gateway existed -
+and receive the paid tier with no payment, no order, no Razorpay
+involvement at all.
+
+### Root cause
+
+`TenantSettingsServiceImpl.update()` applied `request.subscriptionTier()`
+to the tenant unconditionally (`tenant.setSubscriptionTier(...)`, no
+gating) since CR-027. That was correct at the time - there was nothing to
+bypass. CR-057 phase 9 added a real paid path (`SubscriptionBillingService`)
+without touching this pre-existing unconditional setter, which would have
+left it live as a silent alternate route to the same field.
+
+### Fix
+
+`TenantSettingsServiceImpl.update()` now checks
+`RazorpayProperties.active()` before applying a tier change: if billing is
+configured **and** the requested tier is a genuine upgrade (higher ordinal
+than the tenant's current tier), it rejects with
+`422 UPGRADE_REQUIRES_CHECKOUT` naming the real Billing card. A downgrade
+(including to `FREE`) is never gated - it needs no payment either way, in
+both configurations. With no gateway configured (every environment in this
+repo today), behaviour is unchanged from CR-027.
+
+### Regression test
+
+`TenantSettingsServiceImplTest` (new file - this service had none before):
+`upgradeRejectedWhenBillingActive`, `downgradeStillAllowedWhenBillingActive`,
+`upgradeStillAllowedWhenBillingNotConfigured` - pins both the fix and the
+"unchanged when unconfigured" guarantee explicitly, so a future change
+cannot silently reopen the bypass or silently start blocking downgrades.
+
+### Lesson
+
+**A "self-declared, no gateway exists yet" escape hatch is a liability the
+moment a real gateway is added elsewhere in the same tenant field** - the
+same field having two writers (a free picker and a paid checkout) is a
+structural risk independent of whether either writer is individually
+correct. When adding a real paid/privileged path to a field that already
+had an honest placeholder writer, always re-check that placeholder's own
+gating in the same change, not as a follow-up.
+
+---
+
+## BUG-SUP-006 — `@SQLRestriction` made every soft delete permanently unrecoverable
+
+**Module:** Supplier, Product, Users (the three entities that carry
+`deleted_at` + `@SQLRestriction`)
+**Severity:** HIGH (data was never lost — the rows survived correctly — but a
+single mis-click on Deactivate was irreversible from the application, and
+recovery required hand-written SQL against production)
+**Layer:** BOTH (backend had no query that could reach the row; frontend had
+no surface that could show or restore it)
+**Status:** Fixed (CR-058)
+**Found:** 2026-09-04, while implementing CR-058 — not from a bug report.
+
+### Symptom
+
+An owner deactivates a supplier, product or user account by mistake. The row
+is soft-deleted exactly as designed (`deleted_at` set, `status` → `INACTIVE`),
+so all history keeps resolving. But from that moment:
+
+- it does not appear in the list or any search, at any status filter;
+- `GET /v1/suppliers/{id}` (and the product/user equivalents) returns 404;
+- there is no endpoint and no screen that lists deleted records;
+- re-creating it is blocked by the partial unique indexes on
+  `lower(supplier_name)` / `lower(product_name)` / `barcode`, and re-creating a
+  user is blocked by the globally unique `mobile_no`/`email`.
+
+There was no way back through the application at all.
+
+### Reproduction (before the fix)
+
+1. `POST /v1/suppliers` → note the returned `id`.
+2. `DELETE /v1/suppliers/{id}` → 204.
+3. `GET /v1/suppliers/{id}` → **404**.
+4. `GET /v1/suppliers?search=<name>&status=INACTIVE` → 0 results, at every
+   status filter including no filter.
+5. `POST /v1/suppliers` with the same name → **409 DUPLICATE_RESOURCE**, from
+   `uk_supplier_name_lower`, which is partial on `deleted_at IS NULL` — so the
+   conflict is with a row the API insists does not exist.
+6. No endpoint existed that could return the row or clear `deleted_at`.
+
+### Root cause
+
+`@SQLRestriction("deleted_at is null")` on `Supplier`, `Product` and `User` is
+applied by Hibernate to every SQL statement whose FROM clause Hibernate itself
+generates — every derived query, every JPQL query, every association load.
+That is exactly the intended behaviour for reads, and it is what keeps deleted
+rows out of lists and lookups.
+
+The defect is that nothing was ever built on the other side of it. Because
+`findByIdAndTenantId` is equally restricted, the service layer had no way to
+load a deleted row, and therefore no way to write to one either — a
+load-then-save restore is structurally impossible. Soft delete was implemented
+as a one-way door and shipped that way in Modules 1, 2 and 3.
+
+### Fix
+
+CR-058, backend and frontend, with **no schema change and no migration** —
+`deleted_at`/`deleted_by` have existed since V1/V2/V7.
+
+Per entity, two native queries (Hibernate does not rewrite a FROM clause it
+did not generate, the same deliberate escape hatch CR-018's two existing
+native queries in `SupplierRepository` already used), both parameter-bound and
+both tenant-scoped:
+
+- `findDeletedByTenantId` — the recycle-bin read.
+- `restoreDeleted` — one guarded
+  `UPDATE … SET deleted_at = null, deleted_by = null, status = 'ACTIVE',
+  version = version + 1 WHERE <pk> = ? AND tenant_id = ? AND deleted_at IS NOT
+  NULL`, whose WHERE clause is the authorization and state check in a single
+  atomic statement. Zero rows affected → 404, identically for a foreign
+  tenant's row, a row that was never deleted, and an id that does not exist.
+
+`@SQLRestriction` was **not** removed, relaxed, or globally disabled — the
+explicitly rejected shortcut. Endpoints: `GET /v1/{suppliers,products,users}/deleted`
+and `POST /v1/{suppliers,products,users}/{id}/restore`, all gated on the
+module's existing `_MANAGE` permission. Frontend: a "Deleted" status filter on
+each list page that routes to the dedicated endpoint, with a Restore action.
+
+`app_user` restore also clears `failed_login_attempts`/`locked_until`, and
+deliberately does **not** reset `token_version` — see BUG-SUP-006's sibling
+note in `DATABASE_REGISTRY.md`: putting it back would re-arm every access
+token the account held before deletion.
+
+### Regression coverage
+
+Unit (`SupplierServiceImplTest`, `ProductServiceImplTest` (new file),
+`UserServiceImplTest`, `CustomerServiceImplTest`): restore succeeds and logs;
+never-deleted → 404 with no audit entry; unknown id → 404; another tenant's
+row → 404 and the service never even asks about the foreign tenant;
+`listDeleted` is tenant-scoped.
+
+Integration, against real PostgreSQL — these are the ones that actually prove
+the fix, since a mocked repository cannot show whether `@SQLRestriction` was
+bypassed (`SupplierControllerIT`, `ProductControllerIT` (new file),
+`UserControllerIT`, `CustomerControllerIT` (new file)): the seeded
+soft-deleted rows (`SUP-0013`, `EMP012`) appear in the deleted list while
+staying absent from every ordinary query; full create → delete → hidden →
+listed as deleted → restore → visible again → GET-by-id works → same id, no
+duplicate; a second restore 404s; `_VIEW`-only roles get 403 on both
+endpoints; anonymous callers get 401. `UserControllerIT` additionally proves
+the security property that a restored account's **pre-deletion access token
+stays rejected** while the account can sign in afresh.
+
+### Lesson
+
+**A soft delete is only half a feature until something can read the deleted
+row.** `@SQLRestriction` (and `@Where` before it) is applied to the entity, not
+to a query — the instant it is added, every future read *and write* path to a
+deleted row is closed, including the recovery path nobody has written yet. When
+adding an entity-level delete filter, build the recovery read in the same
+change, or the deletion is not soft at all from the user's point of view: the
+data is retained for history and permanently unreachable for correction.
+
+The corollary caught the same day: partial unique indexes scoped
+`WHERE deleted_at IS NULL` mean a deleted row *still* blocks re-creating its
+own name. Retention plus invisibility plus a live uniqueness conflict is
+strictly worse than either a hard delete or a working restore.
+
+## BUG-TEST-002 — `CustomerControllerIT.activateRequiresManage` asserted a permission boundary that does not exist (FIXED, 2026-09-04)
+
+| | |
+|---|---|
+| **Severity** | Low — a false test failure, never a production defect |
+| **Layer** | TEST ONLY (backend integration test) |
+| **Found** | Running `mvn -o verify` during CR-059; the only failure in 189 integration tests |
+| **Symptom** | `CustomerControllerIT.activateRequiresManage:112 Status expected:<403> but was:<204>` |
+
+**Root cause.** The test signed in as the seeded ACCOUNTANT
+(`9840223344`) on the stated premise that "ACCOUNTANT holds CUSTOMER_VIEW
+but not CUSTOMER_MANAGE". That premise is false.
+`V1__auth_schema.sql` grants `CUSTOMER_MANAGE` to **MANAGER, ACCOUNTANT
+and STAFF alike**, and OWNER holds every permission — so **no seeded role
+can express "view customers but not manage them"**. The 204 was the
+correct response; the assertion was wrong.
+
+It is a copy of `SupplierControllerIT.deletedRecordsRequireManage`, which
+uses the same ACCOUNTANT account and is **correct** — ACCOUNTANT really
+does hold `SUPPLIER_VIEW` without `SUPPLIER_MANAGE`. The premise was true
+for suppliers and silently false for customers when the test was cloned.
+`ProductControllerIT.deletedRecordsRequireManage` was checked too and is
+also correct (STAFF has `PRODUCT_VIEW` without `PRODUCT_MANAGE`), so the
+defect is confined to this one test.
+
+**Fix.** The test now provisions its own role rather than borrowing a
+seeded one: it creates a `CUSTOMER_READER` role holding `CUSTOMER_VIEW`
+only, creates a user in it (`mustChangePassword=false`, the same approach
+as `UserControllerIT.deactivatedUserCannotLogin`), signs in as them,
+asserts `GET /v1/customers` returns 200 — which proves the token works and
+the role really does carry VIEW, so the 403 that follows is meaningful
+rather than an artifact of a broken token — and then asserts
+`POST /v1/customers/{id}/activate` returns 403 `ACCESS_DENIED`.
+
+**Explicitly rejected fix**: removing `CUSTOMER_MANAGE` from ACCOUNTANT in
+the seed to make the original assertion pass. Whether an accountant may
+reactivate a customer is a product decision about role design, not a
+detail to bend so a test goes green — and changing a seeded grant would
+have silently altered what every existing deployment's ACCOUNTANT role can
+do.
+
+**Worth knowing, not changed**: `STAFF` also holds `CUSTOMER_MANAGE`, so
+counter staff can deactivate and reactivate customers. That is a
+deliberate-looking grant from V1 and may well be right for a shop counter,
+but it is the kind of thing to confirm with the owner rather than assume.
+
+**Regression test**: the repaired `activateRequiresManage` itself — it now
+fails if `@PreAuthorize(CUSTOMER_MANAGE)` is ever dropped from
+`CustomerController.activate`, which the previous version could not do,
+because it was asserting against a caller who was allowed all along.
+
+**Verified**: `mvn -o verify -Dit.test=CustomerControllerIT` → 5/5 pass,
+BUILD SUCCESS, against real PostgreSQL.
+
+## BUG-SEC-004 — the Platform Admin Console signing key was unguarded, and `render.yaml` never set it (FIXED, 2026-09-04)
+
+| | |
+|---|---|
+| **Severity** | **HIGH** — forgeable Platform Admin session on any deploy made from the blueprint |
+| **Layer** | BACKEND + deployment config |
+| **Found** | Answering "for running project in supabase need env right?" while listing the required environment variables for CLOUD mode |
+| **Introduced** | CR-054 (2026-09-01), which added the Platform Admin Console's own JWT key. `render.yaml` and `JwtSecretGuard` both predate it and were never revisited |
+
+**The defect.** Three facts combined into a hole:
+
+1. `application.yml` carries a committed default for
+   `app.platform-admin.jwt.secret`
+   (`${PLATFORM_ADMIN_JWT_SECRET:UGxhdGZvcm0tQWRtaW4t...}`), so that a fresh
+   clone runs — the same convention as `app.jwt.secret`.
+2. `JwtSecretGuard` only ever inspected `jwtProperties.secret()`. It never
+   looked at the platform-admin key, so the placeholder passed straight
+   through in production.
+3. `render.yaml` declared **no** `PLATFORM_ADMIN_JWT_SECRET` at all — zero
+   occurrences. `JWT_SECRET` had `generateValue: true`; its counterpart was
+   simply absent.
+
+So a deployment created from the blueprint came up signing **Platform Admin
+Console** tokens with a key that is committed to this repository, and
+nothing anywhere objected. That console is the highest-privilege surface in
+the product: tenant management, tenant data export, backup center, billing,
+feature flags, developer tools — across *every* tenant. Anyone with read
+access to the source could mint a valid platform-admin session.
+
+The tenant-facing app was never exposed this way: `JWT_SECRET` is
+`generateValue: true` in the blueprint and the guard has refused its
+placeholder in prod since CR-008.
+
+**Fix.**
+
+- `JwtSecretGuard` now also refuses the platform-admin placeholder under the
+  `prod` profile, and warns outside it — symmetrical with the existing
+  app-secret behaviour, so a fresh clone still runs.
+- It additionally refuses when `JWT_SECRET` and `PLATFORM_ADMIN_JWT_SECRET`
+  are **equal**. Two independently random keys that happen to be the same
+  key still collapse two trust boundaries into one (CR-054), and a
+  placeholder-only check would never catch it.
+- `render.yaml` declares `PLATFORM_ADMIN_JWT_SECRET` with
+  `generateValue: true`, so Render mints a separate random value per deploy.
+- `.env.cloud.example` and both `scripts/run-cloud.*` require it, and the
+  scripts refuse to launch if the two secrets match — the same check as the
+  server's, but reported before the JVM starts.
+
+**Regression test.** `JwtSecretGuardTest` — a class that did not exist
+before; `JwtSecretGuard` had been untested since CR-008. Five cases: the
+app placeholder refused in prod, the platform-admin placeholder refused in
+prod, two identical non-placeholder secrets refused in prod, two distinct
+real secrets accepted, and both placeholders tolerated outside prod so a
+fresh clone still starts.
+
+**Not changed, deliberately**: the committed placeholder itself. Removing it
+would break `mvn spring-boot:run` on a fresh clone, which is exactly what it
+exists for; the guard, not the absence of a default, is the control.
+
+**Verified**: `mvn -o verify` → 435 unit + 189 integration, BUILD SUCCESS.

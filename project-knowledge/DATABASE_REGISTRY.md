@@ -752,3 +752,274 @@ fields on `tenant`. `CLASSIC` as the default means an existing tenant's
 column backfills to the exact skin `InvoicePdfService` always rendered
 before this migration - no visible change until the owner opens Settings.
 No new permission codes - reuses `SETTINGS_MANAGE`.
+
+## CR-054 phase 1: Platform Admin Console identity & auth (V39)
+
+Four new tables, **none carrying `tenant_id`** and none referenced by, or
+referencing, any tenant-owned table - a platform admin is Hardware ERP
+staff, not a shop employee, and this keeps that structurally true rather
+than merely documented. See CR-054's Change Request Registry entry for the
+full "why a disjoint table, not a flag on `app_user`" reasoning.
+
+- **`platform_admin`** - `email` (unique), `password_hash`, `role`
+  (`VARCHAR(30)` + `CHECK`, the 7 fixed spec roles - `SUPER_ADMIN`,
+  `PLATFORM_ADMIN`, `SUPPORT_ADMIN`, `SECURITY_ADMIN`, `FINANCE_ADMIN`,
+  `DEVELOPER`, `READ_ONLY_AUDITOR`), `status` (`ACTIVE`/`INACTIVE`),
+  `mfa_enabled` + `totp_secret` (encrypted via `TotpSecretConverter`,
+  same `FieldEncryptor` AES-256-GCM pattern as `BankAccountNumberConverter`,
+  CR-018) + `mfa_enrolled_at`, `token_version`/`failed_login_attempts`/
+  `locked_until` (identical lockout shape to `app_user`), self-referencing
+  `created_by`/`updated_by` (who provisioned this account - always another
+  platform admin, never a tenant user).
+- **`platform_admin_backup_code`** - one-time MFA recovery codes, only the
+  SHA-256 hash stored (same as a password), `UNIQUE (platform_admin_id,
+  code_hash)`, `used_at` nullable marks consumption.
+- **`platform_admin_refresh_token`** - line-for-line mirror of
+  `refresh_token` (V1), reusing the tenant side's own `RevokedReason` enum
+  (a stateless enum with no FK dependency, safe to share).
+- **`platform_audit_log`** - the platform-wide equivalent of
+  `security_audit_log`, deliberately a separate table so a bug in one audit
+  path can never suppress or corrupt evidence in the other.
+  `platform_admin_id` is **not a foreign key**, exactly like
+  `security_audit_log.user_id` - found the hard way: the audit write runs
+  in its own `Propagation.REQUIRES_NEW` transaction, and for a "platform
+  admin created" event that races the still-uncommitted insert of the row
+  it describes. An enforced FK was tried first and every such write failed
+  with a real constraint violation, caught by `PlatformAdminAuthControllerIT`.
+
+**New backend-only authority codes** (`PlatformPermission`, compile-time
+enum, **no database `permission` table row** - deliberately different from
+the tenant side's `PermissionCode`, since the 7 platform roles are fixed by
+the spec, not tenant-configurable, so a DB-backed system would be overhead
+nobody can use): `PLATFORM_ADMIN_MANAGE`, granted only to `SUPER_ADMIN` in
+Phase 1. `PermissionCodeConsistencyTest`/`RoleGrantDriftTest` do not apply
+to this enum - it is a separate, intentionally simpler authority model.
+
+## CR-056: tenant-owned WhatsApp Business API integration (V45)
+
+Note: V40–V44 (CR-053 backlog items 2–5, and V44 specifically - the
+earlier single-shared-number WhatsApp attempt documented as CR-055 in
+`CHANGE_REQUEST_REGISTRY.md`, superseded by this CR) were never
+backfilled into this file - a pre-existing gap, not introduced here.
+
+**`tenant_whatsapp_connection`** - one row per tenant, replacing the
+previous design (a single app-wide `WHATSAPP_ACCESS_TOKEN`/
+`WHATSAPP_PHONE_NUMBER_ID` pair in `application.yml`) with a real
+per-tenant connection: `business_account_id`, `phone_number_id`
+(`UNIQUE` across the whole table, not just per tenant - it is also the
+routing key `WhatsAppWebhookController` uses to find which tenant an
+inbound event belongs to), `display_phone_number`, `business_name`,
+`access_token` (encrypted via new `WhatsAppAccessTokenConverter`, reusing
+`FieldEncryptor`/CR-018's AES-256-GCM scheme, never plaintext at rest),
+`connection_status` (`CONNECTED`/`DISCONNECTED`/`NEEDS_ATTENTION`,
+`CHECK`-constrained), `connected_at`/`last_verified_at`/`disconnected_at`.
+`UNIQUE(tenant_id)` - one connection per tenant in this phase, matching
+manual credential entry; deliberately not designed to prevent a future
+multi-number relaxation, just not built for it yet.
+
+**`customer`** gains `whatsapp_opt_in` (`BOOLEAN NOT NULL DEFAULT true`)
+and `whatsapp_opt_in_at`. Defaults true because every customer already
+received transactional WhatsApp messages (invoice created, payment
+received) before this CR as a normal part of the sale they were already
+in - this column is what lets an owner turn that off per customer, not a
+retroactive gate on sends that were already shipping.
+
+**`notification_log.status`** (V14) CHECK constraint widened to add
+`DELIVERED`/`READ`, set only by a real inbound Meta webhook event
+(`WhatsAppWebhookController`) - never assumed from a successful send. See
+`NotificationStatus` enum.
+
+No new permission codes - reuses `SETTINGS_VIEW`/`SETTINGS_MANAGE` for the
+connection (same pair `tenant_bank_account`, CR-022, already uses) and
+each business module's own existing permission (`INVOICE_VIEW`,
+`PAYMENT_MANAGE`, `INVENTORY_VIEW`) for the send actions built on top of
+it.
+
+## CR-057 phase 9: Subscriptions & Billing (V49)
+
+Real Razorpay Orders-API architecture - see `CHANGE_REQUEST_REGISTRY.md`'s
+own CR-057 phase 9 entry for the full design, including the two
+independent HMAC-SHA256 signature checks and the deliberate scope
+boundary (one-time upgrade checkout, not a recurring subscriptions/
+auto-renewal engine).
+
+**`platform_subscription_order`** - one row per Razorpay order created to
+move a tenant up a tier: `tenant_id` (FK), `requested_tier`
+(`FREE`/`PRO`/`MAX`, CHECK-constrained, mirrors `SubscriptionTier`),
+`amount_paise`, `currency` (default `INR`), `razorpay_order_id`
+(`UNIQUE`), `status` (`CREATED`/`PAID`/`FAILED`/`CANCELLED`). Never
+mutates `tenant.subscription_tier` itself - only a captured payment
+against it does.
+
+**`platform_subscription_payment`** - one row per Razorpay payment
+actually applied: `subscription_order_id` (FK), `razorpay_payment_id`
+(`UNIQUE` - the idempotency guard against webhook redelivery and the
+client-side `/verify` call racing each other for the same payment),
+`razorpay_signature`, `amount_paise`, `status`
+(`CAPTURED`/`FAILED`), `source` (`CLIENT_VERIFY`/`WEBHOOK` - which path
+recorded it first), `captured_at`.
+
+No new permission codes on the platform-admin side - `BILLING_VIEW`/
+`BILLING_MANAGE` were already reserved in `PlatformPermission` back in
+phase 2 (`BILLING_MANAGE` is still not wired to any endpoint - see the CR
+entry). Tenant-side reuses `SETTINGS_VIEW`/`SETTINGS_MANAGE`, same pair
+`tenant_bank_account` and the WhatsApp connection above use.
+
+**`tenant.subscription_tier` self-declared picker gap, fixed in the same
+migration's application code (no schema change needed)**: once
+`RazorpayProperties.active()`, `TenantSettingsServiceImpl.update()`
+rejects a self-declared *upgrade* (checkout bypass) but still allows a
+self-declared *downgrade* freely - see the CR entry for the full
+reasoning and the regression test that pins both directions.
+
+## CR-057 phase 11: Backup Center (V50)
+
+**`platform_tenant_export`** - a log of on-demand tenant data exports, not
+a blob store (the file is regenerated fresh on every request, never
+persisted - see the migration's own comment for why this is not a real
+"backup" claim). `tenant_id` (FK), `admin_id` (not a FK, same pattern as
+`platform_audit_log.admin_id`), `format` (`JSON`/`CSV`), `status`
+(`COMPLETED`/`FAILED`), `record_count`, `file_size_bytes`,
+`error_detail`.
+
+## CR-057 phase 12: Platform Settings - Razorpay (V51)
+
+**`platform_razorpay_config`** - singleton row (`platform_razorpay_config_id`
+always `1`, DB `CHECK`-constrained: one Razorpay account for the whole
+platform). `enabled`, `key_id` (plain - it's the public key),
+`key_secret_encrypted`/`webhook_secret_encrypted` (AES-256-GCM via the
+new `EncryptedSecretConverter`, CR-018's `FieldEncryptor` scheme reused
+exactly as `WhatsAppAccessTokenConverter` already does), `pro_plan_amount_paise`/
+`max_plan_amount_paise`, `updated_at`/`updated_by`. Precedence against
+the `RAZORPAY_*` environment variables (V49) lives entirely in
+application code (`RazorpayConfigResolver`), not the schema - see the CR
+entry.
+
+## Module 3 table (V7) — `product`
+
+Documented here for the first time under CR-058: V7 was listed in the
+migration history from the start, but `product` never got a column-level
+section of its own the way `app_user` and `supplier` did. Nothing below is a
+schema change — this records what V7 has always created.
+
+### `product`
+Never hard-deleted: purchase, inventory, invoice and credit-note lines
+reference `product_id` permanently.
+
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| product_id | BIGINT IDENTITY | NO | PK |
+| tenant_id | BIGINT | NO | FK → tenant (CR-016) |
+| product_code | VARCHAR(30) | NO | `uk_product_code (tenant_id, product_code)`; auto-generated `PRD-nnnnnn` |
+| product_name | VARCHAR(255) | NO | |
+| category_id | BIGINT | YES | FK → category, ON DELETE RESTRICT |
+| brand_id | BIGINT | YES | FK → brand, ON DELETE RESTRICT |
+| model_no, manufacturer_code, barcode | VARCHAR(60) | YES | identification priority is barcode → manufacturer_code → model_no → product_code, never name alone |
+| unit | VARCHAR(20) | NO | |
+| description | TEXT | YES | |
+| hsn_code | VARCHAR(10) | YES | |
+| gst_rate_percent | DECIMAL(5,2) | NO | CHECK 0–100. Deliberately not constrained to today's 0/5/12/18/28 slabs — the slab set has changed before |
+| purchase_price_paise, selling_price_paise, mrp_paise | BIGINT | NO | paise, CHECK >= 0. Current price only; an issued invoice line keeps its own snapshot |
+| minimum_stock, reorder_level | DECIMAL(18,4) | NO | CHECK >= 0; quantities are DECIMAL(18,4), a carton may sell fractionally |
+| alt_unit_label | VARCHAR(30) | YES | CR-053 backlog item 1; set together with the factor or both null |
+| alt_unit_conversion_factor | DECIMAL(18,4) | YES | V40 |
+| status | VARCHAR(20) | NO | CHECK IN ('ACTIVE','INACTIVE') |
+| deleted_at, deleted_by | | YES | soft delete |
+| created_at … version | | | audit block + `@Version` |
+
+Functional/partial unique indexes, all scoped past soft-deleted rows:
+`uk_product_name_lower` on `(tenant_id, lower(product_name)) WHERE deleted_at
+IS NULL`, and `uk_product_barcode` on `(tenant_id, barcode) WHERE deleted_at
+IS NULL AND barcode IS NOT NULL`.
+
+Indexes: `idx_product_tenant`, `idx_product_category`, `idx_product_brand`,
+`idx_product_status (status, deleted_at)`, and the partial
+`idx_product_active ON (product_id) WHERE deleted_at IS NULL`.
+
+## CR-058 — `deleted_at` / `deleted_by` behaviour, and why restore is safe
+
+**No schema change. No migration.** CR-058 adds no column, no table and no
+constraint; it only adds queries against columns `app_user`, `supplier` and
+`product` have carried since V1/V2/V7.
+
+**Affected tables:** `app_user`, `supplier`, `product` (recoverable soft
+delete) and `customer` (status-only, unaffected by any of this).
+
+### What the columns mean
+
+`deleted_at IS NOT NULL` is the single source of truth for "deleted". The
+matching entity classes carry `@SQLRestriction("deleted_at is null")`, so
+Hibernate appends that predicate to every SQL statement whose FROM clause it
+generates itself — every derived query, every JPQL query, every association
+load. `deleted_by` records who did it; `status` is additionally set to
+`INACTIVE` by `softDelete()`, which is why a deleted row cannot be recognised
+by its status column alone.
+
+### The recoverability defect this fixes (BUG-SUP-006)
+
+Because `@SQLRestriction` hides the row from *every* ORM path — including
+`findByIdAndTenantId` — a soft-deleted supplier, product or user could not be
+read, listed or updated by any query in the codebase. The row survived
+correctly for `created_by`/`supplier_id`/`product_id` history, exactly as
+designed, but there was no way back: a mis-click on Deactivate was
+irreversible from the application. Restoring one required manual SQL against
+production.
+
+### How restore reaches the row without weakening the restriction
+
+Hibernate only rewrites a FROM clause it generated. A `nativeQuery = true`
+statement is passed through untouched, which is the escape hatch CR-018's two
+native queries in `SupplierRepository` already relied on. CR-058 adds two per
+table, both parameter-bound and both tenant-scoped:
+
+- `select * from <table> where tenant_id = :tenantId and deleted_at is not null
+  order by deleted_at desc` — the recycle-bin read.
+- `update <table> set deleted_at = null, deleted_by = null, status = 'ACTIVE',
+  version = version + 1 where <pk> = :id and tenant_id = :tenantId and
+  deleted_at is not null` — the restore.
+
+`@SQLRestriction` is **not** removed, disabled, or bypassed anywhere else. Its
+behaviour for ordinary queries is unchanged and covered by regression tests.
+
+### Why the restore is one guarded UPDATE, not read-then-write
+
+The `WHERE` clause *is* the authorization and state check, applied atomically
+by the database:
+
+- `tenant_id = :tenantId` (from `SecurityUtils.requireCurrentTenantId()`, never
+  from the request) makes a cross-tenant restore impossible rather than merely
+  checked.
+- `deleted_at IS NOT NULL` makes restoring a live row impossible, and makes a
+  double restore a no-op instead of a second "success".
+- Zero rows affected → `404 NOT_FOUND` for every one of those cases alike, so
+  ids cannot be probed.
+
+There is no window between the check and the write, so two concurrent restores
+cannot both believe they won.
+
+### Data integrity
+
+The row is mutated in place. The primary key, the code
+(`supplier_code`/`product_code`/`employee_code`), every foreign key pointing
+at it and every history row referencing it are untouched — a restore can
+never produce a duplicate record. `version` is incremented by hand because a
+native UPDATE bypasses the `@Version` column Hibernate would otherwise
+maintain; leaving it stale would let a concurrently-loaded copy overwrite the
+restore.
+
+`app_user` restore additionally sets `failed_login_attempts = 0` and
+`locked_until = NULL`, so a restored account is not born inside a lockout it
+can never clear. It deliberately does **not** touch `token_version`:
+`softDelete()` incremented it, and that increment is what invalidated every
+access token the account still had outstanding. Putting it back would hand
+those tokens their permissions again. The restored account can sign in afresh;
+its pre-deletion sessions stay dead, and the `refresh_token` rows revoked with
+reason `USER_DEACTIVATED` stay revoked.
+
+### `customer` is deliberately not part of this
+
+`customer` has no `deleted_at`, no `deleted_by` and no `@SQLRestriction`. Its
+`DELETE` endpoint only sets `status = 'INACTIVE'`, so the row was never hidden
+and there is nothing to recover — `POST /v1/customers/{id}/activate` simply
+sets it back to `ACTIVE`. No deleted-records table, column or endpoint was
+invented for it.

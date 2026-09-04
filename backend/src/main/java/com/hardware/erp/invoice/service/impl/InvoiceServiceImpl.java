@@ -24,6 +24,7 @@ import com.hardware.erp.invoice.pdf.InvoicePdfService;
 import com.hardware.erp.invoice.repository.InvoiceRepository;
 import com.hardware.erp.invoice.repository.PaymentRepository;
 import com.hardware.erp.invoice.service.InvoiceService;
+import com.hardware.erp.notification.entity.NotificationStatus;
 import com.hardware.erp.notification.service.NotificationService;
 import com.hardware.erp.product.entity.Product;
 import com.hardware.erp.product.repository.ProductRepository;
@@ -161,9 +162,11 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
 
         // Stock leaves after the invoice has an id, so the movement's
-        // reference_id points at a row that already exists.
+        // reference_id points at a row that already exists. Free units leave
+        // the shelf exactly like billed ones - the movement covers quantity
+        // PLUS freeQuantity, even though only quantity was ever priced.
         for (InvoiceItem item : saved.getItems()) {
-            stockService.applyMovement(item.getProduct().getId(), item.getQuantity().negate(),
+            stockService.applyMovement(item.getProduct().getId(), totalUnits(item).negate(),
                     MovementType.SALE, "INVOICE", saved.getId(), null);
         }
 
@@ -227,6 +230,34 @@ public class InvoiceServiceImpl implements InvoiceService {
                 tenantSignatureRepository.findById(tenantId).orElse(null),
                 tenantLogoRepository.findById(tenantId).orElse(null),
                 tenantUpiQrRepository.findById(tenantId).orElse(null));
+    }
+
+    @Override
+    @Transactional
+    public NotificationStatus sendPaymentReminder(Long id) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        Invoice invoice = require(id, tenantId);
+        return notificationService.notifyPaymentDue(invoice);
+    }
+
+    @Override
+    @Transactional
+    public NotificationStatus sendInvoiceViaWhatsApp(Long id) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        Invoice invoice = require(id, tenantId);
+        return notificationService.sendInvoiceViaWhatsApp(invoice);
+    }
+
+    @Override
+    @Transactional
+    public NotificationStatus sendPaymentReceiptViaWhatsApp(Long invoiceId, Long paymentId) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        Invoice invoice = require(invoiceId, tenantId);
+        Payment payment = paymentRepository.findByInvoiceIdOrderByPaymentDateAsc(invoiceId).stream()
+                .filter(p -> p.getId().equals(paymentId))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Payment", paymentId));
+        return notificationService.sendPaymentReceiptViaWhatsApp(invoice, payment);
     }
 
     /** Null is a valid, common choice - "use the shop's default bank fields," not an error. */
@@ -337,10 +368,11 @@ public class InvoiceServiceImpl implements InvoiceService {
         before.put("totalPaise", invoice.getTotalPaise());
         before.put("itemCount", invoice.getItems().size());
 
-        // Quantity per product as it stands now, to diff against the new basket.
+        // Units per product as it stands now (quantity + freeQuantity - both
+        // leave the shelf), to diff against the new basket.
         Map<Long, BigDecimal> previousQty = new LinkedHashMap<>();
         for (InvoiceItem item : invoice.getItems()) {
-            previousQty.merge(item.getProduct().getId(), item.getQuantity(), BigDecimal::add);
+            previousQty.merge(item.getProduct().getId(), totalUnits(item), BigDecimal::add);
         }
 
         Customer customer = customerLookupService.findOrCreate(
@@ -365,7 +397,7 @@ public class InvoiceServiceImpl implements InvoiceService {
             invoice.getItems().add(item);
             subtotal += item.getLineSubtotalPaise();
             gstTotal += item.getLineGstPaise();
-            newQty.merge(item.getProduct().getId(), item.getQuantity(), BigDecimal::add);
+            newQty.merge(item.getProduct().getId(), totalUnits(item), BigDecimal::add);
         }
 
         invoice.setSubtotalPaise(subtotal);
@@ -415,7 +447,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
 
         for (InvoiceItem item : invoice.getItems()) {
-            stockService.applyMovement(item.getProduct().getId(), item.getQuantity(),
+            stockService.applyMovement(item.getProduct().getId(), totalUnits(item),
                     MovementType.SALE_REVERSAL, "INVOICE", invoice.getId(),
                     "Invoice " + invoice.getInvoiceNumber() + " cancelled");
         }
@@ -499,6 +531,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .product(product)
                 .productNameSnapshot(product.getProductName())
                 .quantity(quantity)
+                .freeQuantity(request.freeQuantity() == null ? BigDecimal.ZERO : request.freeQuantity())
                 .unit(product.getUnit())
                 .unitPricePaise(unitPricePaise)
                 .gstRatePercent(gstRate)
@@ -514,6 +547,12 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .lineGstPaise(priced.gstPaise())
                 .lineTotalPaise(priced.totalPaise())
                 .build();
+    }
+
+    /** CR-053 backlog item 1. What actually leaves the shelf for one line - billed quantity plus any free units. */
+    private static BigDecimal totalUnits(InvoiceItem item) {
+        BigDecimal free = item.getFreeQuantity() == null ? BigDecimal.ZERO : item.getFreeQuantity();
+        return item.getQuantity().add(free);
     }
 
     private static String blankToNull(String value) {
