@@ -149,6 +149,30 @@ public class DeploymentModeGuard implements BeanFactoryPostProcessor {
                      install, which has no certificate to present."""));
         }
 
+        // Managed database, but the 'cloud' profile is not active - so none of
+        // application-cloud.yml applies and the connection is being built from
+        // application.yml's LOCAL defaults: port 5433, database hardware_erp,
+        // sslmode=prefer. Those are docker-compose.yml's values, and no managed
+        // provider answers on them.
+        //
+        // The symptom is a connection failure that names the right host, which
+        // sends people looking at credentials and firewalls rather than at the
+        // one missing word in SPRING_PROFILES_ACTIVE. Warned rather than
+        // refused: a developer may legitimately point a dev-profile run at a
+        // managed database, having set DB_PORT and DB_NAME themselves.
+        if (managedDb && !profiles.contains("cloud")) {
+            log.warn("""
+                    Database host looks managed but the 'cloud' profile is NOT active, so \
+                    application-cloud.yml is being ignored and this connection is using the \
+                    LOCAL defaults from application.yml - port {}, database '{}', sslmode=prefer. \
+                    A managed provider does not answer on those. Start with \
+                    SPRING_PROFILES_ACTIVE=prod,cloud (scripts/run-cloud.sh and run-cloud.ps1 \
+                    both do), or set DB_PORT and DB_NAME explicitly if a dev-profile run against \
+                    a managed database is what you intended.""",
+                    environment.getProperty("DB_PORT", "5433"),
+                    environment.getProperty("DB_NAME", "hardware_erp"));
+        }
+
         // Not fatal, but the single most likely self-hosted support call: a LAN
         // install over http with a Secure cookie logs the user straight back
         // out, because the browser accepts the Set-Cookie and then never sends
