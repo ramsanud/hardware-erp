@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://xxxxxx.onrender.com/api/:path*"
+      "destination": "https://hardware-erp-9j9f.onrender.com/api/:path*"
     },
     {
       "source": "/((?!api/).*)",
