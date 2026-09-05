@@ -69,7 +69,15 @@ while IFS= read -r line || [ -n "$line" ]; do
             value="$(printf '%s' "$value" | sed 's/[[:space:]]\{1,\}#.*$//')" ;;
     esac
 
-    if [ -n "$value" ]; then
+    # An variable already set in the caller's environment WINS over the file.
+    # This is dotenv's own convention, and without it a one-off override on the
+    # command line is silently ignored:
+    #
+    #     APP_BOOTSTRAP_ENABLED=false ./scripts/run-cloud.sh
+    #
+    # used to be overwritten by APP_BOOTSTRAP_ENABLED=true from .env.cloud two
+    # lines later, and the run created an owner account it had been told not to.
+    if [ -n "$value" ] && [ -z "${!key:-}" ]; then
         export "$key=$value"
     fi
 done < "$ENV_FILE"

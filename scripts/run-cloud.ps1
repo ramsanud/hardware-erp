@@ -60,8 +60,18 @@ foreach ($line in Get-Content $EnvFile) {
     }
 
     if ($value -ne '') {
-        [Environment]::SetEnvironmentVariable($key, $value, 'Process')
-        $loaded[$key] = $value
+        # A variable already set in the caller's environment WINS over the file
+        # - dotenv's own convention. Without it, a deliberate one-off override
+        # ($env:APP_BOOTSTRAP_ENABLED='false') is silently discarded by the
+        # file's own value, and the run does the thing it was told not to.
+        $existing = [Environment]::GetEnvironmentVariable($key, 'Process')
+        if ([string]::IsNullOrEmpty($existing)) {
+            [Environment]::SetEnvironmentVariable($key, $value, 'Process')
+            $loaded[$key] = $value
+        }
+        else {
+            $loaded[$key] = $existing
+        }
     }
 }
 
