@@ -20,7 +20,28 @@ services:
     name: hardware-erp-api
     runtime: docker
     plan: free
-    region: singapore          # closest free region to India; oregon/frankfurt also free
+    # PUT THE DATABASE IN THIS SAME REGION. Nothing else on this page matters
+    # as much for startup time.
+    #
+    # Hibernate runs ddl-auto: validate on every boot - a hard rule in this
+    # project - which means metadata queries for ~50 tables and every one of
+    # their columns before the application will serve anything. Flyway's
+    # history check and Hikari's pooled TLS handshakes come first. Each of
+    # those round trips pays the full network latency between this service and
+    # PostgreSQL.
+    #
+    # Co-located, that is sub-millisecond and invisible. Across regions -
+    # singapore here against a Supabase project in ap-south-1 (Mumbai), which
+    # is roughly 60-90ms round trip - it becomes minutes, and on a free
+    # instance's 0.1 shared CPU it is the difference between a boot that
+    # finishes and one Render kills with "Port scan timeout reached". That
+    # happened on 2026-09-05.
+    #
+    # A Supabase project's region cannot be changed after creation, so if the
+    # two do not match, recreate the database side in the region matching this
+    # one (Singapore is ap-southeast-1). Free Render regions: oregon, ohio,
+    # virginia, frankfurt, singapore.
+    region: singapore
     branch: main
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
@@ -142,5 +163,11 @@ services:
       # Free instances are memory-capped at 512MB. Without this the JVM sizes
       # its heap against the host's total memory, not the container's, and
       # gets OOM-killed mid-request.
+      # TieredStopAtLevel=1 stops the JIT at C1 instead of compiling to C2.
+      # Peak throughput is lower, which does not matter for a shop's request
+      # volume, but startup does far less compilation work - and on a free
+      # instance's 0.1 shared CPU, startup is the thing that fails. A deploy
+      # here timed out on 2026-09-05 having taken 312s on its previous
+      # successful boot, with Render's port scan giving up before Tomcat bound.
       - key: JAVA_TOOL_OPTIONS
-        value: "-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -Xss512k"
+        value: "-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -Xss512k -XX:TieredStopAtLevel=1"
