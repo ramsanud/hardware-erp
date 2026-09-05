@@ -1,5 +1,6 @@
 package com.hardware.erp.platformadmin.security;
 
+import com.hardware.erp.security.JwtSecretDecoder;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -41,13 +42,12 @@ public class PlatformAdminJwtService {
 
     public PlatformAdminJwtService(PlatformAdminJwtProperties properties) {
         this.properties = properties;
-        byte[] keyBytes = Decoders.BASE64.decode(properties.secret());
-        if (keyBytes.length < MIN_SECRET_BYTES) {
-            throw new IllegalStateException(
-                    "app.platform-admin.jwt.secret must decode to at least 32 bytes for HS256. "
-                    + "Generate one with: openssl rand -base64 32");
-        }
-        this.signingKey = Keys.hmacShaKeyFor(keyBytes);
+        // Shares only the pure base64 decoder, never JwtService itself, so a
+        // bad key here reports THIS variable's name rather than the tenant
+        // application's - the two are deliberately different secrets (CR-054)
+        // and confusing them wastes a deploy. The SecretKey stays independent.
+        this.signingKey = Keys.hmacShaKeyFor(JwtSecretDecoder.decode(
+                properties.secret(), "app.platform-admin.jwt.secret", "PLATFORM_ADMIN_JWT_SECRET"));
     }
 
     /** A full session token. No purpose claim - its absence is what distinguishes it from an MFA challenge token. */

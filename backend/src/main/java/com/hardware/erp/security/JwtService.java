@@ -36,13 +36,8 @@ public class JwtService {
 
     public JwtService(JwtProperties properties) {
         this.properties = properties;
-        byte[] keyBytes = Decoders.BASE64.decode(properties.secret());
-        if (keyBytes.length < MIN_SECRET_BYTES) {
-            throw new IllegalStateException(
-                    "app.jwt.secret must decode to at least 32 bytes for HS256. "
-                    + "Generate one with: openssl rand -base64 32");
-        }
-        this.signingKey = Keys.hmacShaKeyFor(keyBytes);
+        this.signingKey = Keys.hmacShaKeyFor(
+                JwtSecretDecoder.decode(properties.secret(), "app.jwt.secret", "JWT_SECRET"));
     }
 
     /**

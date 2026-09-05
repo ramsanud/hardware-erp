@@ -77,6 +77,18 @@ services:
       - key: PLATFORM_ADMIN_JWT_SECRET
         generateValue: true
 
+      # CR-018 - encryption at rest for supplier bank account numbers. Without
+      # it SupplierBankAccountEncryptionRunner warns at every boot and those
+      # numbers are stored in PLAINTEXT. It was missing from this blueprint
+      # until 2026-09-05, when a real deploy logged that warning.
+      #
+      # Must decode to exactly 32 bytes or FieldEncryptor treats it as unset -
+      # silently, with no error. Set it BEFORE any supplier data is entered:
+      # rows written in plaintext stay that way until re-processed, and a key
+      # added later cannot retroactively protect what has already been stored.
+      - key: APP_ENCRYPTION_KEY
+        generateValue: true
+
       - key: COOKIE_SECURE
         value: "true"
 
