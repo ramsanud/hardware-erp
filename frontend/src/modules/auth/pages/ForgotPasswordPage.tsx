@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft, MailCheck, User } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
-import { Input } from '@/shared/components/ui/input';
+import { ClearableInput } from '@/shared/components/ui/clearable-input';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/shared/components/ui/card';
@@ -39,7 +39,7 @@ export function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <Card className="mx-auto w-full max-w-sm">
+      <Card className="mx-auto w-full max-w-md">
         <CardHeader>
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-success/10">
             <MailCheck className="h-5 w-5 text-success" aria-hidden />
@@ -58,7 +58,10 @@ export function ForgotPasswordPage() {
             </AlertDescription>
           </Alert>
           <Button variant="outline" className="w-full" asChild>
-            <Link to={AUTH_ROUTES.login}>
+            {/* replace, not push: this is the user walking back out of the
+                flow, so it must not leave /forgot-password sitting in the
+                history stack for the Back button to drop them into again. */}
+            <Link to={AUTH_ROUTES.login} replace>
               <ArrowLeft className="h-4 w-4" />
               Back to sign in
             </Link>
@@ -69,7 +72,7 @@ export function ForgotPasswordPage() {
   }
 
   return (
-    <Card className="mx-auto w-full max-w-sm">
+    <Card className="mx-auto w-full max-w-md">
       <CardHeader>
         <CardTitle>Reset your password</CardTitle>
         <CardDescription>
@@ -82,9 +85,11 @@ export function ForgotPasswordPage() {
                      error={errors.identifier?.message} required>
             <div className="relative">
               <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-              <Input id="identifier" autoFocus autoComplete="username"
+              <ClearableInput id="identifier" autoFocus autoComplete="username"
                      placeholder="9876543210" className="pl-9"
-                     aria-invalid={Boolean(errors.identifier)} {...register('identifier')} />
+                     aria-invalid={Boolean(errors.identifier)}
+                     aria-describedby={errors.identifier ? 'identifier-error' : undefined}
+                     {...register('identifier')} />
             </div>
           </FormField>
 
@@ -93,7 +98,7 @@ export function ForgotPasswordPage() {
           </Button>
 
           <Button variant="ghost" className="w-full" asChild>
-            <Link to={AUTH_ROUTES.login}>
+            <Link to={AUTH_ROUTES.login} replace>
               <ArrowLeft className="h-4 w-4" />
               Back to sign in
             </Link>

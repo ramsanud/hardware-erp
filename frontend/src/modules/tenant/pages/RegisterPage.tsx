@@ -63,7 +63,8 @@ export function RegisterPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const {
-    register, control, handleSubmit, trigger, watch, formState: { errors, isSubmitting },
+    register, control, handleSubmit, trigger, watch, getValues, setError,
+    formState: { errors, isSubmitting },
   } = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
@@ -88,9 +89,49 @@ export function RegisterPage() {
     return () => { cancelled = true; };
   }, [debouncedShopName]);
 
+  /**
+   * CR-062. Format is validated by `trigger`; uniqueness is not, and that was
+   * the whole complaint. A well-formed but already-registered mobile number
+   * used to pass this gate, let the user choose a plan and accept the Terms,
+   * and only then fail on the create call - which threw them back here with
+   * the work done twice. The server is still the authority (submit() keeps its
+   * own handling for a number taken in the seconds since), but the answer now
+   * arrives at the step that asked the question.
+   */
+  const [checkingIdentifiers, setCheckingIdentifiers] = useState(false);
+
+  const identifiersAreFree = async () => {
+    const [mobileNo, email] = [getValues('mobileNo').trim(), getValues('email').trim()];
+    setCheckingIdentifiers(true);
+    try {
+      const { mobileAvailable, emailAvailable } = await tenantRegistrationService
+        .identifierAvailable({ mobileNo, email });
+
+      if (!mobileAvailable) {
+        setError('mobileNo', {
+          message: 'This mobile number already has a shop. Sign in instead, or use another number.',
+        });
+      }
+      if (!emailAvailable) {
+        setError('email', {
+          message: 'This email already has a shop. Sign in instead, or use another address.',
+        });
+      }
+      return mobileAvailable && emailAvailable;
+    } catch {
+      // A failed lookup must not trap someone on step 2 - the create call
+      // rejects a duplicate regardless, so falling through costs at worst the
+      // old behaviour rather than a wizard that cannot advance.
+      return true;
+    } finally {
+      setCheckingIdentifiers(false);
+    }
+  };
+
   const goNext = async () => {
     const fields = STEP_FIELDS[step];
     if (fields && !(await trigger(fields))) return;
+    if (step === 1 && !(await identifiersAreFree())) return;
     setStep((current) => Math.min(current + 1, STEPS.length - 1));
   };
 
@@ -266,7 +307,7 @@ export function RegisterPage() {
               Back
             </Button>
             {step < STEPS.length - 1 ? (
-              <Button type="button" onClick={goNext}>
+              <Button type="button" onClick={goNext} loading={checkingIdentifiers}>
                 Next
                 <ArrowRight className="h-4 w-4" />
               </Button>

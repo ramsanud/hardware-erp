@@ -111,7 +111,7 @@ export function WorkerListPage() {
           <PermissionGate permission={PERMISSIONS.LABOUR_MANAGE}>
             <Button onClick={() => setCreating(true)}>
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add worker</span>
+              <span>Add worker</span>
             </Button>
           </PermissionGate>
         }

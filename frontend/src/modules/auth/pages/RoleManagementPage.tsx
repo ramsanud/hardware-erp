@@ -101,7 +101,7 @@ export function RoleManagementPage() {
           <PermissionGate permission={PERMISSIONS.ROLE_MANAGE}>
             <Button onClick={() => setCreating(true)}>
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add role</span>
+              <span>Add role</span>
             </Button>
           </PermissionGate>
         }

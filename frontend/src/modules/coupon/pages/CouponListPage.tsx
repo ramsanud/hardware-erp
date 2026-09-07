@@ -124,7 +124,7 @@ export function CouponListPage() {
           <PermissionGate permission={PERMISSIONS.COUPON_MANAGE}>
             <Button onClick={() => setCreating(true)}>
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add coupon</span>
+              <span>Add coupon</span>
             </Button>
           </PermissionGate>
         }

@@ -114,7 +114,11 @@ export function SupplierListPage() {
   useEffect(() => {
     void (async () => {
       try {
-        setCities(await supplierService.cities());
+        // ?? [] as well as the catch: the catch only covers a rejected
+        // request, and a 200 carrying a null body would otherwise put null
+        // into state and white-screen the whole page on cities.map() below -
+        // a filter dropdown taking down the list it filters.
+        setCities(await supplierService.cities() ?? []);
       } catch {
         // Cities only populate the filter dropdown; a failure here must not
         // block the supplier list, which is the point of the page.
@@ -144,7 +148,7 @@ export function SupplierListPage() {
           <PermissionGate permission={PERMISSIONS.SUPPLIER_MANAGE}>
             <Button onClick={() => navigate(SUPPLIER_ROUTES.create)}>
               <UserPlus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add supplier</span>
+              <span>Add supplier</span>
             </Button>
           </PermissionGate>
         }

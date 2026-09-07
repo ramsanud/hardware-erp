@@ -185,6 +185,10 @@ app:
     refresh-per-ip-per-minute: 30
     register-per-ip-per-hour: 5
     platform-admin-login-per-ip-per-minute: 10
+    # CR-062. Generous because the shop-name field checks on every debounced
+    # keystroke pause; still low enough that scripted enumeration of the
+    # identifier space is impractical from one address.
+    registration-availability-per-ip-per-minute: 20
 
   password-reset:
     token-validity-minutes: 30

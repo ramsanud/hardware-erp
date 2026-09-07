@@ -36,6 +36,7 @@ app:
     login-per-identifier-per-minute: 100
     forgot-password-per-ip-per-hour: 100
     forgot-password-per-identifier-per-hour: 100
+    registration-availability-per-ip-per-minute: 1000
   developer-inspection:
     # Environment half of the developer-inspection gate (CR-045). The other
     # half is the DEVELOPER_INSPECT permission, which no default role holds -

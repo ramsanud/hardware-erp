@@ -1,10 +1,11 @@
-import { Badge } from '@/shared/components/ui/badge';
+import { StatusBadge, type StatusBadgeProps } from '@/shared/components/StatusBadge';
 import type { RoleStatus, UserStatus } from '../types';
 
-const USER_VARIANT: Record<UserStatus, 'success' | 'secondary' | 'destructive'> = {
-  ACTIVE: 'success',
-  INACTIVE: 'secondary',
-  SUSPENDED: 'destructive',
+/** Same three-state reasoning as SupplierStatusBadge: Suspended outranks Inactive. */
+const USER_TONE: Record<UserStatus, StatusBadgeProps['tone']> = {
+  ACTIVE: 'positive',
+  INACTIVE: 'negative',
+  SUSPENDED: 'critical',
 };
 
 const USER_LABEL: Record<UserStatus, string> = {
@@ -14,13 +15,14 @@ const USER_LABEL: Record<UserStatus, string> = {
 };
 
 export function UserStatusBadge({ status }: { status: UserStatus }) {
-  return <Badge variant={USER_VARIANT[status]}>{USER_LABEL[status]}</Badge>;
+  return <StatusBadge tone={USER_TONE[status]} label={USER_LABEL[status]} />;
 }
 
 export function RoleStatusBadge({ status }: { status: RoleStatus }) {
   return (
-    <Badge variant={status === 'ACTIVE' ? 'success' : 'secondary'}>
-      {status === 'ACTIVE' ? 'Active' : 'Inactive'}
-    </Badge>
+    <StatusBadge
+      tone={status === 'ACTIVE' ? 'positive' : 'negative'}
+      label={status === 'ACTIVE' ? 'Active' : 'Inactive'}
+    />
   );
 }

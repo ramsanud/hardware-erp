@@ -3,6 +3,7 @@ import { Toaster } from 'sonner';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { ColorThemeProvider } from '@/theme/ColorThemeProvider';
 import { DesignStyleProvider } from '@/theme/DesignStyleProvider';
+import { ThemeColorMeta } from '@/theme/ThemeColorMeta';
 import { AuthProvider } from '@/modules/auth/hooks/AuthProvider';
 import { AppRoutes } from '@/routes';
 
@@ -23,6 +24,10 @@ export default function App() {
     <ThemeProvider>
       <ColorThemeProvider>
         <DesignStyleProvider>
+          {/* CR-061: renders nothing - keeps the phone browser's own chrome
+              painted in the active palette. Sits inside every theme provider
+              so it re-reads after each of them has written its tokens. */}
+          <ThemeColorMeta />
           <BrowserRouter>
             <AuthProvider>
               <AppRoutes />

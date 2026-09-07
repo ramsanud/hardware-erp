@@ -62,11 +62,11 @@ export function PurchaseListPage() {
             <div className="flex items-center gap-2">
               <Button variant="outline" onClick={() => setImportOpen(true)}>
                 <Upload className="h-4 w-4" />
-                <span className="hidden sm:inline">Import supplier bill</span>
+                <span>Import supplier bill</span>
               </Button>
               <Button onClick={() => navigate(PURCHASE_ROUTES.create)}>
                 <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">New purchase</span>
+                <span>New purchase</span>
               </Button>
             </div>
           </PermissionGate>

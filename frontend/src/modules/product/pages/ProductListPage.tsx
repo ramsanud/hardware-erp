@@ -236,11 +236,11 @@ export function ProductListPage() {
             <div className="flex items-center gap-2">
               <Button variant="outline" onClick={() => setImporting(true)}>
                 <Upload className="h-4 w-4" />
-                <span className="hidden sm:inline">Import</span>
+                <span>Import</span>
               </Button>
               <Button onClick={() => { setFormDirty(false); setCreating(true); }}>
                 <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">Add product</span>
+                <span>Add product</span>
               </Button>
             </div>
           </PermissionGate>
@@ -360,7 +360,7 @@ export function ProductListPage() {
                   <TableHead>Product</TableHead>
                   <TableHead className="hidden sm:table-cell">Category</TableHead>
                   <TableHead className="hidden lg:table-cell">Brand</TableHead>
-                  <TableHead className="hidden md:table-cell">Selling price</TableHead>
+                  <TableHead className="hidden md:table-cell">Price</TableHead>
                   <TableHead className="hidden xl:table-cell">GST</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-12" />
@@ -390,7 +390,10 @@ export function ProductListPage() {
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">{row.categoryName ?? '—'}</TableCell>
                       <TableCell className="hidden lg:table-cell">{row.brandName ?? '—'}</TableCell>
-                      <TableCell className="tabular hidden md:table-cell">
+                      {/* show-on-card: hidden in the table below md, but the
+                          price is the single most-scanned value on a phone,
+                          so it stays on the stacked card (see index.css). */}
+                      <TableCell className="tabular hidden md:table-cell show-on-card">
                         ₹{row.sellingPriceDisplay} / {row.unit}
                       </TableCell>
                       <TableCell className="tabular hidden xl:table-cell">{row.gstRatePercent}%</TableCell>

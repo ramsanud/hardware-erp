@@ -80,7 +80,7 @@ export function SupportTicketListPage() {
         actions={
           <Button onClick={() => setDialogOpen(true)}>
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">New ticket</span>
+            <span>New ticket</span>
           </Button>
         }
       />

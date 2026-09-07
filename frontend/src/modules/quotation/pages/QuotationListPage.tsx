@@ -59,7 +59,7 @@ export function QuotationListPage() {
           <PermissionGate permission={PERMISSIONS.QUOTATION_MANAGE}>
             <Button onClick={() => navigate(QUOTATION_ROUTES.create)}>
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">New quotation</span>
+              <span>New quotation</span>
             </Button>
           </PermissionGate>
         }

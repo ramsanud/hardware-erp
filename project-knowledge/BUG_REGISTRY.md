@@ -26,7 +26,7 @@ generating new code; never reintroduce a listed bug.
 | BUG-AUTH-013 | Authentication / Testing | LOW | Fixed |
 | BUG-MONEY-001 | Supplier / Product / Display | HIGH | Fixed |
 | BUG-BUILD-001 | Build / Testing | HIGH | Fixed |
-| BUG-ENV-002 | Build / Testing | INFO | Open |
+| BUG-ENV-002 | Build / Testing | INFO | Closed 2026-09-07 |
 | BUG-FE-001 | Frontend | HIGH | Fixed (CR-022) |
 | BUG-FE-002 | Frontend | MEDIUM | Fixed (CR-026) |
 | BUG-FE-003 | Frontend | MEDIUM | Fixed (CR-026) |
@@ -394,7 +394,7 @@ Regression test: none needed - this is build wiring, not application code;
 the presence of `[INFO] Running com.hardware.erp.auth.controller.*IT` in
 `mvn verify` output is itself the check.
 
-**BUG-ENV-002 — Testcontainers cannot reach Docker Desktop on this machine (open)**
+**BUG-ENV-002 — Testcontainers cannot reach Docker Desktop on this machine (CLOSED, 2026-09-07)**
 Layer: Build / Testing environment, not application code.
 Docker Desktop 4.86 (engine API 1.55) is running and healthy - `docker ps`,
 `docker version`, and `docker --context default|desktop-linux ps` all work
@@ -420,6 +420,24 @@ Regression test: none - tracked here so the next session does not
 re-diagnose the same dead end. `mvn clean verify` will show exactly this
 error for all 7 Docker-dependent classes until resolved; every other test
 (89/89) passes cleanly.
+
+**CLOSED 2026-09-07.** No longer reproducible and no longer true. The
+host now runs Docker engine 29.7.2 rather than the Desktop 4.86 / engine
+API 1.55 build this was diagnosed against, and testcontainers-java
+negotiates it without any of the workarounds above. Evidence:
+`mvn -o test-compile failsafe:integration-test` for
+`UserControllerIT#forcedChangeClearsFlag` started a real
+`postgres:16-alpine` (server reported 16.15), ran Flyway and Hibernate
+`validate`, and returned Tests run: 1, Failures: 0, Errors: 0 in 41s.
+CLAUDE.md's own status line has said the same since 2026-08-26 (298 unit +
+100 Testcontainers integration tests green) - this entry simply outlived
+the machine it described.
+
+**Do not use this ID to explain a skipped integration test.** That is
+exactly the dead end it was written to prevent, now pointing the wrong
+way: an IT that does not run today has a real cause that needs finding.
+The references to it further down this file (lines ~533, 648, 738, 1103,
+1221) all predate this closure and should be read as historical.
 
 **BUG-FE-001 — `/forgot-password` (and later the Dashboard) rendered as a blank white page — RESOLVED**
 Layer: Frontend.
@@ -2013,3 +2031,565 @@ would break `mvn spring-boot:run` on a fresh clone, which is exactly what it
 exists for; the guard, not the absence of a default, is the control.
 
 **Verified**: `mvn -o verify` → 435 unit + 189 integration, BUILD SUCCESS.
+
+---
+
+## BUG-FE-008 — the password-reset dialog was the only mutation on the Users page that never reloaded the list (FIXED, 2026-09-07)
+
+| | |
+|---|---|
+| **Severity** | Low — stale display only; the server state was always correct |
+| **Layer** | FRONTEND ONLY |
+| **Found** | Investigating a report that `must_change_password` "is not updating correctly" after a password change |
+| **Symptom** | After an owner resets an employee's password, the Users table keeps showing the pre-reset row until the page is navigated away from and back |
+
+**Root cause.** `UserManagementPage` has four mutation handlers.
+`handleCreate`, `handleUpdate` and `handleDelete` all end with
+`await reload()`. The reset-password dialog's inline `onSubmit` closed the
+dialog and raised a toast but never reloaded, so `data.content` kept the
+row as it was fetched. `POST /v1/users/{id}/reset-password` sets
+`must_change_password = true`, bumps `token_version` and revokes every
+refresh token, so the cached row is stale in three respects the moment the
+call returns.
+
+**Why it looked worse than it is.** `UserResponse` carries
+`mustChangePassword`, but the Users table renders no column or badge for
+it, so an owner has no way to observe the flag changing at all — see the
+gap recorded below.
+
+**Fix.** `frontend/src/modules/auth/pages/UserManagementPage.tsx` — the
+reset handler now `await reload()`s like its three siblings.
+
+**Regression test.** None. This project has no frontend test runner (see
+CLAUDE.md, "Not present"), so the guard is the comment placed at the call
+site naming the other three handlers as the convention.
+
+**Verified**: `tsc -b --force` → exit 0. `registry/static_check.py` **not
+executed** — `python3` is not installed on this machine.
+
+### Adjacent gap, reported not fixed — the flag has no UI at all
+
+`mustChangePassword` is returned by `GET /v1/users` and by every session
+response, and is set by three separate server paths (owner reset, user
+creation, bootstrap owner). Nothing in the frontend ever displays it. An
+owner cannot answer "which of my staff are still holding the temporary
+password I gave them?" without signing in as them. A read-only badge in
+the Users table would close this; it is a small feature rather than a bug
+fix, so it is recorded here for approval rather than built.
+
+---
+
+## BUG-FE-023 — a 16px strip of the scrolling form showed below every dialog's pinned Save/Cancel bar (FIXED, 2026-09-05)
+
+| | |
+|---|---|
+| **Severity** | Low — cosmetic, but it reads as a rendering fault |
+| **Layer** | FRONTEND ONLY |
+| **Found** | Incidentally, while building the CR-061 mobile bottom-sheet dialog |
+| **Symptom** | Under the pinned Save/Cancel row, a 16px band of the form scrolled past — inputs visibly sliding through it |
+
+**Pre-existing and not mobile-specific.** It was present at every screen size.
+The phone sheet, which sits flush against the bottom of the screen rather than
+floating with a gutter under it, is simply what made it visible.
+
+**Root cause — two faults stacked, either alone enough.**
+
+`DialogFooter` carried `-mb-4 sm:-mb-6` to bleed over the scroll body's `p-4`
+padding and reach the panel edge.
+
+1. **The utility never applied.** Almost every dialog nests the footer inside a
+   `<form class="space-y-4">` so the submit button stays inside its form.
+   Tailwind's `.space-y-4 > :not([hidden]) ~ :not([hidden])` sets
+   `margin-top: 1rem; margin-bottom: 0` and scores **0-3-0** — every
+   `:not([hidden])` contributes an attribute selector — so it beat both `-mb-4`
+   and `mt-auto` outright. Measured: `marginBottom: "0px"` on the footer while
+   the sibling header, a direct child of the scroll body, correctly showed
+   `-16px`.
+2. **Even unopposed it would not have worked.** A sticky element is pinned to
+   its scroll container's *padding* edge, and no margin moves it past that.
+   Forcing `margin-bottom: -1rem !important` was confirmed to change the
+   computed style to `-16px` and leave the rendered position at 828px of an
+   844px panel, unchanged.
+
+**Fix.** `frontend/src/shared/components/ui/dialog.tsx` +
+`frontend/src/index.css`. The scroll body is named `.dialog-scroll` and drops
+its own bottom padding **only when it contains a footer**:
+
+```css
+.dialog-scroll:has(.dialog-sticky-footer) { padding-bottom: 0; }
+```
+
+`-mb-4 sm:-mb-6` were removed from the footer — with the padding gone they
+would have made it overhang the panel. `margin-top: auto` is restored with
+`!important`, which is the one thing that genuinely has to out-rank `space-y`.
+`:has()` keeps the decision in the stylesheet instead of making 30-odd call
+sites pass a flag; where it is unsupported the result is today's behaviour,
+never worse.
+
+**Verified.** Playwright, 390×844: footer bottom moved 828 → 844, exactly the
+panel's own bottom, and `document.elementFromPoint` in the strip returns the
+footer itself instead of an `<input>`.
+
+**Regression test.** None. This project has no frontend test runner (CLAUDE.md,
+"Not present"). The guard is the comment block in `index.css` naming both
+causes, so the negative margin is not "restored" by someone later reading it as
+a mistake.
+
+**Same-root-cause sweep.** `DialogHeader` uses the mirror-image `-mt-4` and is
+**not** affected: it is a direct child of the scroll body in every dialog
+checked, so no `space-y` sits between them, and it was measured applying
+correctly at `-16px`. It would break identically if a dialog ever nested its
+header inside a spaced container.
+
+---
+
+## BUG-FE-009 — the Platform Admin client never got the `VITE_API_BASE_URL` normalisation the tenant client did (FIXED, 2026-09-07)
+
+| | |
+|---|---|
+| **Severity** | Medium — the Platform Admin Console cannot sign in under a configuration where the tenant app works |
+| **Layer** | FRONTEND ONLY |
+| **Found** | Answering "is the API base URL hard coded?" while investigating the `must_change_password` report |
+| **Symptom** | With `VITE_API_BASE_URL` set to a host without the `/api` suffix, the tenant app works and the Platform Admin Console 404s on every call, with a CORS-preflight failure masking the real cause |
+
+**Root cause.** Commit 836e451 ("normalise VITE_API_BASE_URL and warn when
+it forces cross-origin") added `resolveBaseUrl()` to
+`services/apiClient.ts`: it strips trailing slashes, appends the `/api`
+suffix when missing, and warns when the URL is absolute — because the
+server's context-path is a fixed `/api` and the `SameSite=Strict` refresh
+cookie is not sent cross-origin.
+
+`services/platformAdminApiClient.ts` was left on the original one-liner,
+`import.meta.env.VITE_API_BASE_URL || '/api'`. The two clients are
+deliberately independent — separate axios instances, separate
+interceptors, mirroring the backend's two disjoint filter chains and
+signing keys — and that separation was read as covering the base URL too,
+so the fix landed in one file and not the other.
+
+This is BUG-FE-007's shape exactly: a defect fixed in the module where it
+surfaced and left standing in a second module with the same root cause.
+
+**Fix.** `resolveBaseUrl()` moved to `services/apiBaseUrl.ts` as
+`resolveApiBaseUrl()`; both clients import it. Only the URL is shared —
+each client keeps its own axios instance and interceptors, which is what
+the separation actually protects. Comments in both files now say so, so
+the next change to one is not silently omitted from the other.
+
+**Regression test.** None — no frontend test runner exists (CLAUDE.md,
+"Not present"). The guard is structural: there is now one implementation,
+so the two clients cannot diverge again.
+
+**Not a bug, for the record**: the production API host *is* a checked-in
+literal, in `frontend/vercel.json`'s rewrite target
+(`https://hardware-erp-9j9f.onrender.com/api/:path*`), and
+`vite.config.ts` hard-codes `http://localhost:8080` for the dev proxy.
+Both are intended: the app calls the relative `/api` so requests stay
+same-origin and the refresh cookie is sent. Note that Vite inlines
+`import.meta.env.*` at build time, so `VITE_API_BASE_URL` is baked into
+the bundle — changing it requires a rebuild, not a restart.
+
+**Verified**: `tsc -b --force` → exit 0; `vite build` → exit 0.
+`registry/static_check.py` **not executed** — `python3` is not installed
+on this machine.
+
+---
+
+## BUG-SEC-005 — the shop-name availability endpoint shipped with no rate limit (FIXED, 2026-09-05)
+
+| | |
+|---|---|
+| **Severity** | Medium — unauthenticated, unbounded enumeration of registered shop names |
+| **Layer** | BACKEND ONLY |
+| **Found** | While adding CR-062's identifier-availability endpoint and wiring its rate limit |
+| **Symptom** | None visible. `GET /v1/tenants/register/slug-available` answered as fast and as often as it was asked, from any address, with no ceiling |
+
+**Root cause.** `RateLimitFilter` dispatches on **exact path equality**:
+
+```java
+private static final String REGISTER = "/v1/tenants/register";
+...
+switch (path) {
+    case REGISTER -> decisions.add(check(RateLimitRule.REGISTER_PER_IP, ip));
+    default -> { chain.doFilter(request, response); return; }   // <-- fell here
+}
+```
+
+`/v1/tenants/register/slug-available` is a child of `/v1/tenants/register` in
+the URL space but is not `equals` to it, so it matched no case and dropped
+straight through the `default` arm ungoverned. The endpoint was added to
+`SecurityConfig`'s permitAll list and to the controller, and nothing in either
+place is where a rate limit is expressed — so there was no point at which the
+omission was visible.
+
+**Why it matters.** The endpoint is a yes/no oracle over tenant shop names, and
+`POST /v1/tenants/register` — the heavyweight sibling that *is* limited, at 5
+per IP per hour — is the only other way to ask. An attacker wanting to know
+which businesses are on the platform had an unmetered channel next to a
+carefully metered one.
+
+**Fix.** `RateLimitFilter` now names both availability paths and governs them
+under a new `REGISTRATION_AVAILABILITY_PER_IP` rule (20/min — high enough that
+the shop-name field's debounced per-keystroke checks never trip it, low enough
+that scripted enumeration from one address is impractical).
+
+```java
+case SLUG_AVAILABLE, IDENTIFIER_AVAILABLE -> decisions.add(
+        rateLimitService.check(RateLimitRule.REGISTRATION_AVAILABILITY_PER_IP, ip));
+```
+
+**Regression test.** `RateLimitIT.slugAvailabilityIsRateLimited` — with the
+limit set to 3, the 4th call must be 429. Against the old filter it returns
+200, so the test fails without the fix. A second case,
+`identifierAvailabilityIsRateLimited`, alternates between the two endpoints to
+prove they share one bucket rather than getting a budget each.
+
+**Same-root-cause sweep.** Every other path in the switch was re-checked
+against its controller's actual mapping: `LOGIN`, `FORGOT`, `RESET`, `REFRESH`
+and `REGISTER` are all leaf paths with no sub-resources under them, so exact
+equality is correct for each and `slug-available` was the only endpoint that
+had slipped through. The structural weakness remains, though — **any future
+endpoint added beneath one of these prefixes will be ungoverned by default,
+silently.** Prefix matching, or a test that asserts every permitAll path is
+either rate-limited or explicitly exempted, would close the class rather than
+this one instance; recorded here as the better fix, not attempted in this pass.
+
+---
+
+## BUG-FE-010 — a successful password change reported itself as a failure, so the user kept re-entering the old one (FIXED, 2026-09-07)
+
+| | |
+|---|---|
+| **Severity** | High — the forced-change screen was effectively unusable; the account looked permanently stuck behind it |
+| **Layer** | FRONTEND ONLY |
+| **Found** | Reported as "`must_change_password` is not updating correctly — it keeps forcing a change" |
+| **Symptom** | On `/change-password`, submitting a valid new password showed a red error banner. The user retried with their old password and got "Current password is incorrect", concluding the change never took and the flag was stuck |
+
+**The flag was never the problem.** `UserControllerIT.forcedChangeClearsFlag`
+(added while diagnosing this) proves end-to-end against real PostgreSQL that
+`POST /v1/auth/change-password` clears `must_change_password` and that the
+next sign-in returns `false`. The password *was* changed every time. Only
+the report of it was wrong — which is why the user's next attempt with the
+old password failed, making the symptom look like the opposite of what it
+was.
+
+**Root cause.** `AuthProvider.logout()` was `try { … } finally { clearSession(); }`
+with **no `catch`**. A `finally` block does not swallow a rejection, so the
+function cleared local state and then rethrew — directly contradicting its
+own comment ("Local state clears even if the call fails, so the user is
+never stuck").
+
+That rejection is the *normal* path here, not an edge case.
+`AuthController.changePassword` revokes every refresh token, bumps
+`token_version` and calls `cookieService.clear(response)`. So by the time
+`ForceChangePasswordPage` runs its next line, the access token is already
+invalid and the refresh cookie already gone — `POST /v1/auth/logout`
+returns 401, the apiClient's interceptor tries a refresh, that fails too,
+and the ApiError propagates out of `logout()`:
+
+```ts
+await authService.changePassword(values);   // 200 - the password DID change
+await logout();                             // throws
+toast.success('Password changed…');         // never runs
+navigate(AUTH_ROUTES.login, …);             // never runs
+```
+
+`ChangePasswordForm`'s `catch` then rendered the 401 as a destructive
+banner on a form whose submission had succeeded.
+
+**Blast radius.** Four call sites `await logout()` (or `logoutAll()`) and
+then navigate, so all four were exposed to the same stranding — the two
+password-change pages plus `AppLayout`'s "Sign out" and "Sign out
+everywhere", where an already-expired access token made the menu item
+appear to do nothing.
+
+**Fix.** `logout()` and `logoutAll()` now `catch`, warn to the console and
+clear — they never reject, which is the contract the comment always
+claimed. `PlatformAdminAuthProvider.logout()` had the identical
+`try/finally` shape and was fixed in the same pass, per the BUG-FE-007
+precedent.
+
+**Regression test.** Backend: `UserControllerIT.forcedChangeClearsFlag`,
+which pins the server half of this (create flagged user → sign in → change
+password → sign in again → `false`). The frontend half has no test — this
+project has no frontend test runner (CLAUDE.md, "Not present").
+
+**Lesson.** `try/finally` is not error handling. It guarantees the cleanup
+runs; it does not stop the caller from seeing the failure. When a function's
+comment says "even if the call fails", the code needs a `catch`, and a
+reviewer should read the comment as an assertion to verify rather than a
+description to trust.
+
+**Verified**: `mvn -o failsafe:integration-test` →
+`UserControllerIT.forcedChangeClearsFlag` Tests run: 1, Failures: 0,
+Errors: 0. `tsc -b --force` → exit 0. `vite build` → exit 0.
+`registry/static_check.py` **not executed** — `python3` is not installed.
+
+---
+
+## BUG-FE-024 — post-login redirect dropped the query string of the page the user asked for (FIXED, 2026-09-07)
+
+**Severity**: Medium. **Layer**: FRONTEND ONLY. **Screen**: Sign in.
+
+**Symptom.** A user who followed a deep link while signed out — Category's
+"12 products" drill-through (`/products?categoryId=5`), any bookmarked
+filtered list — signed in and landed on the *unfiltered* page.
+
+**Root cause.** `ProtectedRoute` stores the whole `location` in `state.from`,
+but `LoginPage` read only `state.from.pathname`. `search` and `hash` were
+discarded on every bounce-and-return.
+
+**Fix.** `LoginPage` reconstructs `pathname + search + hash`.
+
+**Regression test.** None automated — this project has no frontend test
+runner (CLAUDE.md, "Not present"). Verified in a real browser; see
+BUG-FE-025.
+
+---
+
+## BUG-FE-025 — an abandoned sign-in stayed live, and the reset token stayed in browser history (FIXED, 2026-09-07)
+
+**Severity**: High. **Layer**: FRONTEND ONLY. **Screens**: Sign in, Reset
+password, second-factor.
+
+**Symptom, as reported.** "After returning to Login, stale
+authentication/reset-password state is retained… going back to Login can
+redirect again to the Reset Password page."
+
+**Two independent root causes, both of them state that outlived its flow.**
+
+1. `AuthProvider.mfaToken` was only ever cleared by completing MFA or by
+   `clearSession()`. A user who backed out of `/login/verify` to `/login`
+   left the challenge live, so those pages stayed renderable and one press of
+   Forward (or Android back-then-forward) dropped them back into the sign-in
+   attempt they had walked away from. Nothing cleared the challenge on the
+   way out.
+
+2. `ResetPasswordPage` read its token from `useSearchParams()` on every
+   render, so `/reset-password?token=…` stayed in the history stack for the
+   whole session. After finishing the reset and landing on `/login`, one
+   press of Back re-entered the reset form carrying a token the server had
+   already burned — the user saw the password screen they thought they had
+   finished with, and submitting it failed with no useful explanation. The
+   same URL also put a single-use credential in history, in the `Referer` of
+   every later request, and in whatever syncs history across the user's
+   devices.
+
+**Fix.**
+
+1. New `AuthProvider.cancelPendingLogin()`, called by `LoginPage` on mount.
+   Arriving at the sign-in screen *is* the user saying "start again", so the
+   challenge is dropped and the second-factor pages redirect to `/login` as
+   they already intend to. The flow now has exactly one live entry point.
+2. `ResetPasswordPage` lifts the token into a ref on first render and
+   rewrites the URL with `replace: true`. Back from `/login` now lands on a
+   tokenless `/reset-password`, which renders the existing "this link is not
+   valid" card with a way forward rather than a dead form. The ref is cleared
+   once the token is spent.
+3. "Back to sign in" links on the forgot/reset pages `replace` rather than
+   push — walking back out of a flow must not leave it on the stack.
+
+**Regression test.** None automated. Verified in Chromium via Playwright, 27
+assertions covering the reported flow end to end, including that Back from
+`/login` never restores a tokened reset URL.
+
+---
+
+## BUG-FE-026 — the mobile product card showed a price list with no prices (FIXED, 2026-09-07)
+
+**Severity**: High. **Layer**: FRONTEND ONLY. **Screen**: Products (phone).
+
+**Symptom.** On a phone the product list showed name, code and status — and
+no price at all.
+
+**Root cause.** CR-061 re-flows every table into stacked cards below `sm`
+and deliberately honours each column's existing `hidden`/`sm:table-cell`
+choice, so a column a page had already hidden on a narrow desktop stays
+hidden on the card. Selling price was marked `hidden md:table-cell` to keep
+a cramped tablet table readable — a correct decision for the *table* that
+silently became the wrong decision for the *card*. The two needs had never
+been separable.
+
+**Fix.** New `show-on-card` opt-out in `index.css`: hide me in the table,
+keep me on the card. It outranks Tailwind's `.hidden` on specificity and
+lives inside the `max-sm` block, so it can only affect the stacked list.
+Applied to Products' selling price, and available to every other table
+without duplicating a value into a second mobile-only cell.
+
+**Regression test.** None automated. Verified in Chromium at 390px: the card
+reads "CPVC Elbow 25mm | P-0001 | ₹1,250.00 / PCS | Active".
+
+---
+
+## BUG-FE-027 — completing a forced password change trapped the user in a loop (FIXED, 2026-09-07)
+
+**Severity**: Critical. **Layer**: FRONTEND ONLY. **Screen**: Change
+password → Sign in.
+
+**Steps.** Owner creates a user with a temporary password → user signs in →
+is sent to `/change-password` → sets a new password → is signed out and
+returned to `/login` → signs in with the *new* password.
+
+**Expected.** The dashboard. **Actual.** `/change-password` again, now asking
+them to replace a password they had just replaced, with no way forward except
+editing the URL.
+
+**Root cause.** Changing the password revokes every session, so `logout()`
+fires while the user is still on `/change-password`. `ProtectedRoute` saw
+`!isAuthenticated` and unconditionally recorded the current location as
+`state.from` — including this one. `LoginPage` then dutifully redirected the
+next sign-in to `/change-password`, where `mustChangePassword` was now
+`false`, so nothing bounced them out again.
+
+**Fix.** Both halves, deliberately. `ProtectedRoute` no longer records an
+auth route as `from` (new exported `isAuthRoute`), and `LoginPage`
+independently refuses one that arrives anyway — `from` is history state, so
+it survives a Back into that entry and is not solely under the guard's
+control.
+
+**Blast radius checked.** Every auth screen is affected by the same
+reasoning, not just this one: each exists to get the user signed in, and none
+is a destination to return to afterwards. All seven are listed in
+`AUTH_PATHS`.
+
+**Regression test.** None automated. Verified in Chromium.
+
+---
+
+## BUG-FE-028 — a 16px strip of the scrolling form showed above every dialog's pinned header (FIXED, 2026-09-07)
+
+**Severity**: Medium. **Layer**: FRONTEND ONLY. **Screens**: every dialog.
+
+**Symptom.** Scrolling a long dialog (Add product is the clearest case) left
+form controls visibly sliding through a thin band above the pinned title bar.
+Found by screenshotting the mobile Add-product sheet, not by report.
+
+**Root cause.** Exactly BUG-FE-023 at the other end of the panel, and the
+same misconception. `.dialog-scroll` carries `p-4`, and `position: sticky;
+top: 0` pins to the scroll container's **padding edge** — so the header came
+to rest 16px below the panel's visible top. `DialogHeader` carried `-mt-4`
+intending to bleed over that padding, but a negative margin only moves where
+a sticky element *starts* before it sticks; it cannot move the pin point.
+
+**Fix.** The same remedy BUG-FE-023 used, mirrored: `.dialog-scroll` drops
+its top padding when it contains a `.dialog-sticky-header` (`:has()`), the
+header's `-mt-4`/`sm:-mt-6` is removed, and its own `pt-4`/`sm:pt-6` supplies
+the inset. Where `:has()` is unsupported the result is a slightly taller
+header inset, never a leak.
+
+**Lesson.** BUG-FE-023 fixed the footer and stopped there. A sticky bar at
+the top of the same padded scroller had the identical defect for the
+identical reason, and went unnoticed because nobody scrolled a dialog and
+looked at the top edge. When a fix turns on a general fact about the layout
+system, check every element that fact applies to.
+
+**Regression test.** None automated. Verified in Chromium: the gap between
+`.dialog-scroll` top and `.dialog-sticky-header` top is 0.0px, and the
+element painted at the panel's top pixel row after scrolling 500px is the
+header itself.
+
+---
+
+## BUG-FE-029 — a failed delete raised an unhandled promise rejection (FIXED, 2026-09-07)
+
+**Severity**: Low. **Layer**: FRONTEND ONLY. **Screens**: every
+`ConfirmDialog` caller.
+
+**Root cause.** Callers such as `ProductListPage.handleDelete` deliberately
+re-throw after toasting, so the dialog stays open over an action that did not
+happen. `ConfirmDialog.handleConfirm` is an `async` `onClick` with a
+`try/finally` and no `catch`, so nothing awaited the rejection.
+
+**Fix.** An explicit `catch` that documents why it swallows: the dialog's job
+is to stay open and re-enable its button; the message is the caller's job.
+Same family as BUG-FE-010 — `try/finally` is not error handling.
+
+**Regression test.** None automated. Verified: no uncaught errors across 125
+route renders (25 routes × 5 viewports).
+
+---
+
+## BUG-FE-030 — a 200 carrying a null body white-screened the Suppliers page (FIXED, 2026-09-07)
+
+**Severity**: Low. **Layer**: FRONTEND ONLY. **Screen**: Suppliers.
+
+**Root cause.** `setCities(await supplierService.cities())` is wrapped in a
+`try/catch` that correctly refuses to let a *failed* city lookup block the
+list. It does not cover a *successful* response whose body is null, which
+puts `null` into state and throws on `cities.map()` during render — a filter
+dropdown taking down the list it filters.
+
+**Reachability.** Low in production: the endpoint returns `List<String>`,
+which Jackson serialises as `[]`, never null. Found because a test stub
+returned null, and kept because the guard costs one operator and the failure
+mode is a blank page.
+
+**Fix.** `?? []` alongside the existing catch.
+
+**Regression test.** None automated. Verified: `/suppliers` renders at all
+five test viewports.
+
+---
+
+## BUG-FE-031 — My profile ran off the right edge of a phone screen (FIXED, 2026-09-07)
+
+| | |
+|---|---|
+| **Severity** | Medium — values and a whole tab were unreachable on a phone |
+| **Layer** | FRONTEND ONLY |
+| **Found** | A screen-by-screen sweep of all 27 tenant pages at 390x844 (CR-062 follow-up) |
+| **Symptom** | On `/profile` the three cards rendered **401px wide inside a 390px viewport**. "EMP001", the last-sign-in timestamp and the "Sessions" tab were all cut off past the right edge, and the page scrolled sideways |
+
+**Root cause — a CSS Grid subtlety, not a missing breakpoint.**
+
+```tsx
+<div className="grid gap-5 lg:grid-cols-4">   // before
+```
+
+`grid-cols-4` was declared only at `lg`. At every width below that, the
+container had **no explicit `grid-template-columns` at all**, so the children
+were placed in an *implicit* column — and an implicit track is sized `auto`,
+which grows to fit its widest content rather than clamping to the container.
+The Account card's `07 Sept 2026, 20:55` row was the widest thing in it, so it
+set the track to 401px and all three cards inherited that width.
+
+The trap is that the markup looks correct: "one column on mobile, four columns
+on desktop" is exactly the intent, and it renders as one column. It just isn't
+a *clamped* one column.
+
+**Fix.** `frontend/src/modules/auth/pages/ProfilePage.tsx` — declare the base
+case explicitly:
+
+```tsx
+<div className="grid grid-cols-1 gap-5 lg:grid-cols-4">   // after
+```
+
+Tailwind's `grid-cols-1` emits `repeat(1, minmax(0, 1fr))`. The `minmax(0, …)`
+is the whole fix: it lets the track shrink below its content's intrinsic width
+instead of being floored by it.
+
+**Verified.** Re-ran the sweep: `/profile` went from `OVERFLOW 23px` to `ok`,
+and all 27 pages now report zero horizontal overflow at 390x844, 768x1024 and
+1440x900.
+
+**Regression test.** None — this project has no frontend test runner (CLAUDE.md,
+"Not present"). The guard is the comment at the call site explaining why
+`grid-cols-1` is load-bearing, so it is not later deleted as redundant.
+
+**Same-root-cause sweep — read this before "fixing" the other 59.**
+A scan found **60** grids repo-wide that declare a responsive `grid-cols-*`
+with no base `grid-cols-*`, so all 60 share this latent weakness:
+
+```bash
+# grids with a responsive grid-cols but no base grid-cols
+grep -rn 'className="[^"]*grid[^"]*"' frontend/src --include=*.tsx \
+  | grep -E '(sm|md|lg|xl):grid-cols-[0-9]' | grep -vE '(^|[" ])grid-cols-[0-9]'
+```
+
+**Only `/profile` actually overflows today.** Every other one was checked by
+rendering it — all 27 list/settings pages plus all 12 detail and create pages,
+at three widths — and none exceeds its container, because their content happens
+to fit. They were therefore **deliberately left alone**: changing 59 layouts
+that are not broken is churn with real regression risk and no observed defect,
+which is the opposite trade to the one BUG-FE-007 made (there, the same root
+cause was *actively* broken in a second place). Re-run the scan above plus a
+render sweep if new long-valued content lands in one of them.

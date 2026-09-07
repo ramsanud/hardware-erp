@@ -15,7 +15,10 @@ export function PageHeader({ title, description, actions }: PageHeaderProps) {
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         ) : null}
       </div>
-      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+      {/* CR-061: flex-wrap, not shrink-0. List pages now render their primary
+          action with its label on a phone, and two labelled buttons on a
+          360px screen have to wrap rather than run off the edge. */}
+      {actions ? <div className="flex flex-wrap items-center gap-2 sm:shrink-0">{actions}</div> : null}
     </div>
   );
 }

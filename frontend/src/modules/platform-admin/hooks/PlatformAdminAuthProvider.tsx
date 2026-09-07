@@ -69,9 +69,12 @@ export function PlatformAdminAuthProvider({ children }: { children: ReactNode })
     return result.backupCodes;
   }, [mfaToken]);
 
+  /** Never rejects - same contract as the tenant AuthProvider's logout (BUG-FE-010). */
   const logout = useCallback(async () => {
     try {
       await platformAdminAuthService.logout(platformAdminTokenStorage.getRefreshToken());
+    } catch (error) {
+      console.warn('[platform-admin] Sign-out call failed; clearing the local session anyway.', error);
     } finally {
       clearSession();
     }

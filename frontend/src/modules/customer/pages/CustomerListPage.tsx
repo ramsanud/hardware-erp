@@ -121,7 +121,7 @@ export function CustomerListPage() {
           <PermissionGate permission={PERMISSIONS.CUSTOMER_MANAGE}>
             <Button onClick={() => setDialogTarget('new')}>
               <UserPlus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add customer</span>
+              <span>Add customer</span>
             </Button>
           </PermissionGate>
         }

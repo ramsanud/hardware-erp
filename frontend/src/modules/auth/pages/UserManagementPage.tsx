@@ -188,7 +188,7 @@ export function UserManagementPage() {
           <PermissionGate permission={PERMISSIONS.USER_MANAGE}>
             <Button onClick={() => setCreating(true)}>
               <UserPlus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add user</span>
+              <span>Add user</span>
             </Button>
           </PermissionGate>
         }
@@ -420,6 +420,10 @@ export function UserManagementPage() {
                 await userService.resetPassword(resetting.id, values);
                 setResetting(null);
                 toast.success('Password reset. The user must change it at next sign-in.');
+                // The reset revokes every session and re-flags the account, so
+                // the cached row is stale the moment this returns - the other
+                // three mutation handlers on this page already reload.
+                await reload();
               }}
             />
           ) : null}

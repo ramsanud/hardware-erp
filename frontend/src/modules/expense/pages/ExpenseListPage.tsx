@@ -142,7 +142,7 @@ export function ExpenseListPage() {
           <PermissionGate permission={PERMISSIONS.EXPENSE_MANAGE}>
             <Button onClick={() => setCreating(true)}>
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add expense</span>
+              <span>Add expense</span>
             </Button>
           </PermissionGate>
         }

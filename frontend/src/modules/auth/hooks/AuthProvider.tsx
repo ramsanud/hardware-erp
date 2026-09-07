@@ -28,6 +28,15 @@ interface AuthContextValue {
    * of routing to a second-factor screen that would have nothing to verify.
    */
   login: (body: LoginRequest) => Promise<{ enrollmentRequired: boolean; signedIn: boolean }>;
+  /**
+   * Abandons a half-finished sign-in. The password step leaves an mfaToken
+   * behind that is not a session but IS enough for MfaVerifyPage/MfaEnrollPage
+   * to render - so a user who backs out to /login and then presses Forward
+   * lands back on the second-factor screen of an attempt they walked away
+   * from. Dropping the challenge makes those pages redirect to /login again,
+   * which is the only correct answer once the flow has been abandoned.
+   */
+  cancelPendingLogin: () => void;
   verifyMfa: (code: string) => Promise<UserResponse>;
   enrollMfa: () => Promise<MfaEnrollResponse>;
   confirmMfaEnroll: (code: string) => Promise<{ user: UserResponse; backupCodes: string[] }>;
@@ -119,6 +128,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { enrollmentRequired: challenge.enrollmentRequired, signedIn: false };
   }, [applySession]);
 
+  const cancelPendingLogin = useCallback(() => {
+    setMfaToken(null);
+    setEnrollmentRequired(false);
+  }, []);
+
   const verifyMfa = useCallback(async (code: string) => {
     if (!mfaToken) throw new Error('No verification in progress. Please sign in again.');
     return applySession(await authService.verifyMfa(mfaToken, code));
@@ -135,19 +149,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { user: applySession(result.session), backupCodes: result.backupCodes };
   }, [mfaToken, applySession]);
 
+  /**
+   * Never rejects. Local state clears even if the call fails, so the user is
+   * never stuck looking at a session they believe they ended - and every
+   * caller navigates to the login screen immediately after awaiting this, so
+   * a rethrow would strand them on the page they were trying to leave.
+   *
+   * A 401 here is the normal case, not an anomaly: change-password revokes
+   * every session and bumps tokenVersion before this runs, so the access
+   * token is already dead and the refresh cookie already cleared. There is
+   * nothing left to report - the server did the revocation this call was
+   * asking for (BUG-FE-010).
+   */
   const logout = useCallback(async () => {
     try {
       await authService.logout();
+    } catch (error) {
+      console.warn('[auth] Sign-out call failed; clearing the local session anyway.', error);
     } finally {
-      // Local state clears even if the call fails, so the user is never stuck
-      // looking at a session they believe they ended.
       clearSession();
     }
   }, [clearSession]);
 
+  /** Same contract as logout: clears locally and never rejects. */
   const logoutAll = useCallback(async () => {
     try {
       await authService.logoutAll();
+    } catch (error) {
+      console.warn('[auth] Sign-out-everywhere call failed; clearing the local session anyway.', error);
     } finally {
       clearSession();
     }
@@ -178,6 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mfaToken,
       enrollmentRequired,
       login,
+      cancelPendingLogin,
       verifyMfa,
       enrollMfa,
       confirmMfaEnroll,
@@ -188,8 +218,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hasAnyPermission,
     }),
     [user, initialising, mustChangePassword, mfaToken, enrollmentRequired, login,
-      verifyMfa, enrollMfa, confirmMfaEnroll, logout, logoutAll, refreshUser,
-      hasPermission, hasAnyPermission],
+      cancelPendingLogin, verifyMfa, enrollMfa, confirmMfaEnroll, logout, logoutAll,
+      refreshUser, hasPermission, hasAnyPermission],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

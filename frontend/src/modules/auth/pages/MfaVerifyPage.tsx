@@ -45,7 +45,7 @@ export function MfaVerifyPage() {
   };
 
   return (
-    <Card className="mx-auto w-full max-w-sm">
+    <Card className="mx-auto w-full max-w-md">
       <CardHeader>
         <CardTitle className="text-xl">Enter your verification code</CardTitle>
         <CardDescription>

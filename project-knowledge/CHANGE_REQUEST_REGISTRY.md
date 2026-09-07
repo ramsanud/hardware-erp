@@ -2863,3 +2863,250 @@ role design is a product decision, not a knob to turn for a test.
 
 **Not executed**: `registry/static_check.py` — `python3` is not installed
 on this machine (a standing limitation recorded in `CLAUDE.md`).
+
+---
+
+## CR-061 — Mobile application UI: app shell, stacked lists, sheet dialogs, themed browser chrome (APPLIED, 2026-09-05)
+
+**Requested**: "change the mobile ui to mobile application ui, now the ui looks
+absurd in mobile view, and the theme colours not adaptable for mobile".
+
+**Scope confirmed with the user before starting**, because two readings of
+"mobile application" differ by days of work:
+
+- **Chosen**: app *feel*, no install. No manifest, no service worker, no
+  offline/IndexedDB layer — `CLAUDE.md` records the absence of a PWA surface as
+  deliberate, and this CR does not change that.
+- **Chosen**: bottom tabs = Home / Invoices / Products / Customers / More.
+
+**FRONTEND ONLY.** No Java file, DTO, migration, entity or test was touched.
+No API contract changed.
+
+### What was actually wrong
+
+The shell was desktop-first and degraded rather than adapted. On a 390px
+screen: a hamburger was the only way to navigate, seven-column tables scrolled
+sideways inside a card, modals floated mid-screen with a gutter on four sides,
+the single primary action on every list page rendered as an unlabelled coloured
+square, and search did not exist at all below `sm` (`GlobalSearch` was
+`hidden sm:block`).
+
+"Theme colours not adaptable" was literal and specific: there was no
+`<meta name="theme-color">`, so the phone browser painted its own chrome. The
+eight colour presets and the light/dark switch reached every pixel of the page
+and none of the one strip the user cannot scroll away.
+
+### Changes
+
+| Area | Change |
+|---|---|
+| `layouts/MobileTabBar.tsx` (new) | Bottom tab bar below `lg`. Candidates are a *priority list*, not a fixed set — the first four the signed-in user is entitled to become the tabs, so a Purchase Staff user gets four working tabs instead of one and three gaps. Painted from `--background`/`--primary`, **not** the `--sidebar` tokens: the rail is fixed deep navy in both themes on purpose, but a navy slab across the bottom of a phone is a third of the screen and would have ignored the chosen colour theme outright. |
+| `layouts/AppLayout.tsx` | 56px app bar on a phone (64px at the rail), notch inset as padding so the bar grows into the safe area. Hamburger removed below `lg` — "More" opens the same drawer. Search became a destination: a button that expands `GlobalSearch` across the whole bar. |
+| `shared/components/ui/table.tsx` | Below `sm` every table re-flows into a stacked list. Column headings register themselves by index and cells read theirs back out, so this reached all 39 table call sites without asking any of them to repeat their headers (which would have drifted the first time one was reworded). `label` on a cell overrides; `mobileCards={false}` opts a table out. |
+| `index.css` | The stacked-list rules, mobile chrome classes, `touch-action: manipulation` (removes the ~300ms double-tap-zoom delay), safe-area insets. `td:not(.hidden)` is load-bearing — pages already mark optional columns `hidden sm:table-cell`, and a blanket `display:flex` would have un-hidden exactly the columns each page had decided a phone should not see. |
+| `shared/components/ui/dialog.tsx` | Dialogs become bottom sheets below `sm`. Re-aimed one `--tw-enter`/`--tw-exit` variable at a time via `max-sm:` variants rather than a stylesheet override: the `data-[state]` utilities are attribute-qualified and emitted late, so a plain rule loses on both specificity and source order. |
+| 15 list pages + `PageHeader` | The single primary action now carries its label on a phone. `PageHeader` actions wrap instead of `shrink-0`, so two labelled buttons cannot run off a 360px screen. Multi-action *detail* toolbars stay iconic — six labels would wrap into three rows of buttons above the content. |
+| `theme/ThemeColorMeta.tsx` (new), `index.html` | `theme-color` synced to the painted palette. Two static media-scoped tags cover first paint; the runtime tag retires them, because the OS preference and the app's own light/dark choice can disagree and a stale tag would let the browser pick the wrong one. |
+
+### Verified
+
+- `tsc -b --force` → exit 0. `vite build` → exit 0.
+- Rendered under Playwright at 390×844 (iPhone viewport, touch, 2× DPR)
+  against a stubbed API, light **and** dark: zero horizontal overflow, zero
+  console errors, sheet flush to the bottom edge, `theme-color` =
+  `rgb(249,250,251)` light / `rgb(12,19,34)` dark with no stale static tags.
+- **Not executed**: `registry/static_check.py` — `python3` is not installed on
+  this machine (standing limitation in `CLAUDE.md`). Backend tests were not run
+  because no backend file was touched.
+
+### Found and fixed along the way
+
+**BUG-FE-023** — the pinned Save/Cancel bar in every dialog left a 16px strip
+of the scrolling form visible below it. Pre-existing and not mobile-specific;
+the phone sheet, flush against the screen edge, is what made it obvious. See
+`BUG_REGISTRY.md`.
+
+### Noted, not actioned
+
+- **CR-060 is referenced by 18 files** (optional MFA / `LoginChallengeResponse`,
+  backend and frontend) **but has no entry in this registry.** This CR is
+  numbered 061 to avoid colliding with it. Someone should back-fill CR-060.
+- `BUG-FE-012`, `013`, `014`, `015`, `016`, `018`, `020`, `021`, `022` are cited
+  in source comments but absent from `BUG_REGISTRY.md`, which stops at
+  `BUG-FE-008`. The registry is behind the code.
+- Detail-page toolbars (Invoice/Quotation Detail carry up to six icon-only
+  actions) would read better on a phone as one primary button plus an overflow
+  menu. That is a per-page redesign, not a shell change — proposed as its own CR
+  rather than pulled in here.
+
+---
+
+## CR-062 — Auth screens simplified; signup checks the mobile number at the step that asks for it (APPLIED, 2026-09-05)
+
+**Requested**: "(1) refactor login page and also signup page, it looks too absurd
+and too complex. (2) when validating mobile number in signup page do it in next
+button click, not in final button. (3) in mobile ui menu, the more option not
+looks good in sidebar."
+
+**Layout direction confirmed with the user**: keep a brand column but make it a
+slim strip, and give the freed width to the form. (Not "drop the panel" and not
+"keep 50/50" — both were offered.)
+
+### 1 + 3 — FRONTEND ONLY
+
+`AuthLayout` was a 44-50% marketing panel — gradient, hairline grid, radial
+wash, four captioned capabilities, a three-column Counter/Godown/Accounts row
+and a footer — against a `max-w-sm` card floating in an otherwise empty half.
+The billboard was the loudest thing on a page whose entire job is a two-field
+form. It is now a ~30% strip: mark, product name, one line, version. The form
+column gets the rest.
+
+The mobile "More" drawer was the desktop rail transplanted: deep navy chrome,
+36px rows, dense section headers, sliding in from the **left** when the button
+that opens it sits at the bottom-right. It is now a bottom sheet rising from
+the tab bar it belongs to, on the page background rather than the rail's navy,
+with the signed-in user at the top and 44px rows.
+
+### 2 — SPECIFICATION CHANGE (backend + frontend)
+
+**The report was precise and the diagnosis was not what it first looked like.**
+Format validation *already* ran on Next (`STEP_FIELDS[1]` → `trigger`), and
+reproducing it confirmed a malformed number is caught there. What sailed
+through was a **well-formed but already-registered** number: verified live
+against the seeded owner's `9876543210`, the wizard advanced to step 3, and the
+duplicate only surfaced from `POST /v1/tenants/register` after the user had
+chosen a plan and accepted the Terms — then bounced them back to step 2. The
+existing code even documented the bounce as intended behaviour.
+
+**New endpoint** — `GET /v1/tenants/register/identifier-available`, public,
+`mobileNo` and/or `email` query params, returns
+`{ mobileAvailable, emailAvailable }`. Mirrors the `slug-available` endpoint
+that already existed for shop names.
+
+| Layer | Change |
+|---|---|
+| `TenantRegistrationController` | New `GET /register/identifier-available` |
+| `TenantRegistrationService` (+impl) | `isIdentifierAvailable(mobileNo, email)`, reusing the same `existsByMobileNo` / `existsByEmailIgnoreCase` calls `register()` already makes, so the two can never disagree |
+| `IdentifierAvailabilityResponse` | New DTO record |
+| `SecurityConfig` | Path added to the explicit permitAll list |
+| `RateLimitRule` / `RateLimitProperties` / `RateLimitServiceImpl` / `application.yml` | New `REGISTRATION_AVAILABILITY_PER_IP`, 20/minute |
+| `RateLimitFilter` | Now also matches the two availability paths |
+| `RegisterPage.tsx` | Step 2's Next awaits the check and pins the error on the offending field |
+
+**The enumeration trade-off was raised with the user before building, and they
+chose to build it rate-limited.** The endpoint confirms whether a mobile number
+or email has an account anywhere on the platform — login identifiers are
+globally unique across tenants by CR-016's deliberate design, so this is
+platform-wide, not tenant-scoped. It exposes no *new* fact: `POST
+/register` already answered the same question to anyone willing to submit a
+form. What changes is the cost of probing, and the rate limit is the control.
+
+**Found while doing it: `slug-available` had no rate limit at all.**
+`RateLimitFilter` switches on an exact path equality, and
+`/v1/tenants/register/slug-available` is not equal to `/v1/tenants/register`, so
+the shop-name enumeration endpoint shipped ungoverned. Fixed in the same pass
+under the same root cause — it would have been indefensible to rate-limit the
+new endpoint and leave its twin open.
+
+### Verified
+
+- `mvn -o verify` → **454 unit + 192 integration, BUILD SUCCESS** (4m50s).
+  Five new `TenantRegistrationServiceImplTest` cases for availability, and two
+  new `RateLimitIT` cases proving the filter now reaches both availability
+  paths and meters them from one shared per-IP bucket.
+- `tsc -b --force` and `vite build` clean.
+- Driven live in a browser against the running local stack: a taken mobile is
+  now rejected **on Next**, at step 2, with the message on the field.
+- **Not executed**: `registry/static_check.py` — `python3` is not installed on
+  this machine.
+
+---
+
+## CR-063 — clearable inputs, and one status pill for the whole application (APPROVED, 2026-09-07)
+
+**Requested by**: the shop owner, during a full-application UX audit.
+
+### 1. Clear (×) buttons on text entry
+
+**Problem.** Emptying a field meant summoning the phone keyboard and holding
+backspace — the slowest interaction in the app, and the one hit most often
+(a mistyped mobile number at the sign-in screen). `SearchInput` already had
+its own private copy of a clear button; nothing else had anything.
+
+**Decision.** One primitive, `shared/components/ui/clearable-input.tsx`,
+used inside the existing `relative` wrapper each field already has.
+
+Two details are load-bearing and must not be "simplified" later:
+
+- It clears via the **native value setter plus a bubbled `input` event**, not
+  a synthetic object cast to `ChangeEvent`. react-hook-form registers plain
+  inputs; anything less and RHF's subscription never fires, so the field
+  looks empty, validates against its old value, and submits data the user
+  cannot see.
+- `trailingSlot` reserves the corner already claimed by another control (the
+  password show/hide eye), so the two never overlap. The primitive owns the
+  input's right padding in both states — a caller passing its own `pr-*`
+  would win under `twMerge` and undo it.
+
+Both controls are **40×40**, matching the input's own height. The first
+implementation used `p-2` around a 16px icon, which measures 32px and is
+under every touch-size guideline — caught by measuring, not by looking.
+
+**Deliberately not applied everywhere.** Disabled and read-only fields never
+offer it. The audit brief asked for it on "all applicable forms"; the auth
+screens are done, and the remaining module forms are listed as follow-up
+work rather than swept blindly, because "clear this field" is wrong on some
+of them.
+
+### 2. One status pill
+
+**Problem.** `Inactive` rendered as `secondary` — the same neutral grey the
+UI uses for a role name or a count chip. On a catalogue scanned at a shop
+counter, "this product cannot be sold" was effectively invisible.
+
+**Decision.** `shared/components/StatusBadge.tsx`. Active green, Inactive
+red, plus a saturated dot that gives the colour an anchor next to muted
+text. The label is always present, so colour is never the only signal.
+
+**The three-state problem, and why `destructive-solid` exists.** Supplier and
+User carry *two* bad states — Inactive (switched off) and Blocked/Suspended
+(acted against). Making Inactive plain red would have collided them. Inactive
+takes the soft destructive tint that every other module now uses; the harder
+state takes a solid fill, so the more serious status also reads as the louder
+one, and the two stay distinguishable without relying on hue.
+
+**Terminology.** The labels stay "Active"/"Inactive" rather than
+"Available"/"Not available". It is the value the API returns, the value the
+status filter offers, and the value the form's own dropdown sets; renaming it
+only in the badge would have put three different words on one concept.
+
+### 3. `show-on-card`
+
+A table column can now say "hide me in the table, keep me on the mobile
+card". See BUG-FE-026 — CR-061's stacked cards honour each column's existing
+`hidden` breakpoint, which is right for narrow-desktop density and wrong for
+the phone card whenever the hidden column is the one that matters most.
+
+### Explicitly rejected in this pass
+
+**Intercepting the Android/browser Back button to close an open dialog.** It
+is a real gap and it was asked for. Doing it properly means pushing a history
+entry per dialog and popping it on every close path, across 30+ dialogs, some
+nested (ProductForm opens Category and Brand on top of itself) and some
+already layering `UnsavedChangesDialog` over a live form. Getting the
+double-pop cases wrong breaks ordinary navigation everywhere, and this
+project has no frontend test runner to catch that. Recorded as a candidate
+CR with its own design pass, per CLAUDE.md's rule against building large
+subsystems unprompted.
+
+**Syncing list filters into the URL.** Same reasoning, smaller: back from a
+product detail page loses the filters the user had set. Worth doing, worth
+doing to all 15 list pages at once, not worth doing half-way inside a bug-fix
+pass.
+
+**Verified**: `tsc -b --force` → exit 0. `vite build` → exit 0. Chromium via
+Playwright: 27/27 auth-flow assertions, 31/31 product-grid and dialog
+assertions, 15/15 responsive-regression assertions across 25 routes × 5
+viewports. `mvn clean verify` **not executed** — no backend file was
+touched in this change. `registry/static_check.py` **not executed** —
+`python3` is not installed on this machine.

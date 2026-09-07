@@ -95,7 +95,7 @@ export function InvoiceListPage() {
           <PermissionGate permission={PERMISSIONS.INVOICE_CREATE}>
             <Button onClick={() => navigate(INVOICE_ROUTES.create)}>
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">New invoice</span>
+              <span>New invoice</span>
             </Button>
           </PermissionGate>
         }

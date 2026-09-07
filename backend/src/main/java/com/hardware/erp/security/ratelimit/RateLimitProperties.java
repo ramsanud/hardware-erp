@@ -27,5 +27,8 @@ public record RateLimitProperties(
         int registerPerIpPerHour,
 
         /** Platform Admin Console login attempts per IP per minute (CR-054). */
-        int platformAdminLoginPerIpPerMinute
+        int platformAdminLoginPerIpPerMinute,
+
+        /** CR-062 - signup availability lookups (shop name, mobile, email) per IP per minute. */
+        int registrationAvailabilityPerIpPerMinute
 ) {}

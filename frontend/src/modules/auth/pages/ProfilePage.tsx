@@ -103,7 +103,16 @@ export function ProfilePage() {
         }
       />
 
-      <div className="grid gap-5 lg:grid-cols-4">
+      {/*
+        BUG-FE-031: grid-cols-1 at base is load-bearing, not decoration. With
+        only lg:grid-cols-4 declared, every width below lg fell to a single
+        IMPLICIT track, and an implicit track is sized `auto` - it grows to its
+        widest child instead of clamping to the container. The Account card's
+        "07 Sept 2026, 20:55" row was enough to push all three cards to 401px
+        inside a 390px phone, cutting the values and the Sessions tab off the
+        right edge. grid-cols-1 makes the track minmax(0, 1fr), which clamps.
+      */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-4">
         <Card className="lg:col-span-1">
           <CardHeader>
             <CardTitle className="text-base">Photo</CardTitle>

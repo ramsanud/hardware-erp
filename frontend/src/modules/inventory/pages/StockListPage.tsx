@@ -103,7 +103,7 @@ export function StockListPage() {
           hasPermission(PERMISSIONS.INVENTORY_VIEW) ? (
             <Button variant="outline" loading={sendingAlert} onClick={() => void handleSendLowStockAlert()}>
               <MessageCircle className="h-4 w-4" />
-              <span className="hidden sm:inline">Send WhatsApp Alert</span>
+              <span>Send WhatsApp Alert</span>
             </Button>
           ) : undefined
         }

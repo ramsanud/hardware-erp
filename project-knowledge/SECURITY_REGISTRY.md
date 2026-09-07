@@ -48,6 +48,7 @@ decoration, not security.
 | Rate limit — forgot-password | 3 / hour per IP + 3 / hour per identifier |
 | Rate limit — reset-password | 10 / hour per IP |
 | Rate limit — refresh | 30 / minute per IP |
+| Rate limit — signup availability lookups | 20 / minute per IP (CR-062) |
 
 Rate limiting is Bucket4j in-process with a Caffeine cache. A single-shop
 monolith is one JVM; Redis would be cost with no benefit.
@@ -354,3 +355,34 @@ sensitive than viewing its own identity); a Platform Admin Console-specific
 CSP/CORS origin (currently reuses the tenant `SecurityConfig`'s CORS
 configuration source bean, which is broad enough today because there is no
 separate admin subdomain yet).
+
+---
+
+## Signup availability lookups are an accepted enumeration surface (CR-062, 2026-09-05)
+
+`GET /v1/tenants/register/slug-available` and
+`GET /v1/tenants/register/identifier-available` are public, unauthenticated
+oracles: the first says whether a shop name is taken, the second whether a
+mobile number or email already has an account. Because login identifiers are
+globally unique across tenants by CR-016's deliberate design, the second
+answers **platform-wide**, not per-shop.
+
+**This was put to the owner before it was built, and accepted.** The reasoning:
+
+- `POST /v1/tenants/register` already answered exactly the same question to
+  anyone willing to submit the form, so no new fact is exposed — only a cheaper
+  way to ask it.
+- The alternative was leaving a signup wizard that lets someone choose a plan
+  and accept the Terms before revealing their number is taken: a real and
+  constant cost to genuine users, weighed against a speculative one.
+
+**The control is the rate limit, not secrecy.**
+`REGISTRATION_AVAILABILITY_PER_IP`, 20/minute/IP, shared by both endpoints so
+alternating between them does not double the budget. `slug-available` had **no
+limit at all** until this work — see BUG-SEC-005 in `BUG_REGISTRY.md`.
+
+**What would change this judgement**: if the platform ever serves shops whose
+mere existence is sensitive, or if these endpoints become reachable by a caller
+pool wider than "people on the public signup page", they should move behind the
+CAPTCHA the login already supports (`/v1/auth/captcha-config`, CR-038) rather
+than relying on the IP bucket alone.

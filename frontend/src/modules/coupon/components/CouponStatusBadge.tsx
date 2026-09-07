@@ -1,4 +1,4 @@
-import { Badge } from '@/shared/components/ui/badge';
+import { StatusBadge } from '@/shared/components/StatusBadge';
 import type { CouponStatus } from '../types';
 
 const LABEL: Record<CouponStatus, string> = {
@@ -6,11 +6,8 @@ const LABEL: Record<CouponStatus, string> = {
   INACTIVE: 'Inactive',
 };
 
-const VARIANT: Record<CouponStatus, 'success' | 'secondary'> = {
-  ACTIVE: 'success',
-  INACTIVE: 'secondary',
-};
+const TONE = { ACTIVE: 'positive', INACTIVE: 'negative' } as const;
 
 export function CouponStatusBadge({ status }: { status: CouponStatus }) {
-  return <Badge variant={VARIANT[status]}>{LABEL[status]}</Badge>;
+  return <StatusBadge tone={TONE[status]} label={LABEL[status]} />;
 }

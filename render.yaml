@@ -139,6 +139,29 @@ services:
       - key: APP_BOOTSTRAP_NAME
         sync: false
 
+      # ---- first platform admin account -----------------------------------
+      # The Platform Admin Console is a separate trust boundary with its own
+      # signing key (above) and its own account table. Until 2026-09-07 this
+      # blueprint generated the KEY but never created an ACCOUNT, so a deploy
+      # came up with a console that nobody could sign in to - the mirror image
+      # of BUG-SEC-004, which was the key missing while the account path
+      # existed.
+      #
+      # Left false so importing this blueprint cannot fail a deploy that does
+      # not want the console: PlatformAdminBootstrapInitializer refuses to
+      # start when enabled with a missing or weak password (12+ chars, upper,
+      # lower, digit), exactly like the owner bootstrap above. To create it:
+      # set this to true, fill the two values below, deploy, sign in and
+      # complete MFA enrollment, then set it back to false and redeploy.
+      - key: PLATFORM_ADMIN_BOOTSTRAP_ENABLED
+        value: "false"
+      - key: PLATFORM_ADMIN_BOOTSTRAP_EMAIL
+        sync: false
+      - key: PLATFORM_ADMIN_BOOTSTRAP_PASSWORD
+        sync: false            # change it immediately after first sign-in
+      - key: PLATFORM_ADMIN_BOOTSTRAP_NAME
+        sync: false
+
       # ---- optional --------------------------------------------------------
       # Email is off unless MAIL_USER/MAIL_PASSWORD are set. Password reset
       # then logs the link instead of sending it, which is fine for a demo.

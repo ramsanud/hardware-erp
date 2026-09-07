@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
-import { Input } from '@/shared/components/ui/input';
+import { ClearableInput } from '@/shared/components/ui/clearable-input';
 import { Alert, AlertDescription } from '@/shared/components/ui/alert';
 import { FormField } from '@/shared/components/FormField';
 import { ApiError } from '@/shared/types/api';
@@ -82,7 +82,7 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
       <FormField id="identifier" label="Mobile number or email" error={errors.identifier?.message} required>
         <div className="relative">
           <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input
+          <ClearableInput
             id="identifier"
             autoComplete="username"
             inputMode="text"
@@ -90,6 +90,7 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
             placeholder="9876543210"
             className="pl-9"
             aria-invalid={Boolean(errors.identifier)}
+            aria-describedby={errors.identifier ? 'identifier-error' : undefined}
             {...register('identifier')}
           />
         </div>
@@ -98,18 +99,25 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
       <FormField id="password" label="Password" error={errors.password?.message} required>
         <div className="relative">
           <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input
+          {/* trailingSlot reserves the eye toggle's corner so the clear
+              button lands beside it, never on top of it. */}
+          <ClearableInput
             id="password"
             type={showPassword ? 'text' : 'password'}
             autoComplete="current-password"
-            className="pl-9 pr-10"
+            className="pl-9"
+            trailingSlot={1}
             aria-invalid={Boolean(errors.password)}
+            aria-describedby={errors.password ? 'password-error' : undefined}
             {...register('password')}
           />
           <button
             type="button"
             onClick={() => setShowPassword((visible) => !visible)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-1.5 text-muted-foreground hover:text-foreground"
+            className="absolute right-0 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center
+                       justify-center rounded-md text-muted-foreground transition-colors
+                       hover:text-foreground focus-visible:outline-none focus-visible:ring-2
+                       focus-visible:ring-ring"
             aria-label={showPassword ? 'Hide password' : 'Show password'}
           >
             {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

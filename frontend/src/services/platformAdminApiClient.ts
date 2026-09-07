@@ -5,6 +5,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios';
 import { ApiError, type ApiErrorResponse, type ApiResponse } from '@/shared/types/api';
+import { resolveApiBaseUrl } from './apiBaseUrl';
 import { platformAdminTokenStorage } from './platformAdminTokenStorage';
 
 /**
@@ -16,7 +17,11 @@ import { platformAdminTokenStorage } from './platformAdminTokenStorage';
  * bleed into the other console's session.
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+// Shared with services/apiClient.ts so the '/api' suffix normalisation cannot
+// be applied to one console and forgotten on the other (BUG-FE-009). The axios
+// instance and every interceptor below stay independent, which is what the
+// separation above actually protects.
+const BASE_URL = resolveApiBaseUrl();
 
 const REFRESH_PATH = '/v1/platform-admin/auth/refresh';
 const PUBLIC_PATHS = [

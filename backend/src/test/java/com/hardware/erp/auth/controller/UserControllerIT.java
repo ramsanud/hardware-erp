@@ -1,5 +1,6 @@
 package com.hardware.erp.auth.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.hardware.erp.auth.dto.*;
 import com.hardware.erp.auth.entity.UserStatus;
 import com.hardware.erp.support.AbstractIntegrationTest;
@@ -510,5 +511,37 @@ class UserControllerIT extends AbstractIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(
                         login("9811100015", "Temp@2026").path("mustChangePassword").asBoolean())
                 .isTrue();
+    }
+
+    @Test
+    @DisplayName("the forced change clears mustChangePassword for the next sign-in")
+    void forcedChangeClearsFlag() throws Exception {
+        String body = mockMvc.perform(post("/v1/users").header("Authorization", owner())
+                        .contentType(APPLICATION_JSON)
+                        .content(json(new CreateUserRequest("Forced Change", "9811100016",
+                                "t16@sarahardware.in", "EMP116", STAFF_ROLE_ID,
+                                "Welcome@2026", true))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(tree(body).path("data").path("mustChangePassword").asBoolean()).isTrue();
+
+        // First sign-in with the owner-set password: the app must force a change.
+        JsonNode first = login("9811100016", "Welcome@2026");
+        assertThat(first.path("mustChangePassword").asBoolean()).isTrue();
+
+        mockMvc.perform(post("/v1/auth/change-password")
+                        .header("Authorization", "Bearer " + first.path("accessToken").asText())
+                        .contentType(APPLICATION_JSON)
+                        .content(json(new ChangePasswordRequest("Welcome@2026", "Counter@2026"))))
+                .andExpect(status().isOk());
+
+        // The whole point of the flag: signing in with the self-chosen password
+        // must not send the user back to the forced-change screen. Asserted
+        // against a real database, because the service-level unit test asserts
+        // only that the entity field flipped in memory - it cannot prove the
+        // UPDATE survived the flush-and-clear that revokeAllForUser performs
+        // immediately afterwards.
+        assertThat(login("9811100016", "Counter@2026").path("mustChangePassword").asBoolean())
+                .isFalse();
     }
 }

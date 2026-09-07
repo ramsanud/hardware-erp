@@ -60,7 +60,7 @@ export function ProjectListPage() {
           <PermissionGate permission={PERMISSIONS.PROJECT_MANAGE}>
             <Button onClick={() => navigate(PROJECT_ROUTES.create)}>
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">New project</span>
+              <span>New project</span>
             </Button>
           </PermissionGate>
         }
