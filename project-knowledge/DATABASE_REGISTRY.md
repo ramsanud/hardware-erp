@@ -723,10 +723,20 @@ bare `product_id`. See CR-052's entry in the Change Request Registry for why
 migration or by `CreditNoteServiceImpl` - a settled tax invoice is never
 rewritten.
 
-**`stock_movement.movement_type` widened twice more** (V36 adds `DELIVERY`/
-`DELIVERY_REVERSAL`, V37 adds `SALES_RETURN`/`SALES_RETURN_REVERSAL`), same
-`DROP CONSTRAINT` / `ADD CONSTRAINT` pattern V21 established for
-`PURCHASE_RECEIPT`/`PURCHASE_RETURN`.
+**`stock_movement.movement_type`'s CHECK widened twice more** (V36 adds
+`DELIVERY`/`DELIVERY_REVERSAL`, V37 adds `SALES_RETURN`/
+`SALES_RETURN_REVERSAL`), same `DROP CONSTRAINT` / `ADD CONSTRAINT` pattern
+V21 established for `PURCHASE_RECEIPT`/`PURCHASE_RETURN`.
+
+> **The word "widened" was wrong for three migrations, and it mattered.** Only
+> the CHECK constraint was ever widened; the COLUMN stayed `VARCHAR(20)` from
+> V8 until V53. `SALES_RETURN_REVERSAL`, added by V37, is **21 characters** -
+> a value the constraint permitted and the column could not store, so
+> cancelling a credit note would have failed on a Postgres length error. See
+> BUG-DB-001. `ddl-auto: validate` does not compare an entity's `length`
+> against the CHECK, so nothing caught it. **Any migration that adds a value to
+> a CHECK should state the longest value's length against the column width in
+> its own comment.**
 
 **`document_sequence.doc_type` widened once, in V35**, to add all three of
 `SALES_ORDER`, `DELIVERY_CHALLAN`, `CREDIT_NOTE` at once (rather than once
@@ -1023,3 +1033,118 @@ reason `USER_DEACTIVATED` stay revoked.
 and there is nothing to recover — `POST /v1/customers/{id}/activate` simply
 sets it back to `ACTIVE`. No deleted-records table, column or endpoint was
 invented for it.
+
+
+---
+
+## V53 — project material stock (CR-064, 2026-09-07)
+
+> **The migration table at the top of this file stops at V28 and has not been
+> maintained since.** V29–V52 exist on disk and are described in their own
+> sections further down, as this one is. Someone should back-fill the table or
+> drop it in favour of the per-migration sections; adding a lone V53 row after
+> V28 would only have made the gap harder to see.
+
+**No new table, no new column.** Project material consumption reuses
+`stock_movement` exactly as Invoice, Purchase, Delivery Challan and Credit
+Note do; the defect it fixes (BUG-BE-001) was that the Project module never
+wrote to it at all, not that it lacked somewhere to write.
+
+**`stock_movement.movement_type` VARCHAR(20) → VARCHAR(30).** Two reasons in
+one statement, which is why they are not split across two migrations:
+
+1. **BUG-DB-001** — `SALES_RETURN_REVERSAL` (21 chars, added by V37) never
+   fit. The column has been one character too narrow for a permitted value
+   since V37 shipped.
+2. `PROJECT_CONSUMPTION_REVERSAL` is 28.
+
+30, not 21 or 28, so the next pair of paired movement types does not need a
+fourth migration to do the same job. The entity's `@Column(length = 30)` moves
+with it — `ddl-auto: validate` compares the two.
+
+**CHECK extended** with `PROJECT_CONSUMPTION` and
+`PROJECT_CONSUMPTION_REVERSAL`, same `DROP`/`ADD` pattern as V21/V36/V37.
+
+**New index `idx_stock_movement_reference (tenant_id, reference_type,
+reference_id)`.** Every project-material movement carries
+`reference_type = 'PROJECT_MATERIAL'` and
+`reference_id = project_material_id`, so one material row's whole stock
+history — consumption, corrections, removal — reads back in one query. The
+existing `(tenant_id, product_id, created_at)` index does not serve that
+lookup, and this is the module's first reference-first access pattern.
+
+**Reversal semantics are a business decision, recorded in CR-064**: correcting
+or removing a material row writes a compensating movement; **cancelling a
+project writes nothing**, because materials used on a half-built job have not
+physically come back.
+
+
+---
+
+## V54 — data reset permission (CR-067, 2026-09-08)
+
+**No schema change. One permission row and one grant.**
+
+```
+permission: DATA_RESET, module SETTINGS, display_order 30
+role_permission: OWNER only
+```
+
+Written out explicitly rather than left to V1's `CROSS JOIN permission`, which
+was a one-time snapshot and does not pick up codes added later — the same
+reason V18 and V25 each had to grant their own module's codes. Shops registered
+*after* this migration get it through `TenantRegistrationServiceImpl`'s "OWNER
+receives every permission except the DEVELOPER module" rule, which needed no
+edit because `SETTINGS` is not `DEVELOPER`.
+
+MANAGER, ACCOUNTANT and STAFF are omitted deliberately, and the omission is
+pinned by `RoleGrantDriftTest`'s `WITHHELD_*` sets so it reads as a decision
+rather than an oversight.
+
+### Which tables the reset touches, and which it must not
+
+The delete order is in `DataResetServiceImpl.DELETE_STATEMENTS`, not in SQL, so
+it is worth recording here what the schema forces about that order.
+
+**Deleted, in this order** (children before parents, and note the first pair):
+
+```
+credit_note_item → credit_note → delivery_challan_item → delivery_challan
+→ sales_order_item → sales_order → payment → quotation_item → quotation
+→ invoice_item → invoice → purchase_document → purchase_payment
+→ purchase_item → purchase → expense_receipt → business_expense
+→ worker_attendance → worker_payment → project_material → project_expense
+→ project_payment → project → stock_movement → stock → notification_log
+→ idempotency_record
+```
+
+`credit_note_item` is first because it holds an FK to `invoice_item`
+(`fk_credit_note_item_invoice_item`, V37). Deleting invoices before credit
+notes fails on that constraint — the one ordering a plain cascade would not
+have arranged, which is why the whole list is written out instead of relying on
+the `ON DELETE CASCADE` most of these children do have.
+
+**Seven of those tables carry no `tenant_id` at all** — `invoice_item`,
+`quotation_item`, `purchase_item`, `sales_order_item`,
+`delivery_challan_item`, `credit_note_item`, `expense_receipt`. That is by
+design: a line belongs to its document, and its isolation comes from the
+document. Every delete against them is therefore scoped by a subquery on the
+already-scoped parent, never by a column they do not have.
+
+**Updated, not deleted:**
+
+- `coupon.times_used` → 0. A counter on a surviving master that counts
+  redemptions against deleted invoices; left alone, a coupon with
+  `usage_limit = 100` stays permanently spent.
+- `document_sequence.next_value` → 1, for `INVOICE`, `QUOTATION`, `PURCHASE`,
+  `PROJECT` only. `CUSTOMER`, `SUPPLIER`, `PRODUCT`, `CATEGORY` and `BRAND` are
+  untouched — those records survive, so reissuing their codes would collide.
+
+**Untouched, deliberately:** every master table, `app_user`, `role`,
+`role_permission`, all `tenant_*` tables, `subscription_coupon` (billing, not
+shop trading), `activity_log` and `security_audit_log`.
+
+`stock` rows are deleted rather than zeroed. `StockServiceImpl` creates them
+lazily (`orElseGet(() -> createStockRow(...))`), so the next movement recreates
+the row at zero — and a zero balance with no movements behind it would claim a
+history the ledger no longer has.
