@@ -36,6 +36,7 @@ import { roleService } from '../services/roleService';
 import { UserForm, type UserFormValues } from '../forms/UserForm';
 import { ResetUserPasswordForm } from '../forms/ResetUserPasswordForm';
 import { UserStatusBadge } from '../components/StatusBadge';
+import { StatusBadge } from '@/shared/components/StatusBadge';
 import type { RoleResponse, UserActivityResponse, UserResponse, UserStatus } from '../types';
 
 const ALL = '__all__';
@@ -324,7 +325,33 @@ export function UserManagementPage() {
                       <TableCell className="tabular hidden xl:table-cell text-sm text-muted-foreground">
                         {formatDateTime(row.lastLoginAt)}
                       </TableCell>
-                      <TableCell><UserStatusBadge status={row.status} /></TableCell>
+                      {/*
+                        BUG-FE-032. The API has always returned mustChangePassword and
+                        nothing ever showed it, so an owner who set a temporary
+                        password had no way to tell afterwards who had actually
+                        replaced theirs - the one thing they need to know to
+                        chase it up.
+
+                        It shares the Status cell rather than taking a column of
+                        its own: it is a fact ABOUT the account's state, it is
+                        false for almost every row, and a mostly-empty column
+                        would cost width on every screen to say nothing. Sharing
+                        the cell also carries it onto the mobile card for free,
+                        because Status is one of the columns that is never
+                        hidden.
+
+                        'pending', not an error tone - a temporary password is a
+                        normal step in onboarding, not a fault. The temporary
+                        password itself is never shown here or anywhere else.
+                      */}
+                      <TableCell>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <UserStatusBadge status={row.status} />
+                          {row.mustChangePassword ? (
+                            <StatusBadge tone="pending" label="Password change required" />
+                          ) : null}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <PermissionGate permission={PERMISSIONS.USER_MANAGE}>
                           <DropdownMenu>

@@ -538,6 +538,60 @@
     padding: 0;
     justify-content: flex-end;
   }
+
+  /*
+   * Status as a corner dot on the card, not a labelled row of its own.
+   *
+   * On the phone list every status was spending a full line - "STATUS
+   * <pill>" - on one bit of information, which pushed the price and the next
+   * product further down for no gain. Pinned beside the row's own actions
+   * button it costs no vertical space at all, and it lands where the eye
+   * already goes for "what is this item's state".
+   *
+   * Colour is NOT the only carrier: the label is clipped to screen-reader-only
+   * rather than removed, so assistive technology still reads "Active" /
+   * "Inactive". A sighted user gets the same distinction the badge always
+   * used - success green against destructive red (StatusBadge).
+   */
+  [data-table-cards='true'] td.status-on-card {
+    position: absolute;
+    /* Clear of the actions button pinned at right: 0.5rem (h-8 w-8 = 2rem). */
+    top: 0.5rem;
+    right: 2.75rem;
+    display: flex;
+    align-items: center;
+    width: auto;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+  }
+  /* No "STATUS" caption - the dot is the whole message here. */
+  [data-table-cards='true'] td.status-on-card::before {
+    content: none;
+  }
+  [data-table-cards='true'] td.status-on-card .status-badge {
+    gap: 0;
+    padding: 0.3125rem;
+  }
+  [data-table-cards='true'] td.status-on-card .status-badge-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+  /*
+   * The identity cell reserves standing room for the actions button; with a
+   * status dot to its left it has to reserve for both, or a long product name
+   * runs underneath the dot.
+   */
+  [data-table-cards='true'] tr:has(td.status-on-card) td[data-column-index='0']:not(.hidden) {
+    padding-right: 4.75rem;
+  }
 }
 
 /*

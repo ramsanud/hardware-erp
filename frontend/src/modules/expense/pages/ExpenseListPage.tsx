@@ -17,6 +17,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -40,10 +43,59 @@ import type {
 } from '../types';
 import type { ExpenseValues } from '../validation/schemas';
 
+/** CR-068. Column catalogue - ids are persisted, so never rename them. */
+const EXPENSE_COLUMNS: ColumnDef<BusinessExpenseResponse>[] = [
+  {
+    id: 'date',
+    header: 'Date',
+    locked: true,
+    cellClassName: 'tabular',
+    cell: (row) => row.expenseDate,
+  },
+  {
+    id: 'category',
+    header: 'Category',
+    cell: (row) => (
+      <>
+        <span className="font-medium">{row.categoryName}</span>
+        {row.hasReceipt ? <Receipt className="ml-1.5 inline h-3.5 w-3.5 text-muted-foreground" aria-label="Has receipt" /> : null}
+      </>
+    ),
+  },
+  {
+    id: 'notes',
+    header: 'Notes',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'hidden max-w-xs truncate sm:table-cell',
+    cell: (row) => row.notes ?? '—',
+  },
+  {
+    id: 'method',
+    header: 'Method',
+    headClassName: 'hidden md:table-cell',
+    cellClassName: 'hidden md:table-cell',
+    cell: (row) => row.paymentMethod,
+  },
+  {
+    id: 'amount',
+    header: 'Amount',
+    headClassName: 'text-right',
+    cellClassName: 'tabular text-right',
+    cell: (row) => <>&#8377;{row.amountDisplay}</>,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cellClassName: 'status-on-card',
+    cell: (row) => <ExpenseStatusBadge status={row.status} />,
+  },
+];
+
 const ALL = '__all__';
 
 export function ExpenseListPage() {
   const toast = useToast();
+  const columns = useColumnPreferences('expense', EXPENSE_COLUMNS);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>(ALL);
@@ -139,12 +191,15 @@ export function ExpenseListPage() {
         title="Expenses"
         description="Shop-wide costs - rent, salaries, utilities and everything else, separate from project costs."
         actions={
-          <PermissionGate permission={PERMISSIONS.EXPENSE_MANAGE}>
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="h-4 w-4" />
-              <span>Add expense</span>
-            </Button>
-          </PermissionGate>
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="expense" />
+            <PermissionGate permission={PERMISSIONS.EXPENSE_MANAGE}>
+              <Button onClick={() => setCreating(true)}>
+                <Plus className="h-4 w-4" />
+                <span>Add expense</span>
+              </Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -203,31 +258,26 @@ export function ExpenseListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="hidden sm:table-cell">Notes</TableHead>
-                  <TableHead className="hidden md:table-cell">Method</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Status</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={7} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length + 1} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
                     <TableRow key={row.id}>
-                      <TableCell className="tabular">{row.expenseDate}</TableCell>
-                      <TableCell>
-                        <span className="font-medium">{row.categoryName}</span>
-                        {row.hasReceipt ? <Receipt className="ml-1.5 inline h-3.5 w-3.5 text-muted-foreground" aria-label="Has receipt" /> : null}
-                      </TableCell>
-                      <TableCell className="hidden max-w-xs truncate sm:table-cell">{row.notes ?? '—'}</TableCell>
-                      <TableCell className="hidden md:table-cell">{row.paymentMethod}</TableCell>
-                      <TableCell className="tabular text-right">₹{row.amountDisplay}</TableCell>
-                      <TableCell><ExpenseStatusBadge status={row.status} /></TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                       <TableCell>
                         <PermissionGate permission={PERMISSIONS.EXPENSE_MANAGE}>
                           <DropdownMenu>

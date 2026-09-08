@@ -180,7 +180,7 @@ export function CouponListPage() {
                           {row.currentlyValid ? 'Yes' : 'No'}
                         </Badge>
                       </TableCell>
-                      <TableCell><CouponStatusBadge status={row.status} /></TableCell>
+                      <TableCell className="status-on-card"><CouponStatusBadge status={row.status} /></TableCell>
                       <TableCell>
                         <PermissionGate permission={PERMISSIONS.COUPON_MANAGE}>
                           <DropdownMenu>

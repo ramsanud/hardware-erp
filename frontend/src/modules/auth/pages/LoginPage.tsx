@@ -80,30 +80,29 @@ export function LoginPage() {
   };
 
   return (
-    <Card className="mx-auto w-full max-w-md">
+    <Card
+      className="mx-auto w-full max-w-md rounded-3xl shadow-2xl
+                 animate-in fade-in slide-in-from-bottom-3 duration-500 sm:p-2"
+    >
       <CardHeader>
-        <CardTitle className="text-xl">Sign in</CardTitle>
+        <CardTitle className="text-2xl font-bold tracking-tight">Sign in</CardTitle>
         <CardDescription>
           Welcome back. Enter your credentials to continue.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         {justRegistered ? (
           <Alert>
             <AlertDescription>Your shop is ready. Sign in below to get started.</AlertDescription>
           </Alert>
         ) : null}
+        {/* "Forgot password?" now sits beside Remember me inside the form, so it is not repeated here. */}
         <LoginForm onSubmit={handleSubmit} />
-        <div className="flex items-center justify-between text-sm">
-          <Link
-            to={AUTH_ROUTES.forgotPassword}
-            className="text-primary underline-offset-4 hover:underline"
-          >
-            Forgot your password?
-          </Link>
+        <div className="border-t pt-4 text-center text-sm text-muted-foreground">
+          Don&apos;t have an account?{' '}
           <Link
             to={AUTH_ROUTES.register}
-            className="text-primary underline-offset-4 hover:underline"
+            className="font-medium text-primary underline-offset-4 hover:underline"
           >
             Register your shop
           </Link>

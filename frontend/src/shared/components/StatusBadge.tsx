@@ -31,7 +31,7 @@ const TONE: Record<StatusBadgeProps['tone'], NonNullable<BadgeProps['variant']>>
 
 export function StatusBadge({ label, tone, className, ...props }: StatusBadgeProps) {
   return (
-    <Badge variant={TONE[tone]} className={cn('gap-1.5', className)} {...props}>
+    <Badge variant={TONE[tone]} className={cn('status-badge gap-1.5', className)} {...props}>
       <span
         aria-hidden
         className={cn(
@@ -41,7 +41,11 @@ export function StatusBadge({ label, tone, className, ...props }: StatusBadgePro
           tone === 'critical' ? 'bg-destructive-foreground' : 'bg-current',
         )}
       />
-      {label}
+      {/* Wrapped, not a bare text node, so the stacked mobile card can clip the
+          label to screen-reader-only and leave just the dot - see
+          `td.status-on-card` in index.css. The text stays in the a11y tree;
+          colour is never the only carrier of the state. */}
+      <span className="status-badge-label">{label}</span>
     </Badge>
   );
 }

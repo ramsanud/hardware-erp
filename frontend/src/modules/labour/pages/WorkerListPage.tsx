@@ -159,7 +159,7 @@ export function WorkerListPage() {
                       <TableCell className="hidden sm:table-cell">{row.roleTitle ?? '—'}</TableCell>
                       <TableCell className="hidden md:table-cell">{row.mobileNo ?? '—'}</TableCell>
                       <TableCell className="tabular text-right">₹{row.dailyRateDisplay}</TableCell>
-                      <TableCell><WorkerStatusBadge status={row.status} /></TableCell>
+                      <TableCell className="status-on-card"><WorkerStatusBadge status={row.status} /></TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <PermissionGate permission={PERMISSIONS.LABOUR_MANAGE}>
                           <DropdownMenu>

@@ -148,7 +148,7 @@ export function RoleManagementPage() {
                     <Badge variant="outline">{role.permissions.length} permissions</Badge>
                   </TableCell>
                   <TableCell className="tabular hidden sm:table-cell">{role.userCount}</TableCell>
-                  <TableCell><RoleStatusBadge status={role.status} /></TableCell>
+                  <TableCell className="status-on-card"><RoleStatusBadge status={role.status} /></TableCell>
                   <TableCell>
                     <PermissionGate permission={PERMISSIONS.ROLE_MANAGE}>
                       <DropdownMenu>

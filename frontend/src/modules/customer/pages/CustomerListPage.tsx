@@ -15,6 +15,9 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/shared/components/ui/dialog';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -36,9 +39,49 @@ import type { CustomerRequest, CustomerResponse, CustomerStatus, CustomerSummary
 
 const ALL = '__all__';
 
+/** CR-068. Column catalogue - ids are persisted, so never rename them. */
+const CUSTOMER_COLUMNS: ColumnDef<CustomerSummaryResponse>[] = [
+  {
+    id: 'customer',
+    header: 'Customer',
+    locked: true,
+    cell: (row) => (
+      <>
+        <span className="font-medium">{row.customerName}</span>
+        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.customerCode}</span>
+      </>
+    ),
+  },
+  {
+    id: 'mobile',
+    header: 'Mobile',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'tabular hidden sm:table-cell',
+    cell: (row) => row.mobileNo,
+  },
+  {
+    id: 'city',
+    header: 'City',
+    headClassName: 'hidden md:table-cell',
+    cellClassName: 'hidden md:table-cell',
+    cell: (row) => row.city ?? '—',
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cellClassName: 'status-on-card',
+    cell: (row) => (
+      <span className={row.status === 'ACTIVE' ? 'text-success' : 'text-muted-foreground'}>
+        {row.status === 'ACTIVE' ? 'Active' : 'Inactive'}
+      </span>
+    ),
+  },
+];
+
 export function CustomerListPage() {
   const navigate = useNavigate();
   const toast = useToast();
+  const columns = useColumnPreferences('customer', CUSTOMER_COLUMNS);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>(ALL);
@@ -118,12 +161,15 @@ export function CustomerListPage() {
         title="Customers"
         description="People and businesses the shop sells to."
         actions={
-          <PermissionGate permission={PERMISSIONS.CUSTOMER_MANAGE}>
-            <Button onClick={() => setDialogTarget('new')}>
-              <UserPlus className="h-4 w-4" />
-              <span>Add customer</span>
-            </Button>
-          </PermissionGate>
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="customer" />
+            <PermissionGate permission={PERMISSIONS.CUSTOMER_MANAGE}>
+              <Button onClick={() => setDialogTarget('new')}>
+                <UserPlus className="h-4 w-4" />
+                <span>Add customer</span>
+              </Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -148,16 +194,17 @@ export function CustomerListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Customer</TableHead>
-                  <TableHead className="hidden sm:table-cell">Mobile</TableHead>
-                  <TableHead className="hidden md:table-cell">City</TableHead>
-                  <TableHead>Status</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={5} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length + 1} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
@@ -166,17 +213,11 @@ export function CustomerListPage() {
                       className="cursor-pointer"
                       onClick={() => navigate(CUSTOMER_ROUTES.detail(row.id))}
                     >
-                      <TableCell>
-                        <span className="font-medium">{row.customerName}</span>
-                        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.customerCode}</span>
-                      </TableCell>
-                      <TableCell className="tabular hidden sm:table-cell">{row.mobileNo}</TableCell>
-                      <TableCell className="hidden md:table-cell">{row.city ?? '—'}</TableCell>
-                      <TableCell>
-                        <span className={row.status === 'ACTIVE' ? 'text-success' : 'text-muted-foreground'}>
-                          {row.status === 'ACTIVE' ? 'Active' : 'Inactive'}
-                        </span>
-                      </TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                       <TableCell onClick={(event) => event.stopPropagation()}>
                         <PermissionGate permission={PERMISSIONS.CUSTOMER_MANAGE}>
                           <DropdownMenu>
