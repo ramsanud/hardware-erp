@@ -14,6 +14,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -39,6 +42,74 @@ import { UserStatusBadge } from '../components/StatusBadge';
 import { StatusBadge } from '@/shared/components/StatusBadge';
 import type { RoleResponse, UserActivityResponse, UserResponse, UserStatus } from '../types';
 
+/**
+ * CR-068. Column catalogue for the main users list - ids are persisted, so
+ * never rename them. The recycle-bin table above it deliberately keeps fixed
+ * columns: it is a transient recovery view, not a list anyone works in daily.
+ */
+const USER_COLUMNS: ColumnDef<UserResponse>[] = [
+  {
+    id: 'name',
+    header: 'Name',
+    locked: true,
+    cell: (row) => (
+      <>
+        <span className="font-medium">{row.fullName}</span>
+        <span className="mt-0.5 block text-xs text-muted-foreground sm:hidden">
+          {row.mobileNo}
+        </span>
+        <span className="mt-0.5 hidden text-xs text-muted-foreground lg:block">
+          {row.email ?? row.employeeCode ?? '—'}
+        </span>
+      </>
+    ),
+  },
+  {
+    id: 'mobile',
+    header: 'Mobile',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'tabular hidden sm:table-cell',
+    cell: (row) => row.mobileNo,
+  },
+  {
+    id: 'role',
+    header: 'Role',
+    headClassName: 'hidden lg:table-cell',
+    cellClassName: 'hidden lg:table-cell',
+    cell: (row) => row.roleName,
+  },
+  {
+    id: 'lastLogin',
+    header: 'Last sign-in',
+    headClassName: 'hidden xl:table-cell',
+    cellClassName: 'tabular hidden xl:table-cell text-sm text-muted-foreground',
+    cell: (row) => formatDateTime(row.lastLoginAt),
+  },
+  {
+    /*
+     * BUG-FE-032. mustChangePassword shares the Status cell rather than taking
+     * a column of its own: it is a fact ABOUT the account's state, it is false
+     * for almost every row, and a mostly-empty column would cost width on
+     * every screen to say nothing. Sharing the cell also carries it onto the
+     * mobile card for free, because Status is never hidden.
+     *
+     * 'pending', not an error tone - a temporary password is a normal step in
+     * onboarding, not a fault. The password itself is never shown here.
+     */
+    id: 'status',
+    header: 'Status',
+    cellClassName: 'status-on-card',
+    cell: (row) => (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <UserStatusBadge status={row.status} />
+        {row.mustChangePassword ? (
+          <StatusBadge tone="pending" label="Password change required" />
+        ) : null}
+      </div>
+    ),
+  },
+];
+
 const ALL = '__all__';
 
 /**
@@ -51,6 +122,7 @@ const DELETED = '__deleted__';
 export function UserManagementPage() {
   const { user: currentUser, hasPermission } = useAuth();
   const toast = useToast();
+  const columns = useColumnPreferences('user', USER_COLUMNS);
   // Both the deleted list and restore require USER_MANAGE server-side, so a
   // USER_VIEW-only user is never offered the filter that would 403.
   const canManage = hasPermission(PERMISSIONS.USER_MANAGE);
@@ -186,12 +258,15 @@ export function UserManagementPage() {
         title="Users"
         description="Employee accounts. There is no self-registration: every account is created here."
         actions={
-          <PermissionGate permission={PERMISSIONS.USER_MANAGE}>
-            <Button onClick={() => setCreating(true)}>
-              <UserPlus className="h-4 w-4" />
-              <span>Add user</span>
-            </Button>
-          </PermissionGate>
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="user" />
+            <PermissionGate permission={PERMISSIONS.USER_MANAGE}>
+              <Button onClick={() => setCreating(true)}>
+                <UserPlus className="h-4 w-4" />
+                <span>Add user</span>
+              </Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -296,62 +371,26 @@ export function UserManagementPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="hidden sm:table-cell">Mobile</TableHead>
-                  <TableHead className="hidden lg:table-cell">Role</TableHead>
-                  <TableHead className="hidden xl:table-cell">Last sign-in</TableHead>
-                  <TableHead>Status</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={6} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length + 1} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
                     <TableRow key={row.id}>
-                      <TableCell>
-                        <span className="font-medium">{row.fullName}</span>
-                        <span className="mt-0.5 block text-xs text-muted-foreground sm:hidden">
-                          {row.mobileNo}
-                        </span>
-                        <span className="mt-0.5 hidden text-xs text-muted-foreground lg:block">
-                          {row.email ?? row.employeeCode ?? '—'}
-                        </span>
-                      </TableCell>
-                      <TableCell className="tabular hidden sm:table-cell">{row.mobileNo}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{row.roleName}</TableCell>
-                      <TableCell className="tabular hidden xl:table-cell text-sm text-muted-foreground">
-                        {formatDateTime(row.lastLoginAt)}
-                      </TableCell>
-                      {/*
-                        BUG-FE-032. The API has always returned mustChangePassword and
-                        nothing ever showed it, so an owner who set a temporary
-                        password had no way to tell afterwards who had actually
-                        replaced theirs - the one thing they need to know to
-                        chase it up.
-
-                        It shares the Status cell rather than taking a column of
-                        its own: it is a fact ABOUT the account's state, it is
-                        false for almost every row, and a mostly-empty column
-                        would cost width on every screen to say nothing. Sharing
-                        the cell also carries it onto the mobile card for free,
-                        because Status is one of the columns that is never
-                        hidden.
-
-                        'pending', not an error tone - a temporary password is a
-                        normal step in onboarding, not a fault. The temporary
-                        password itself is never shown here or anywhere else.
-                      */}
-                      <TableCell>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <UserStatusBadge status={row.status} />
-                          {row.mustChangePassword ? (
-                            <StatusBadge tone="pending" label="Password change required" />
-                          ) : null}
-                        </div>
-                      </TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                       <TableCell>
                         <PermissionGate permission={PERMISSIONS.USER_MANAGE}>
                           <DropdownMenu>

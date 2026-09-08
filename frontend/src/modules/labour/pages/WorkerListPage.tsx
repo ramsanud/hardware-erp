@@ -7,6 +7,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/compo
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -27,11 +30,50 @@ import { WorkerStatusBadge } from '../components/WorkerStatusBadge';
 import type { WorkerResponse, WorkerStatus } from '../types';
 import type { WorkerValues } from '../validation/schemas';
 
+/** CR-068. Column catalogue - ids are persisted, so never rename them. */
+const WORKER_COLUMNS: ColumnDef<WorkerResponse>[] = [
+  {
+    id: 'name',
+    header: 'Name',
+    locked: true,
+    cellClassName: 'font-medium',
+    cell: (row) => row.name,
+  },
+  {
+    id: 'role',
+    header: 'Role',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'hidden sm:table-cell',
+    cell: (row) => row.roleTitle ?? '—',
+  },
+  {
+    id: 'mobile',
+    header: 'Mobile',
+    headClassName: 'hidden md:table-cell',
+    cellClassName: 'tabular hidden md:table-cell',
+    cell: (row) => row.mobileNo ?? '—',
+  },
+  {
+    id: 'dailyRate',
+    header: 'Daily rate',
+    headClassName: 'text-right',
+    cellClassName: 'tabular text-right',
+    cell: (row) => <>&#8377;{row.dailyRateDisplay}</>,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cellClassName: 'status-on-card',
+    cell: (row) => <WorkerStatusBadge status={row.status} />,
+  },
+];
+
 const ALL = '__all__';
 
 export function WorkerListPage() {
   const navigate = useNavigate();
   const toast = useToast();
+  const columns = useColumnPreferences('worker', WORKER_COLUMNS);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>(ALL);
@@ -108,12 +150,15 @@ export function WorkerListPage() {
         title="Workers"
         description="The shop's own day-wage labour force - separate from suppliers and customers."
         actions={
-          <PermissionGate permission={PERMISSIONS.LABOUR_MANAGE}>
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="h-4 w-4" />
-              <span>Add worker</span>
-            </Button>
-          </PermissionGate>
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="worker" />
+            <PermissionGate permission={PERMISSIONS.LABOUR_MANAGE}>
+              <Button onClick={() => setCreating(true)}>
+                <Plus className="h-4 w-4" />
+                <span>Add worker</span>
+              </Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -139,27 +184,27 @@ export function WorkerListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="hidden sm:table-cell">Role</TableHead>
-                  <TableHead className="hidden md:table-cell">Mobile</TableHead>
-                  <TableHead className="text-right">Daily rate</TableHead>
-                  <TableHead>Status</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={6} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length + 1} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
                     <TableRow key={row.id} className="cursor-pointer"
                               onClick={() => navigate(LABOUR_ROUTES.workerDetail(row.id))}>
-                      <TableCell className="font-medium">{row.name}</TableCell>
-                      <TableCell className="hidden sm:table-cell">{row.roleTitle ?? '—'}</TableCell>
-                      <TableCell className="hidden md:table-cell">{row.mobileNo ?? '—'}</TableCell>
-                      <TableCell className="tabular text-right">₹{row.dailyRateDisplay}</TableCell>
-                      <TableCell className="status-on-card"><WorkerStatusBadge status={row.status} /></TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <PermissionGate permission={PERMISSIONS.LABOUR_MANAGE}>
                           <DropdownMenu>

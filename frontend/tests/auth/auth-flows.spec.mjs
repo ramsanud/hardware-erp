@@ -59,7 +59,7 @@ export default async function run() {
     // ---------------- BUG-FE-025: nothing stale survives ----------------
     await page.fill('#identifier', 'someone@example.com');
     await page.fill('#password', 'Secret123');
-    await page.click('text=Forgot your password?');
+    await page.click('text=Forgot password?');
     await page.waitForURL('**/forgot-password');
     await page.click('text=Back to sign in');
     await page.waitForURL('**/login');
