@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { setPlatformAdminSessionExpiredHandler } from '@/services/platformAdminApiClient';
 import { platformAdminTokenStorage } from '@/services/platformAdminTokenStorage';
@@ -13,6 +13,8 @@ import type { PlatformAdminResponse } from '../types';
  */
 interface PlatformAdminAuthContextValue {
   admin: PlatformAdminResponse | null;
+  /** True until the startup refresh attempt settles - CR-065. */
+  initialising: boolean;
   isAuthenticated: boolean;
   /** Set once /login succeeds and cleared once MFA is satisfied - never a session by itself. */
   mfaToken: string | null;
@@ -28,8 +30,10 @@ const PlatformAdminAuthContext = createContext<PlatformAdminAuthContextValue | n
 
 export function PlatformAdminAuthProvider({ children }: { children: ReactNode }) {
   const [admin, setAdmin] = useState<PlatformAdminResponse | null>(null);
+  const [initialising, setInitialising] = useState(true);
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [enrollmentRequired, setEnrollmentRequired] = useState(false);
+  const bootstrapped = useRef(false);
 
   const clearSession = useCallback(() => {
     platformAdminTokenStorage.clear();
@@ -37,6 +41,34 @@ export function PlatformAdminAuthProvider({ children }: { children: ReactNode })
     setMfaToken(null);
     setEnrollmentRequired(false);
   }, []);
+
+  /**
+   * CR-065. The access token is in memory only, so a reload loses it - but
+   * the HttpOnly refresh cookie survives, and this exchanges it for a new
+   * session without asking the admin to sign in again.
+   *
+   * This is what fixes "a page reload signs the platform admin out". It fixes
+   * it WITHOUT weakening the access token, which stays in memory exactly as
+   * before; the durable half is the cookie, and JavaScript still cannot read
+   * that. Mirrors the tenant AuthProvider's bootstrap.
+   */
+  useEffect(() => {
+    if (bootstrapped.current) return;
+    bootstrapped.current = true;
+
+    void (async () => {
+      try {
+        const session = await platformAdminAuthService.refresh();
+        platformAdminTokenStorage.set(session.accessToken);
+        setAdmin(session.admin);
+      } catch {
+        // No usable cookie. Expected on a first visit and after signing out.
+        clearSession();
+      } finally {
+        setInitialising(false);
+      }
+    })();
+  }, [clearSession]);
 
   useEffect(() => setPlatformAdminSessionExpiredHandler(clearSession), [clearSession]);
 
@@ -50,7 +82,7 @@ export function PlatformAdminAuthProvider({ children }: { children: ReactNode })
   const verifyMfa = useCallback(async (code: string) => {
     if (!mfaToken) throw new Error('No MFA challenge in progress');
     const session = await platformAdminAuthService.verifyMfa({ mfaToken, code });
-    platformAdminTokenStorage.set(session.accessToken, session.refreshToken);
+    platformAdminTokenStorage.set(session.accessToken);
     setAdmin(session.admin);
     setMfaToken(null);
   }, [mfaToken]);
@@ -63,7 +95,7 @@ export function PlatformAdminAuthProvider({ children }: { children: ReactNode })
   const confirmEnroll = useCallback(async (code: string) => {
     if (!mfaToken) throw new Error('No MFA challenge in progress');
     const result = await platformAdminAuthService.confirmEnroll({ mfaToken, code });
-    platformAdminTokenStorage.set(result.session.accessToken, result.session.refreshToken);
+    platformAdminTokenStorage.set(result.session.accessToken);
     setAdmin(result.session.admin);
     setMfaToken(null);
     return result.backupCodes;
@@ -72,7 +104,7 @@ export function PlatformAdminAuthProvider({ children }: { children: ReactNode })
   /** Never rejects - same contract as the tenant AuthProvider's logout (BUG-FE-010). */
   const logout = useCallback(async () => {
     try {
-      await platformAdminAuthService.logout(platformAdminTokenStorage.getRefreshToken());
+      await platformAdminAuthService.logout();
     } catch (error) {
       console.warn('[platform-admin] Sign-out call failed; clearing the local session anyway.', error);
     } finally {
@@ -82,6 +114,7 @@ export function PlatformAdminAuthProvider({ children }: { children: ReactNode })
 
   const value = useMemo<PlatformAdminAuthContextValue>(() => ({
     admin,
+    initialising,
     isAuthenticated: admin !== null,
     mfaToken,
     enrollmentRequired,
@@ -90,7 +123,8 @@ export function PlatformAdminAuthProvider({ children }: { children: ReactNode })
     enroll,
     confirmEnroll,
     logout,
-  }), [admin, mfaToken, enrollmentRequired, login, verifyMfa, enroll, confirmEnroll, logout]);
+  }), [admin, initialising, mfaToken, enrollmentRequired, login, verifyMfa, enroll,
+    confirmEnroll, logout]);
 
   return (
     <PlatformAdminAuthContext.Provider value={value}>

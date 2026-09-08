@@ -31,13 +31,14 @@ export const platformAdminAuthService = {
       '/v1/platform-admin/auth/mfa/enroll/confirm', body);
   },
 
-  refresh(refreshToken: string) {
+  /** CR-065 - the browser supplies the refresh cookie; there is no token to pass. */
+  refresh() {
     return platformAdminPost<PlatformAdminSessionResponse>(
-      '/v1/platform-admin/auth/refresh', { refreshToken });
+      '/v1/platform-admin/auth/refresh', {});
   },
 
-  logout(refreshToken: string | null) {
-    return platformAdminPost<void>('/v1/platform-admin/auth/logout', { refreshToken });
+  logout() {
+    return platformAdminPost<void>('/v1/platform-admin/auth/logout', {});
   },
 
   logoutAll() {
