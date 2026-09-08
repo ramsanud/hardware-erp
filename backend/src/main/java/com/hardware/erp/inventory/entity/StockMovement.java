@@ -40,7 +40,11 @@ public class StockMovement {
     private Product product;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "movement_type", nullable = false, length = 20)
+    // 30, not 20: V53 widened the column because SALES_RETURN_REVERSAL (21)
+    // never fit the original VARCHAR(20) and PROJECT_CONSUMPTION_REVERSAL is
+    // 28. ddl-auto: validate compares this against the database, so the two
+    // have to move together.
+    @Column(name = "movement_type", nullable = false, length = 30)
     private MovementType movementType;
 
     /** Signed - positive in, negative out. */

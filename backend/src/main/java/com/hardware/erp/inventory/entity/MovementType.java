@@ -20,5 +20,23 @@ public enum MovementType {
     /** Stock returning because a Credit Note was issued against an invoice (CR-052) - the customer physically returned goods. */
     SALES_RETURN,
     /** Stock leaving again because a Credit Note was itself cancelled - the paired reversal of SALES_RETURN. */
-    SALES_RETURN_REVERSAL
+    SALES_RETURN_REVERSAL,
+    /**
+     * CR-064. Stock leaving because a project recorded what it actually used
+     * (quantity_actual). Planning figures - quantity_required,
+     * quantity_estimated - never move stock: nothing has left the godown
+     * until someone says it has.
+     */
+    PROJECT_CONSUMPTION,
+    /**
+     * The paired reversal of PROJECT_CONSUMPTION: the recorded usage was
+     * corrected downwards, or the material row was removed from the project.
+     *
+     * Deliberately NOT written when a project is cancelled - see CR-064.
+     * Materials already used on a half-built job have not come back, and
+     * saying they have would re-create the overstatement CR-064 exists to
+     * fix. Unused goods return through INVENTORY_ADJUST, where a human
+     * states what physically came back.
+     */
+    PROJECT_CONSUMPTION_REVERSAL
 }
