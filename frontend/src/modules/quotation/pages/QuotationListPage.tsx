@@ -9,6 +9,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -23,12 +26,58 @@ import { PERMISSIONS } from '@/modules/auth/constants';
 import { QUOTATION_ROUTES, QUOTATION_STATUS_OPTIONS } from '../constants';
 import { quotationService } from '../services/quotationService';
 import { QuotationStatusBadge } from '../components/QuotationStatusBadge';
-import type { QuotationStatus } from '../types';
+import type { QuotationStatus, QuotationSummaryResponse } from '../types';
 
 const ALL = '__all__';
 
+/** CR-068. Column catalogue - ids are persisted, so never rename them. */
+const QUOTATION_COLUMNS: ColumnDef<QuotationSummaryResponse>[] = [
+  {
+    id: 'quotation',
+    header: 'Quotation',
+    locked: true,
+    cellClassName: 'tabular font-medium',
+    cell: (row) => row.quotationNumber,
+  },
+  {
+    id: 'customer',
+    header: 'Customer',
+    cell: (row) => (
+      <>
+        <span>{row.customerName}</span>
+        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.customerMobile}</span>
+      </>
+    ),
+  },
+  {
+    id: 'validUntil',
+    header: 'Valid until',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'hidden sm:table-cell',
+    cell: (row) => row.validUntil,
+  },
+  {
+    id: 'total',
+    header: 'Total',
+    cellClassName: 'tabular',
+    cell: (row) => `₹${row.totalDisplay}`,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cell: (row) => <QuotationStatusBadge status={row.status} expired={row.expired} />,
+  },
+  {
+    id: 'quotationDate',
+    header: 'Raised on',
+    defaultVisible: false,
+    cell: (row) => row.quotationDate,
+  },
+];
+
 export function QuotationListPage() {
   const navigate = useNavigate();
+  const columns = useColumnPreferences('quotation', QUOTATION_COLUMNS);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>(ALL);
   const [page, setPage] = useState(0);
@@ -56,12 +105,15 @@ export function QuotationListPage() {
         title="Quotations"
         description="Price quotes for customers - independent of whether they buy."
         actions={
-          <PermissionGate permission={PERMISSIONS.QUOTATION_MANAGE}>
-            <Button onClick={() => navigate(QUOTATION_ROUTES.create)}>
-              <Plus className="h-4 w-4" />
-              <span>New quotation</span>
-            </Button>
-          </PermissionGate>
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="quotation" />
+            <PermissionGate permission={PERMISSIONS.QUOTATION_MANAGE}>
+              <Button onClick={() => navigate(QUOTATION_ROUTES.create)}>
+                <Plus className="h-4 w-4" />
+                <span>New quotation</span>
+              </Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -86,16 +138,16 @@ export function QuotationListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Quotation</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead className="hidden sm:table-cell">Valid until</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Status</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={5} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
@@ -104,14 +156,11 @@ export function QuotationListPage() {
                       className="cursor-pointer"
                       onClick={() => navigate(QUOTATION_ROUTES.detail(row.id))}
                     >
-                      <TableCell className="tabular font-medium">{row.quotationNumber}</TableCell>
-                      <TableCell>
-                        <span>{row.customerName}</span>
-                        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.customerMobile}</span>
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">{row.validUntil}</TableCell>
-                      <TableCell className="tabular">₹{row.totalDisplay}</TableCell>
-                      <TableCell><QuotationStatusBadge status={row.status} expired={row.expired} /></TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                     </TableRow>
                   ))}
                 </TableBody>

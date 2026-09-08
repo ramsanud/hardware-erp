@@ -110,6 +110,15 @@ export function ProductPicker({ onPick, excludeIds }: ProductPickerProps) {
       gstRatePercent: String(created.gstRatePercent),
       status: created.status,
       hasImage: created.hasImage,
+      // CR-068 widened ProductSummaryResponse. The picker hands the caller a
+      // summary built from the just-created product, so it carries these too -
+      // the alternative, a partial object, would differ from what the same
+      // product looks like after a reload.
+      description: created.description,
+      modelNo: created.modelNo,
+      barcode: created.barcode,
+      hsnCode: created.hsnCode,
+      mrpDisplay: created.mrpDisplay,
     });
   };
 

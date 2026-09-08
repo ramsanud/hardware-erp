@@ -9,6 +9,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -23,7 +26,7 @@ import { PERMISSIONS } from '@/modules/auth/constants';
 import { INVOICE_ROUTES, INVOICE_STATUS_OPTIONS } from '../constants';
 import { invoiceService } from '../services/invoiceService';
 import { InvoiceStatusBadge } from '../components/InvoiceStatusBadge';
-import type { InvoiceStatus } from '../types';
+import type { InvoiceStatus, InvoiceSummaryResponse } from '../types';
 
 const ALL = '__all__';
 const PERIOD_ALL = '__all__';
@@ -61,8 +64,61 @@ function periodToDates(period: string): { fromDate?: string; toDate?: string } {
   return {};
 }
 
+/**
+ * CR-068. Column catalogue - ids are persisted, so never rename them.
+ *
+ * Status keeps its full pill rather than the card's colour dot: Unpaid and
+ * Partially paid share the warning tone, so a dot alone could not tell them
+ * apart (see StatusBadge).
+ */
+const INVOICE_COLUMNS: ColumnDef<InvoiceSummaryResponse>[] = [
+  {
+    id: 'invoice',
+    header: 'Invoice',
+    locked: true,
+    cellClassName: 'tabular font-medium',
+    cell: (row) => row.invoiceNumber,
+  },
+  {
+    id: 'customer',
+    header: 'Customer',
+    cell: (row) => (
+      <>
+        <span>{row.customerName}</span>
+        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.customerMobile}</span>
+      </>
+    ),
+  },
+  {
+    id: 'date',
+    header: 'Date',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'hidden sm:table-cell',
+    cell: (row) => row.invoiceDate,
+  },
+  {
+    id: 'total',
+    header: 'Total',
+    cellClassName: 'tabular',
+    cell: (row) => `₹${row.totalDisplay}`,
+  },
+  {
+    id: 'balance',
+    header: 'Balance',
+    headClassName: 'hidden md:table-cell',
+    cellClassName: 'tabular hidden md:table-cell',
+    cell: (row) => `₹${row.balanceDisplay}`,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cell: (row) => <InvoiceStatusBadge status={row.status} />,
+  },
+];
+
 export function InvoiceListPage() {
   const navigate = useNavigate();
+  const columns = useColumnPreferences('invoice', INVOICE_COLUMNS);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>(ALL);
   const [period, setPeriod] = useState<string>(PERIOD_ALL);
@@ -92,12 +148,15 @@ export function InvoiceListPage() {
         title="Invoices"
         description="Bills raised to customers, with payment status."
         actions={
-          <PermissionGate permission={PERMISSIONS.INVOICE_CREATE}>
-            <Button onClick={() => navigate(INVOICE_ROUTES.create)}>
-              <Plus className="h-4 w-4" />
-              <span>New invoice</span>
-            </Button>
-          </PermissionGate>
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="invoice" />
+            <PermissionGate permission={PERMISSIONS.INVOICE_CREATE}>
+              <Button onClick={() => navigate(INVOICE_ROUTES.create)}>
+                <Plus className="h-4 w-4" />
+                <span>New invoice</span>
+              </Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -130,17 +189,16 @@ export function InvoiceListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Invoice</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead className="hidden sm:table-cell">Date</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead className="hidden md:table-cell">Balance</TableHead>
-                  <TableHead>Status</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={6} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
@@ -149,15 +207,11 @@ export function InvoiceListPage() {
                       className="cursor-pointer"
                       onClick={() => navigate(INVOICE_ROUTES.detail(row.id))}
                     >
-                      <TableCell className="tabular font-medium">{row.invoiceNumber}</TableCell>
-                      <TableCell>
-                        <span>{row.customerName}</span>
-                        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.customerMobile}</span>
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">{row.invoiceDate}</TableCell>
-                      <TableCell className="tabular">₹{row.totalDisplay}</TableCell>
-                      <TableCell className="tabular hidden md:table-cell">₹{row.balanceDisplay}</TableCell>
-                      <TableCell><InvoiceStatusBadge status={row.status} /></TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                     </TableRow>
                   ))}
                 </TableBody>

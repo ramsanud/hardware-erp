@@ -9,6 +9,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -24,12 +27,73 @@ import { PURCHASE_ROUTES, PURCHASE_STATUS_OPTIONS } from '../constants';
 import { purchaseService } from '../services/purchaseService';
 import { PurchaseStatusBadge } from '../components/PurchaseStatusBadge';
 import { ImportSupplierBillDialog } from '../components/ImportSupplierBillDialog';
-import type { PurchaseStatus } from '../types';
+import type { PurchaseStatus, PurchaseSummaryResponse } from '../types';
 
 const ALL = '__all__';
 
+/** CR-068. Column catalogue - ids are persisted, so never rename them. */
+const PURCHASE_COLUMNS: ColumnDef<PurchaseSummaryResponse>[] = [
+  {
+    id: 'purchase',
+    header: 'Purchase',
+    locked: true,
+    cellClassName: 'tabular font-medium',
+    cell: (row) => (
+      <>
+        {row.purchaseNumber}
+        {row.imported ? <span className="ml-2 text-xs text-muted-foreground">(imported)</span> : null}
+      </>
+    ),
+  },
+  {
+    id: 'supplier',
+    header: 'Supplier',
+    cell: (row) => (
+      <>
+        <span>{row.supplierName}</span>
+        {row.supplierBillNumber ? (
+          <span className="mt-0.5 block text-xs text-muted-foreground">Bill #{row.supplierBillNumber}</span>
+        ) : null}
+      </>
+    ),
+  },
+  {
+    id: 'date',
+    header: 'Date',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'hidden sm:table-cell',
+    cell: (row) => row.purchaseDate,
+  },
+  {
+    id: 'total',
+    header: 'Total',
+    cellClassName: 'tabular',
+    cell: (row) => `₹${row.totalDisplay}`,
+  },
+  {
+    id: 'balance',
+    header: 'Balance',
+    headClassName: 'hidden md:table-cell',
+    cellClassName: 'tabular hidden md:table-cell',
+    cell: (row) => `₹${row.balanceDisplay}`,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cell: (row) => <PurchaseStatusBadge status={row.status} />,
+  },
+  {
+    id: 'supplierBillNumber',
+    header: 'Supplier bill no.',
+    defaultVisible: false,
+    cellClassName: 'tabular',
+    cell: (row) => row.supplierBillNumber || '—',
+  },
+];
+
 export function PurchaseListPage() {
   const navigate = useNavigate();
+  const columns = useColumnPreferences('purchase', PURCHASE_COLUMNS);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>(ALL);
   const [page, setPage] = useState(0);
@@ -58,8 +122,9 @@ export function PurchaseListPage() {
         title="Purchases"
         description="Bills received from suppliers, with payment status."
         actions={
-          <PermissionGate permission={PERMISSIONS.PURCHASE_MANAGE}>
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="purchase" />
+            <PermissionGate permission={PERMISSIONS.PURCHASE_MANAGE}>
               <Button variant="outline" onClick={() => setImportOpen(true)}>
                 <Upload className="h-4 w-4" />
                 <span>Import supplier bill</span>
@@ -68,8 +133,8 @@ export function PurchaseListPage() {
                 <Plus className="h-4 w-4" />
                 <span>New purchase</span>
               </Button>
-            </div>
-          </PermissionGate>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -94,17 +159,16 @@ export function PurchaseListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Purchase</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead className="hidden sm:table-cell">Date</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead className="hidden md:table-cell">Balance</TableHead>
-                  <TableHead>Status</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={6} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
@@ -113,20 +177,11 @@ export function PurchaseListPage() {
                       className="cursor-pointer"
                       onClick={() => navigate(PURCHASE_ROUTES.detail(row.id))}
                     >
-                      <TableCell className="tabular font-medium">
-                        {row.purchaseNumber}
-                        {row.imported ? <span className="ml-2 text-xs text-muted-foreground">(imported)</span> : null}
-                      </TableCell>
-                      <TableCell>
-                        <span>{row.supplierName}</span>
-                        {row.supplierBillNumber ? (
-                          <span className="mt-0.5 block text-xs text-muted-foreground">Bill #{row.supplierBillNumber}</span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">{row.purchaseDate}</TableCell>
-                      <TableCell className="tabular">₹{row.totalDisplay}</TableCell>
-                      <TableCell className="tabular hidden md:table-cell">₹{row.balanceDisplay}</TableCell>
-                      <TableCell><PurchaseStatusBadge status={row.status} /></TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                     </TableRow>
                   ))}
                 </TableBody>

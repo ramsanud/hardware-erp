@@ -139,6 +139,16 @@ export interface ProductSummaryResponse {
   gstRatePercent: string;
   status: ProductStatus;
   hasImage: boolean;
+  /**
+   * CR-068. Identification fields the column picker can switch on. Still no
+   * purchase price: the list projection never carries cost - see
+   * ProductSummaryResponse.java.
+   */
+  description?: string | null;
+  modelNo?: string | null;
+  barcode?: string | null;
+  hsnCode?: string | null;
+  mrpDisplay: string;
 }
 
 /** CR-058 - the recycle-bin projection. Carries no price at all, cost or selling. */
