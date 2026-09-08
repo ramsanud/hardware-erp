@@ -29,5 +29,7 @@ public enum AuditAction {
     ROLE_DELETED,
     RATE_LIMIT_EXCEEDED,
     BOOTSTRAP_OWNER_CREATED,
-    BANK_ACCOUNT_REVEALED
+    BANK_ACCOUNT_REVEALED,
+    /** CR-067. A shop erased its own transactional data. The log survives the reset. */
+    DATA_RESET
 }
