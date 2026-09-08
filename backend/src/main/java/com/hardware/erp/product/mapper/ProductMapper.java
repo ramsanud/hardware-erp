@@ -58,7 +58,12 @@ public class ProductMapper {
                 rupees(product.getSellingPricePaise()),
                 product.getGstRatePercent() == null ? "0.00" : product.getGstRatePercent().toPlainString(),
                 product.getStatus(),
-                hasImage);
+                hasImage,
+                product.getDescription(),
+                product.getModelNo(),
+                product.getBarcode(),
+                product.getHsnCode(),
+                rupees(product.getMrpPaise()));
     }
 
     /** CR-058 recycle bin. Identification and the deletion date only - no prices. */
