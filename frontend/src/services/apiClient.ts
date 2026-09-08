@@ -27,11 +27,30 @@ const PUBLIC_PATHS = [
 
 interface RetryConfig extends InternalAxiosRequestConfig {
   _retried?: boolean;
+  /** Separate from _retried so a 401-refresh and a timeout retry cannot cancel each other out. */
+  _timeoutRetried?: boolean;
 }
 
+/**
+ * BUG-FE-033. 90s, not 30s.
+ *
+ * A timeout here does NOT mean "the server is down". The TLS handshake
+ * completed and the request was accepted - measured at 0.18s against the
+ * production host - so something upstream is merely busy. A genuinely
+ * unreachable server fails at connect time instead and surfaces as
+ * NETWORK_ERROR in seconds, which is why raising this ceiling costs nothing
+ * in that case.
+ *
+ * What it buys: the free Render tier sleeps after 15 minutes and documents a
+ * 30-60s cold start (docs/DEPLOYMENT.md), so a 30s timeout was BELOW the
+ * platform's own best case - the first action after any idle period was
+ * guaranteed to fail. Measured worse than that in practice, because Hibernate
+ * runs ddl-auto: validate over ~50 tables at boot and each round trip pays the
+ * latency between the service and its database.
+ */
 export const http: AxiosInstance = axios.create({
   baseURL: BASE_URL,
-  timeout: 30_000,
+  timeout: 90_000,
   // Required for the HttpOnly refresh cookie to be sent.
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
@@ -85,6 +104,26 @@ http.interceptors.response.use(
     const config = error.config as RetryConfig | undefined;
     const status = error.response?.status;
 
+    /*
+     * BUG-FE-033. One retry of a SAFE method turns a cold start into a slow
+     * page load rather than an error screen.
+     *
+     * Deliberately GET only. A timed-out write may already have been applied
+     * server-side - the response was lost, not the request - and this client
+     * sends no Idempotency-Key, so replaying a POST could duplicate a record.
+     * The backend has an IdempotencyService but no frontend call site uses it
+     * yet; wiring that up is the prerequisite for ever retrying a write here.
+     */
+    if (
+      error.code === 'ECONNABORTED'
+      && config
+      && !config._timeoutRetried
+      && (config.method ?? 'get').toLowerCase() === 'get'
+    ) {
+      config._timeoutRetried = true;
+      return await http.request(config);
+    }
+
     const canRetry =
       status === 401 &&
       config &&
@@ -128,7 +167,10 @@ function toApiError(error: AxiosError<ApiErrorResponse>): ApiError {
 
   if (error.code === 'ECONNABORTED') {
     return new ApiError({
-      message: 'The server took too long to respond. Please try again.',
+      // Names the usual cause. "Took too long" reads as a fault the user
+      // caused or can fix by retrying immediately; on a sleeping free-tier
+      // instance the truthful advice is to wait a few seconds and retry.
+      message: 'The server is still starting up. Give it a few seconds and try again.',
       code: 'TIMEOUT',
       status: 408,
     });

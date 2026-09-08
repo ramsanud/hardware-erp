@@ -2593,3 +2593,112 @@ that are not broken is churn with real regression risk and no observed defect,
 which is the opposite trade to the one BUG-FE-007 made (there, the same root
 cause was *actively* broken in a second place). Re-run the scan above plus a
 render sweep if new long-valued content lands in one of them.
+---
+
+## BUG-FE-033 — the deployed app timed out before the server could possibly answer (FIXED, 2026-09-08)
+
+| | |
+|---|---|
+| **Severity** | High — the app was unusable after any idle period, on every page |
+| **Layer** | FRONTEND ONLY (the underlying cause is infrastructure — see below) |
+| **Found** | Reported from production: "The server took too long to respond" repeatedly on Add customer, `hardware-erp-gilt.vercel.app` on a phone |
+| **Symptom** | Every action failed with a timeout, not just Add customer. Waiting and retrying eventually worked |
+
+**Measured, not assumed.** Against the live Render service
+(`hardware-erp-9j9f.onrender.com`):
+
+| Probe | Result |
+|---|---|
+| TLS handshake | **0.18s** — the edge accepts the connection immediately |
+| First requests after idle | **no response at all** through two 120s waits |
+| Once awake | health `200 in 7.2s`, then `0.61s` warm |
+| Warm `/actuator/health` (touches DB) vs `/v1/deployment-config` (does not) | 0.61s vs 0.34s — a **~270ms** gap |
+
+**Root cause has two layers, and only one of them is code.**
+
+*Infrastructure (not fixed here, cannot be from the repo).* The free Render
+tier sleeps after 15 minutes and documents a 30–60s cold start
+(`docs/DEPLOYMENT.md`). Worse here: DNS resolves the service to
+`gcp-us-west1-1.origin.onrender.com` — **US West** — while `render.yaml`
+specifies `region: singapore`. The ~270ms per-DB-round-trip figure above is
+consistent with the service and its database being in different regions, which
+is exactly the failure `render.yaml`'s own comment warns about: Hibernate runs
+`ddl-auto: validate` across ~50 tables at boot and every round trip pays that
+latency, turning a 30–60s start into minutes.
+
+*Client (fixed here).* `timeout: 30_000` was **below the platform's own
+documented best case**, so the first action after any idle period was
+guaranteed to fail even on a correctly-regioned deployment.
+
+**Fix.** `frontend/src/services/apiClient.ts` (and the platform-admin twin):
+
+1. Timeout 30s → **90s**. A timeout here does not mean "server down": the TLS
+   handshake completes in 0.18s and the request is accepted, so a timeout means
+   something upstream is *busy*. A genuinely unreachable host fails at connect
+   time and still surfaces as `NETWORK_ERROR` within seconds — which is why
+   raising the ceiling costs nothing in that case.
+2. **One automatic retry, GET only.** Turns a cold start into a slow page load
+   instead of an error screen. Deliberately not for writes: a timed-out POST
+   may already have been applied server-side — the response was lost, not the
+   request — and this client sends no `Idempotency-Key`, so replaying it could
+   duplicate a record.
+3. Message: "The server took too long to respond" → "The server is still
+   starting up. Give it a few seconds and try again." The old wording reads as
+   a fault the user caused; the new one gives the action that actually works.
+
+**Verified.** A Playwright run against the **production build** (dev StrictMode
+double-fires effects and masked the retry in two earlier attempts) held the
+Customers GET open past the timeout: attempt 2 fired at **+90s**, the page
+rendered 20 real rows at 91s, and no error was shown. Then all 39 pages at
+390/768/1440 — 117 renders — came back clean.
+
+**What actually fixes the production symptom.** This change stops the client
+giving up too early; it does not make the server start faster. The real
+remedies, in order, are recorded in `docs/DEPLOYMENT.md` and belong in the
+Render dashboard, not this repo:
+
+1. **Put the service and its database in the same region.** Render cannot
+   change a service's region after creation, so this means recreating one side.
+2. **Run the keep-alive** (`docs/DEPLOYMENT.md` §4) so the instance never
+   sleeps — free-tier hours support exactly one always-on service.
+
+**Regression test.** None — no frontend test runner exists (CLAUDE.md, "Not
+present"). The guard is the comment block at the timeout, which records the
+measurement and the reasoning so the value is not "tidied" back down.
+
+---
+
+## BUG-FE-034 — a busy page toolbar ran off the right of the screen (FIXED, 2026-09-08)
+
+| | |
+|---|---|
+| **Severity** | Low — cosmetic, but actions were unreachable |
+| **Layer** | FRONTEND ONLY |
+| **Found** | Sweeping all 39 pages at 768x1024; `/quotations/2` overflowed by 107px |
+| **Symptom** | Quotation detail's seven actions (Preview, Download PDF, Edit, Repeat, Mark sent, Accepted, Rejected) measured **843px inside a 768px viewport**; the last buttons were off-screen |
+
+**Root cause.** `PageHeader`'s actions container carried `shrink-0`:
+
+```tsx
+<div className="flex shrink-0 items-center gap-2">{actions}</div>
+```
+
+**Pre-existing** — confirmed against `531c61d`, where it was `shrink-0` at every
+width. CR-062 added `flex-wrap` to it but kept `sm:shrink-0`, which did not
+help and is worth understanding: **a flex item that may not shrink never wraps,
+no matter how many `flex-wrap` classes it carries.** Wrapping only begins once
+a container is narrower than its content, and `shrink-0` forbids precisely
+that. The two properties have to be changed together.
+
+**Fix.** `frontend/src/shared/components/PageHeader.tsx` — drop `shrink-0`,
+keep `flex-wrap`. Letting the container shrink costs nothing on a wide screen,
+where there is room for a single row anyway.
+
+**Verified.** `/quotations/2` at 768px went from `pageScrollW: 875` with two
+oversized offenders to `pageScrollW: 768, offenders: []`. Full re-sweep: 39/39
+pages clean at 390, 768 and 1440.
+
+**Same-root-cause sweep.** `PageHeader` is the single shared header for every
+page, so this one edit covers all of them; no other component pairs `shrink-0`
+with a wrapping toolbar. Invoice detail (six actions) was the next widest and
+is also clean.

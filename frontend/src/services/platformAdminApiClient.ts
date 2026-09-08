@@ -38,7 +38,12 @@ interface RetryConfig extends InternalAxiosRequestConfig {
 
 export const platformAdminHttp: AxiosInstance = axios.create({
   baseURL: BASE_URL,
-  timeout: 30_000,
+  // BUG-FE-033 - same cold-start reality as apiClient.ts.
+  timeout: 90_000,
+  // CR-065 - required for the HttpOnly platform-admin refresh cookie to be
+  // sent. The cookie is path-scoped to the platform-admin auth endpoints, so
+  // this does not attach it to anything else.
+  withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -59,21 +64,22 @@ export function setPlatformAdminSessionExpiredHandler(handler: () => void): void
 
 interface SessionTokens {
   accessToken: string;
-  refreshToken: string;
 }
 
+/**
+ * CR-065 - no body, no stored token. The refresh credential is the HttpOnly
+ * cookie the browser attaches because of withCredentials above, so there is
+ * nothing here for a script to read or to pass along. The server rotates the
+ * cookie on every call and answers with a fresh access token only.
+ */
 async function refreshAccessToken(): Promise<string> {
-  const raw = platformAdminTokenStorage.getRefreshToken();
-  if (!raw) {
-    throw new Error('No refresh token available');
-  }
   const response = await axios.post<ApiResponse<SessionTokens>>(
     `${BASE_URL}${REFRESH_PATH}`,
-    { refreshToken: raw },
-    { headers: { 'Content-Type': 'application/json' } },
+    {},
+    { withCredentials: true, headers: { 'Content-Type': 'application/json' } },
   );
-  const { accessToken, refreshToken } = response.data.data;
-  platformAdminTokenStorage.set(accessToken, refreshToken);
+  const { accessToken } = response.data.data;
+  platformAdminTokenStorage.set(accessToken);
   return accessToken;
 }
 
@@ -133,7 +139,10 @@ function toApiError(error: AxiosError<ApiErrorResponse>): ApiError {
 
   if (error.code === 'ECONNABORTED') {
     return new ApiError({
-      message: 'The server took too long to respond. Please try again.',
+      // Names the usual cause. "Took too long" reads as a fault the user
+      // caused or can fix by retrying immediately; on a sleeping free-tier
+      // instance the truthful advice is to wait a few seconds and retry.
+      message: 'The server is still starting up. Give it a few seconds and try again.',
       code: 'TIMEOUT',
       status: 408,
     });
