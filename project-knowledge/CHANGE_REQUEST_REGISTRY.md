@@ -7,7 +7,7 @@ Nothing is implemented from conversation memory.
 |---|---|---|---|---|
 | CR-001 | 2026-08-13 | User | Drop SaaS/multi-tenant design. Single shop monolith. | APPROVED — applied |
 | CR-002 | 2026-08-13 | User | Lock naming registry; no renames without approval. | APPROVED — applied |
-| CR-003 | 2026-08-13 | User | Full Module 1 security audit and correction. | APPROVED — **IN PROGRESS** |
+| CR-003 | 2026-08-13 | User | Full Module 1 security audit and correction. | **APPROVED 2026-08-13 — applied, re-baselined under CR-010** |
 | CR-004 | 2026-08-13 | User | Hardware ERP business rules (product master, price history, loss-sale, GST on invoice rate, import). | APPROVED — recorded, applies from Module 6 |
 | CR-005 | 2026-08-13 | User | Mandatory per-module package: seed data, Postman, Swagger examples, setup PDF, architecture image, frontend. | APPROVED — see DELIVERY_PLAN |
 | CR-006 | 2026-08-13 | User | Maintain 8 registry files under /project-knowledge. | APPROVED — applied (this directory) |
@@ -40,7 +40,74 @@ Nothing is implemented from conversation memory.
 | CR-038 | 2026-08-26 | User | Login hardening, first slice of a larger export/import + security request. (1) **Cloudflare Turnstile** on sign-in: server-side token verification before authentication, a public /v1/auth/captcha-config so the login page knows whether to render the widget, and a Turnstile component that loads its script on demand so an install without CAPTCHA makes no third-party request at all. Off by default, and treated as off whenever either key is blank - a missing key must never lock users out of a working system. Fail-safe contract verified end to end against Cloudflare's published always-pass and always-fail test keys, including that correct credentials with a rejected token still do NOT sign in. (2) **BUG-ENV-003**: /actuator/health returned 503 on a fully healthy app because Boot folds the SMTP indicator into the aggregate status - which would have restart-looped the documented Render deploy. Mail indicator disabled; POST /v1/settings/mail/test added so mail failures stay discoverable, returning the mail server's own rejection text. **Email OTP deliberately NOT built this round**: the SMTP credentials are currently rejected by Gmail, and shipping OTP on unproven email locks every user out of their own account. It is next, once a test email is confirmed to arrive. Export/import for all entities also still outstanding. | **APPROVED 2026-08-26 — CAPTCHA + health fix applied and live-verified; Email OTP and export/import not started** |
 | CR-041 | 2026-08-26 | User | **Per-tenant document number allocator, replacing MAX+1 in ten call sites.** Every generated code — `INV-`, `QUO-`, `PUR-`, `CUS-`, `SUP-`, `PRD-`, `CAT-`, `BRD-`, `PRJ-` — was allocated as `findHighestGeneratedCodeNumber(tenantId) + 1`: a read, then a write, with no lock. Two concurrent counter staff read the same MAX and both attempted the same number; the `UNIQUE (tenant_id, <code>)` constraint on every one of those tables caught it, so **no duplicate was ever stored**, but the losing request died on a constraint violation and its document was lost. New `document_sequence` table (V29) holds one row per tenant per document type, allocated under `SELECT … FOR UPDATE`. Allocation joins the caller's transaction (`Propagation.MANDATORY`) rather than `REQUIRES_NEW`, so a rolled-back invoice does not burn a number — GST requires an unbroken consecutive serial. Lock ordering is sequence-first everywhere, which keeps it deadlock-free. Prerequisite for CR-043 (offline sync), where replaying a queued batch would have hit this constantly. | **APPROVED 2026-08-26 — applied, 6/6 regression tests green against real PostgreSQL** |
 | CR-045 | 2026-08-26 | User | **Version 1 Git and environment foundation.** Repository placed under version control (it had no commits). Branch strategy main / develop / feature|bugfix|hotfix, with runtime environments expressed as Spring profiles rather than branches. Two new profiles: `local` (one developer's machine) and `test` (the QA deployment). Production hardened: springdoc api-docs and swagger-ui disabled, actuator limited to health, whitelabel error page off. **Developer inspection** added at `/v1/dev/inspection/*` behind two independent server-side gates - the environment (`app.developer-inspection.enabled`, hard false in prod plus a code-level prod override) AND the new `DEVELOPER_INSPECT` permission, which **no default role holds, OWNER included** - so "admin" never means "developer". Deliberately NOT implemented: any attempt to block F12/right-click/DevTools, which is theatre rather than security. Production source maps off and asserted by CI. GitHub Actions CI added (backend verify, frontend typecheck+build+source-map assertion, secret scan). Two pre-existing test failures found and fixed along the way: BUG-AUTH-014 and BUG-SEC-003. | **APPROVED 2026-08-26 — applied, full suite green** |
+
+<!-- back-filled rows 2026-09-08 -->
+<!-- These rows were derived from each CR's own section heading below, not
+     rewritten by hand, so the table cannot drift from the sections again.
+     A CR with several phases gets one row per phase heading. -->
+| CR-014 | 2026-08-13 | User | MySQL 8 → PostgreSQL | **APPROVED 2026-08-13** |
+| CR-015 |  | User | Business activity log, separate from the security audit log | **APPLIED** |
+| CR-016 | 2026-08-22 | User | Multi-tenant architecture | **APPROVED 2026-08-22, in progress** |
+| CR-017 | 2026-08-22 | User | Supplier form: multi-step wizard, read-only code on create | **PROPOSED 2026-08-22** |
+| CR-018 | 2026-08-23 | User | Bank account number: encryption at rest, permission-gated reveal | **APPLIED 2026-08-23** |
+| CR-019 | 2026-08-22 | User | Per-user theme and language preference, i18n foundation | **PROPOSED 2026-08-22** |
+| CR-020 | 2026-08-22 | User | Module order: Category, Brand & Product before Customer | **APPROVED 2026-08-22** |
+| CR-051 | 2026-08-31 | User | Idempotency service for double-submitted writes | **APPLIED 2026-08-31** |
+| CR-052 | 2026-08-31 | User | Sales Order, Delivery Challan, Credit Note | **APPLIED 2026-08-31** |
+| CR-053 | 2026-08-31 | User | phase 1 — Invoice PDF themes | **APPLIED 2026-08-31** |
+| CR-053 | 2026-08-31 | User | phase 2 — Registration form scroll fix + auth-page icon polish | **APPLIED, frontend only, 2026-08-31** |
+| CR-054 | 2026-09-01 | User | phase 1 — Platform Admin Console: identity & auth foundation | **APPLIED, 2026-09-01** |
+| CR-053 | 2026-09-02 | User | backlog items 2-7 | **APPLIED, 2026-09-02** |
+| CR-055 | 2026-09-02 | User | WhatsApp reminders made real | **APPLIED, 2026-09-02** |
+| CR-056 | 2026-09-02 | User | Tenant-owned WhatsApp Business API integration | **APPLIED, 2026-09-02** |
+| CR-057 | 2026-09-02 | User | phase 2 — Platform Admin Console: Tenant Management + Overview | **APPLIED, 2026-09-02** |
+| CR-057 | 2026-09-02 | User | phases 3, 4, 6 (partial), 7 (partial), 8 (partial) — System Health, Incidents, Support Center, Audit Log viewer, Security Center, Developer Tools, Feature Flags | **APPLIED, 2026-09-02** |
+| CR-057 | 2026-09-03 | User | phase 9 - Subscriptions & Billing | **APPLIED, 2026-09-03** |
+| CR-057 | 2026-09-03 | User | phase 10 - Tenant Analytics | **APPLIED, 2026-09-03** |
+| CR-057 | 2026-09-03 | User | phase 11 - Backup Center | **APPLIED, 2026-09-03** |
+| CR-057 | 2026-09-03 | User | phase 12 - Platform Settings: Razorpay | **APPLIED, 2026-09-03** |
+| CR-059 | 2026-09-04 | User | Deployment mode switch: hosted (Supabase) or self-hosted (Docker) | **APPLIED, 2026-09-04** |
+| CR-058 | 2026-09-08 | User | Mandatory MFA for shop users, and a recycle bin for deleted records | **BACK-FILLED 2026-09-08** |
+| CR-060 | 2026-09-08 | User | MFA as a switch, without deleting the second factor | **BACK-FILLED 2026-09-08** |
+| CR-061 | 2026-09-05 | User | Mobile application UI: app shell, stacked lists, sheet dialogs, themed browser chrome | **APPLIED, 2026-09-05** |
+| CR-062 | 2026-09-05 | User | Auth screens simplified; signup checks the mobile number at the step that asks for it | **APPLIED, 2026-09-05** |
+| CR-063 | 2026-09-07 | User | clearable inputs, and one status pill for the whole application | **APPROVED, 2026-09-07** |
+| CR-064 | 2026-09-07 | User | Project material consumption moves stock | **APPROVED, 2026-09-07** |
+| CR-065 | 2026-09-07 | User | Platform Admin refresh token moves to an HttpOnly cookie | **APPROVED, 2026-09-07** |
+| CR-066 | 2026-09-08 | User | Configurable dashboard: widget catalog | **APPROVED — catalog only, 2026-09-08** |
+| CR-068 | 2026-09-08 | User | Per-user column choice on every list | **APPLIED, 2026-09-08** |
+| CR-067 | 2026-09-08 | User | Shop data reset, behind a CAPTCHA and a typed confirmation | **APPROVED, 2026-09-08** |
+| CR-069 | 2026-09-08 | User | Premium auth screens, rebuilt on theme tokens | **APPROVED, 2026-09-08** |
 ---
+
+
+### Numbers still missing an entry (audited 2026-09-08)
+
+The table above is now generated from the section headings, so the two cannot
+drift apart again. What it cannot fix is a CR that was **implemented and cited
+in code but never written down at all**. CR-058 and CR-060 were back-filled in
+this pass; these remain, with the number of files that cite each one:
+
+| CR | Files citing it | Nothing is recorded about |
+|---|---|---|
+| CR-047 | 24 | internal labour margin (cited from CR-052's design notes) |
+| CR-049 | 17 | whole-document discount |
+| CR-050 | 15 | percentage-only discount type, labour margin |
+| CR-048 | 7 | — |
+| CR-013 | 4 | — |
+| CR-046 | 2 | — |
+| CR-043 | 1 | offline sync (named as CR-041's motivation; never built) |
+
+**CR-042 and CR-044 are cited nowhere** and were most likely never allocated.
+
+Back-filling these was **not** attempted here. CR-058 and CR-060 could be
+reconstructed honestly because their behaviour is fully described in the code
+that cites them; these six are cited mostly in passing, and writing a
+plausible-sounding entry from a passing mention would put invented reasoning
+into the file the project treats as its source of truth. That is worse than an
+acknowledged gap. Each needs its implementation read before an entry is
+written.
+
 
 ## CR-003 — Module 1 audit corrections (APPROVED, re-baselined under CR-010)
 
@@ -66,7 +133,13 @@ plus a coordinated frontend release.
 
 ---
 
-## CR-007 — Module order contradiction (OPEN)
+## CR-007 — Module order contradiction (APPROVED 2026-08-13, APPLIED)
+
+> **Status corrected 2026-09-08.** The header still read `(OPEN)` years after
+> the fact while the summary table above said APPROVED. The recommended order
+> below was followed and every module in it is built — CLAUDE.md records the
+> same order under "Module order (completed, kept for history)". Nothing here
+> is outstanding; the text is kept for the reasoning.
 
 Three different orders have been given:
 
@@ -108,7 +181,13 @@ out and then retrofitted into a module that is already "verified complete".
 
 ---
 
-## CR-008 — Public self-registration (OPEN)
+## CR-008 — Public self-registration (APPROVED 2026-08-13, APPLIED)
+
+> **Status corrected 2026-09-08.** Verified, not assumed: there is no user
+> self-registration endpoint anywhere in the backend. The only `/register` is
+> `TenantRegistrationController` — a whole new *shop* signing up, which is
+> CR-028's deliberate feature, not an outsider creating an account inside an
+> existing shop's books. The recommendation below is CLAUDE.md hard rule 5.
 
 Module 1 is titled "Authentication & **User Registration**", and the checklist
 requires "User registration works" and "Frontend registration page works".
@@ -129,7 +208,13 @@ password only. Roughly two extra days of work. Say the word and I will build it.
 
 ---
 
-## CR-009 — Seed data in production migrations (OPEN)
+## CR-009 — Seed data in production migrations (APPROVED 2026-08-13, APPLIED)
+
+> **Status corrected 2026-09-08.** Verified against the running config: seed
+> files are `V900`–`V904` in `db/seed/`, and `application-prod.yml` /
+> `application-test.yml` both set `locations: classpath:db/migration` with no
+> seed folder, while `dev` and `local` add `classpath:db/seed`. Production
+> physically cannot load a test account.
 
 The rule is "every table must contain at least 10 realistic sample records"
 and "seed data automatic load aaganum".
@@ -2866,6 +2951,83 @@ on this machine (a standing limitation recorded in `CLAUDE.md`).
 
 ---
 
+## CR-058 — Mandatory MFA for shop users, and a recycle bin for deleted records (BACK-FILLED 2026-09-08)
+
+**This entry was reconstructed on 2026-09-08 from the 71 source files that cite
+it.** CR-058 was implemented but never written down — CR-062's "Noted, not
+actioned" list flagged the same omission for CR-060 (back-filled below). The
+scope below is what the code actually does, read off the implementation; it is
+**not** a record of the original conversation, which is lost. Treat the
+*reasoning* here as reconstructed and the *behaviour* as verified.
+
+### Two things under one number
+
+**1. A correct password no longer signs anyone in.** `POST /v1/auth/login`
+returns a `LoginChallengeResponse` — an MFA challenge — rather than a session.
+TOTP moved to `security/totp/` (`TotpService`, `TotpSecretConverter`) so one
+implementation serves both platform staff and shop users instead of two
+drifting copies. First sign-in sets `enrollmentRequired`, which routes to QR
+enrollment; afterwards the same response carries a short-lived `mfaToken` that
+only `/v1/auth/mfa/verify` accepts. The verify route is public on purpose: a
+correct password is not yet a session, so nothing exists to authenticate the
+second step with.
+
+**2. Deleted is a filter value, not a status.** Users, suppliers, products and
+customers gained a recycle bin — `GET .../deleted` plus a restore endpoint,
+with `AuditAction` entries for the restore. **A deleted record's `status`
+column still says ACTIVE or INACTIVE**; deletion is a separate flag, so
+"Deleted" is a list *filter*, never a `SupplierStatus`/`ProductStatus` value.
+That distinction is written into `SupplierListPage` and referenced from the
+others — it exists because folding deletion into the status enum would have
+made every existing status query silently include or exclude deleted rows
+depending on how it was written.
+
+### Not reconstructible
+
+The original approval wording, the date, and whether the recycle bin and MFA
+were asked for together or merely shipped together. A CR number is a promise
+that the decision is written down before the code — see the note under CR-068
+on how numbers get allocated.
+
+---
+
+## CR-060 — MFA as a switch, without deleting the second factor (BACK-FILLED 2026-09-08)
+
+**Back-filled 2026-09-08**, discharging the "Someone should back-fill CR-060"
+item recorded under CR-062's "Noted, not actioned". Reconstructed from the ten
+files that cite it; the same caveat as CR-058 applies.
+
+### What it does
+
+`app.security.mfa-required` (`MFA_REQUIRED`) decides whether a correct password
+issues an MFA challenge (`true`) or a finished session (`false`). It exists so
+MFA can be switched off during development **without deleting CR-058's
+enrollment, TOTP and backup-code implementation**, which stays intact and
+returns the moment the flag is true again.
+
+### The three decisions worth keeping
+
+**It defaults to `true`.** An installation that says nothing about MFA gets the
+secure behaviour; turning it off has to be a written-down decision rather than
+an omission.
+
+**It reuses one response type instead of adding a second endpoint.**
+`LoginChallengeResponse` gained a `session` field, populated *only* when MFA is
+off, and the two are mutually exclusive — exactly one is always present. So the
+frontend asks "did I get a session or a challenge?" in one place, and flipping
+the flag changes no route and no client contract. The two factory methods
+(`challenge(...)` / `signedIn(...)`) are what keep that invariant honest.
+
+**Switching it off is announced, not refused.** `DeploymentModeGuard` prints
+`mfa: *** DISABLED - password is the only factor ***` in the startup banner and
+logs a separate WARN naming `MFA_REQUIRED=false`. Disabling MFA is a legitimate
+choice mid-build, but it is a real reduction in account security — a guessed
+password is then sufficient on its own — so it is stated loudly rather than
+left as one quiet word in a banner nobody reads twice. **It cannot be off
+without somebody being told on every boot.**
+
+---
+
 ## CR-061 — Mobile application UI: app shell, stacked lists, sheet dialogs, themed browser chrome (APPLIED, 2026-09-05)
 
 **Requested**: "change the mobile ui to mobile application ui, now the ui looks
@@ -2928,12 +3090,20 @@ the phone sheet, flush against the screen edge, is what made it obvious. See
 
 ### Noted, not actioned
 
-- **CR-060 is referenced by 18 files** (optional MFA / `LoginChallengeResponse`,
+- ~~**CR-060 is referenced by 18 files** (optional MFA / `LoginChallengeResponse`,
   backend and frontend) **but has no entry in this registry.** This CR is
-  numbered 061 to avoid colliding with it. Someone should back-fill CR-060.
-- `BUG-FE-012`, `013`, `014`, `015`, `016`, `018`, `020`, `021`, `022` are cited
-  in source comments but absent from `BUG_REGISTRY.md`, which stops at
-  `BUG-FE-008`. The registry is behind the code.
+  numbered 061 to avoid colliding with it. Someone should back-fill CR-060.~~
+  **CLOSED 2026-09-08.** CR-060 is now back-filled above, reconstructed from the
+  ten files that cite it. **CR-058 was missing too** — 71 files, and this note
+  did not catch it — and is back-filled alongside. Both are marked
+  BACK-FILLED: the behaviour is verified against the code, the original
+  approval wording is lost and is not invented.
+- ~~`BUG-FE-012`, `013`, `014`, `015`, `016`, `018`, `020`, `021`, `022` are
+  cited in source comments but absent from `BUG_REGISTRY.md`.~~ **CLOSED
+  2026-09-08.** All ten (including `BUG-FE-017`, missed by this list) are now
+  back-filled into `BUG_REGISTRY.md`, and its index table — which stopped at
+  `BUG-ENV-003` — now covers every one of the 86 entries. `BUG-FE-017` is a
+  HIGH-severity money defect with **no regression test**; see its entry.
 - Detail-page toolbars (Invoice/Quotation Detail carry up to six icon-only
   actions) would read better on a phone as one primary button plus an overflow
   menu. That is a per-page redesign, not a shell change — proposed as its own CR
@@ -3110,3 +3280,557 @@ assertions, 15/15 responsive-regression assertions across 25 routes × 5
 viewports. `mvn clean verify` **not executed** — no backend file was
 touched in this change. `registry/static_check.py` **not executed** —
 `python3` is not installed on this machine.
+
+---
+
+## CR-064 — Project material consumption moves stock (APPROVED, 2026-09-07)
+
+**Approval.** Directed by the product owner on 2026-09-07 as P0-1 of a
+stabilization task, with the two open business questions below put back to
+them and answered before any code was written. This entry is the record
+CLAUDE.md's specification-change checklist asks for; it is not a
+self-granted approval.
+
+**Defect.** `ProjectMaterialServiceImpl.add/update/remove` wrote to
+`project_material` and never touched `stock_movement`. Every other module
+that consumes goods — Invoice, Purchase, Delivery Challan, Credit Note —
+goes through `StockService.applyMovement`. Projects did not, so
+`stock.quantity_on_hand` stayed overstated by everything a project ever
+used. Data-integrity defect; recorded as BUG-BE-001.
+
+### The two business decisions, asked rather than guessed
+
+**1. Which quantity depletes stock: `quantityActual` only.**
+`quantityRequired`/`quantityEstimated` are planning figures and
+`quantityActual` is nullable precisely because nothing has physically left
+the godown until work happens. This also matches `totalCost()`, which prices
+`quantityActual` and ignores `quantityWastage` — so wastage is treated as a
+breakdown *within* the actual figure, not additional material. If that
+reading is ever reversed, `totalCost()` has to change in the same commit or
+the project will be under-billed; the two must not drift.
+
+**2. Cancelling a project does NOT restore stock.**
+Materials already used on a half-built job are gone; writing a reversal
+would assert a physical return that did not happen and re-introduce exactly
+the overstatement this CR fixes. `changeStatus` is therefore deliberately
+left alone. Unused goods come back through the existing `INVENTORY_ADJUST`
+flow, where a human states what physically returned. **Removing an
+individual material row does reverse its movement** — that is a correction
+of a record, not a claim about the yard.
+
+### Design
+
+Reuses `StockService.applyMovement` unchanged — no second stock calculation.
+It already locks the `stock` row (`SELECT … FOR UPDATE`), takes the tenant
+from the JWT, refuses to drive a balance negative
+(`INSUFFICIENT_STOCK`, 422), and writes the ledger row with `balanceAfter`.
+Its `@Transactional` joins the caller's, so the material and its movement
+commit or roll back together.
+
+| Operation | Stock effect |
+|---|---|
+| `add` | `-quantityActual` as `PROJECT_CONSUMPTION`, after save so `reference_id` points at an existing row (Invoice's rule) |
+| `update`, same product | delta only — `15 → 20` writes `-5`, `20 → 15` writes `+5` as `PROJECT_CONSUMPTION_REVERSAL` |
+| `update`, product changed | full reversal on the old product, then full consumption on the new — reversal first, so the returned stock is available to the new line |
+| `remove` | `+quantityActual` as `PROJECT_CONSUMPTION_REVERSAL` |
+| project cancelled | nothing, by decision 2 above |
+
+Historical ledger rows are never rewritten; every correction is a
+compensating movement, matching `InvoiceServiceImpl`'s amend path.
+
+**Two new movement types**, named for the existing pairs (`SALE`/
+`SALE_REVERSAL`, `DELIVERY`/`DELIVERY_REVERSAL`): `PROJECT_CONSUMPTION` and
+`PROJECT_CONSUMPTION_REVERSAL`.
+
+### Database change, and a latent defect it also fixes
+
+`stock_movement.movement_type` is `VARCHAR(20)`, and its CHECK constraint has
+been extended four times (V8, V21, V36, V37) without the column ever being
+widened. **`SALES_RETURN_REVERSAL` is 21 characters** — V37 added a value the
+column cannot store, so cancelling a credit note would have failed on a
+Postgres length error. Latent only because Credit Note has no frontend yet.
+Recorded as BUG-DB-001 and fixed here because
+`PROJECT_CONSUMPTION_REVERSAL` (28) needs the same room.
+
+V53 widens the column to `VARCHAR(30)` and extends the CHECK.
+
+---
+
+## CR-065 — Platform Admin refresh token moves to an HttpOnly cookie (APPROVED, 2026-09-07)
+
+**Approval.** Directed by the product owner on 2026-09-07 as P0-2 of the same
+stabilization task.
+
+**Defect.** `PlatformAdminAuthController` returned the refresh token in the
+JSON body and read it back from the request body;
+`platformAdminTokenStorage.ts` held it in a module variable. Its own comment
+called this "accepted deliberately for Phase 1", but the console has since
+grown tenant suspension and billing, so a 7-day credential readable by any
+XSS on that origin is no longer a Phase-1-sized risk. Authentication security
+defect; recorded as BUG-SEC-006.
+
+**This is a transport change only.** Rotation, replay-as-theft detection and
+`token_version` bumping already exist in `PlatformAdminAuthService` and are
+not touched.
+
+### Design
+
+Mirrors the tenant side exactly rather than inventing a second scheme. A new
+`PlatformAdminRefreshTokenCookieService` is a sibling of the existing
+`RefreshTokenCookieService`, differing only in the two values that must
+differ:
+
+- **cookie name** — `erp_pa_refresh_token`, so a platform-admin session and a
+  tenant session open in the same browser can never overwrite each other;
+- **path** — `/api/v1/platform-admin/auth`, so the cookie is not sent to any
+  tenant endpoint.
+
+Everything else is the tenant service's proven configuration: `HttpOnly`,
+`Secure` from `app.security.cookie-secure` (true by default; false only for
+local http), `SameSite=Strict`, `Max-Age` from the refresh-token lifetime.
+
+**CSRF.** `SameSite=Strict` plus the path scope is what already lets
+`SecurityConfig` run with `csrf.disable()` for the tenant cookie — the cookie
+is never attached to a cross-site request, so there is nothing to forge. The
+platform-admin cookie inherits that reasoning by using the same two
+properties. **CSRF protection is not weakened to make cookie auth work**; the
+requirement is the reverse — the cookie must be configured so that the
+existing posture stays valid.
+
+**Transport mode is honoured.** `app.security.refresh-token-transport=JSON`
+still returns the token in the body for a non-browser client, exactly as the
+tenant side does. The default is `COOKIE`.
+
+**Page reload.** `PlatformAdminAuthProvider` gains the bootstrap the tenant
+`AuthProvider` already has: call refresh on mount, and the browser attaches
+the cookie. This is what fixes "reload signs the admin out" — without
+weakening the access token, which stays in memory.
+
+**Frontend.** `platformAdminTokenStorage` loses `refreshToken` entirely, so
+there is no application state for JavaScript to read it from; the client
+sends `withCredentials: true`.
+
+---
+
+## CR-066 — Configurable dashboard: widget catalog (APPROVED — catalog only, 2026-09-08)
+
+**Approval.** Directed by the product owner on 2026-09-08. The owner supplied
+section 3 of a larger configurable-dashboard specification — the widget list,
+their ids and their display names. Sections 1-2 and 4+ (selection UI,
+persistence, layout model) have not been supplied and are **not** built here.
+
+**Scope of this CR is the catalog only.** No picker, no persistence table, no
+migration, no new endpoint, no change to `DashboardPage`. The catalog is data;
+it is not yet wired to anything. This is deliberate: the naming has to be
+agreed before three separate call sites hard-code three variants of it.
+
+### Why a catalog file rather than inline names
+
+Today the dashboard is a single hard-coded page. `DashboardPage.tsx` fetches a
+fixed set of counts and labels them inline (`'Products'`, `'Low stock items'`).
+Once widgets become selectable, each one is named in three places — the card
+header, the picker list, and the persisted layout — and hand-typed copies
+drift. `frontend/src/modules/dashboard/constants/widgets.ts` is the single
+source of truth for id, display name, description, category and permission.
+
+**The `id` is a persisted value.** Once a saved layout references
+`low-stock-count`, that string is data and falls under the naming law: never
+rename it. The `name` is presentation and may be reworded freely.
+
+### Data availability — the part that changes the specification
+
+Thirty-two widgets were specified. Only fifteen can be rendered from an
+endpoint that exists today. Each entry therefore carries a `dataSource` of
+`available`, `needs-endpoint` or `unavailable`, plus a `blockedReason`. A
+picker that offered all thirty-two would promise data the server cannot
+produce.
+
+**`needs-endpoint` (13)** — the domain exists, the aggregate query does not:
+`top-selling-products`, `top-customers`, `outstanding-payments`,
+`payment-summary`, `purchase-summary`, `supplier-outstanding`,
+`inventory-snapshot`, `out-of-stock-list`, `stock-value`,
+`fast-moving-products`, `expenses-summary`, `action-required`,
+`recent-activity`. Two are worth calling out: `out-of-stock-list` needs only a
+zero-quantity filter on `GET /v1/stock`, which currently has just
+`lowStockOnly`; and `recent-activity` is blocked by a real gap — `activity_log`
+is written by roughly ten services under CR-015 and **no controller reads it
+back**, so the business audit trail is currently write-only.
+
+**`unavailable` (4)** — no table backs these at all, and each needs its own
+module before the widget can be honest rather than fabricated:
+
+| Widget | What is missing |
+|---|---|
+| `cash-balance` "Cash-in-Hand" | No cash ledger anywhere in the schema. Needs a cash book. |
+| `bank-balance` "Bank Account Balance" | `tenant_bank_account` holds label, bank name, account number, IFSC, UPI id and QR codes — it is invoice collection detail. **There is no balance column.** Needs a reconciliation ledger. |
+| `gst-summary` "GST Liability Summary" | No GST return or liability computation exists in the backend. |
+| `tasks-reminders` "Tasks & Follow-ups" | No task entity. `notification/reminder/` is a low-stock alert scheduler, not user-owned tasks. |
+
+These four are recorded, not built. Each is a module-sized build and belongs in
+its own CR — this follows the "never silently build large new subsystems" rule
+in CLAUDE.md. They stay in the catalog marked `unavailable` so the picker can
+disable them and explain why, rather than being quietly dropped and
+re-requested later.
+
+### Permissions
+
+Every widget carries the `PermissionCode` that gates it, so the picker can hide
+what a role could never load. The three finance widgets and `stock-value` use
+`REPORT_FINANCIAL` / `PRODUCT_VIEW_COST` rather than a generic view permission
+— cost and cash figures are not for every role that can open the dashboard. As
+everywhere else, this is UI filtering only; the server checks again.
+
+### Not done in this CR
+
+Widget picker UI, per-user layout persistence (table + migration), the thirteen
+`needs-endpoint` aggregates, and any wiring of `DashboardPage` to the catalog.
+Awaiting the remaining specification sections.
+
+---
+
+## CR-068 — Per-user column choice on every list (APPLIED, 2026-09-08)
+
+**Renumbered from CR-067 on 2026-09-08.** Two concurrent sessions each
+allocated CR-067 on the same day — this one and the shop data reset below.
+This entry moved to the unused CR-068 rather than the other one, because the
+data reset owns a `CR-067` comment inside `V54__data_reset_permission.sql`,
+which is an **applied** migration: Flyway checksums the whole file, comments
+included, so editing it would fail validation on every database that already
+ran it (hard rule 1). The three code comments that named CR-067 for this
+feature — `ProductSummaryResponse`, `ProductControllerIT` and
+`ProductPicker.tsx`, plus the seven list pages and `ColumnPreferences.tsx` —
+were updated with it. **A CR number is allocated by writing the registry entry
+first**; two sessions reading the same file and both picking "next" is how this
+happened.
+
+**Approval.** Directed by the product owner on 2026-09-08: "give option for all
+list user can set what are the column he want to see in that list what order he
+want set it ... if he want see product description he can add this sample
+example same for other", naming product, quotation, invoice, supplier,
+purchase, category and brand.
+
+### What was built
+
+A user can choose which columns a list shows and in what order. The control is
+a **Columns** button in each list's page header; the panel is a dialog on a
+desktop and a bottom sheet on a phone (it reuses `DialogContent`, which already
+changes shape below `sm` under CR-061).
+
+`frontend/src/shared/components/table/ColumnPreferences.tsx` holds all three
+parts: the `ColumnDef` type, the `useColumnPreferences` hook and the
+`ColumnSettings` panel. Each page declares a catalogue of columns; the table
+then renders from `columns.visible` rather than from hard-coded `<TableHead>`
+and `<TableCell>` rows.
+
+Applied to all seven named lists: **product, category, brand, invoice,
+quotation, purchase, supplier.**
+
+### Decisions worth keeping
+
+**Per user, not per shop.** Two people at one counter want different lists — a
+billing clerk scans barcodes, whoever files GST wants the HSN column. A
+shop-wide setting would be wrong for most of them most of the time.
+
+**Stored client-side, scoped by user id** through the existing `themeScope`
+helper, the same isolation the theme preferences use. One browser shared by two
+shops cannot leak a layout between them (identifiers are globally unique across
+tenants, CR-016). A column layout is presentation with no business consequence,
+so it does not justify a table, a migration and an endpoint. **If the
+requirement becomes "my layout follows me to a new device", that is a new CR
+and a real table** — it is not a bug in this one.
+
+**Column ids are persisted values** and fall under the naming law: renaming one
+silently discards the choice of every user who had ordered it. Headers are
+presentation and may be reworded freely.
+
+**The identity column is `locked`** — pinned first and not hideable. The phone
+card reads `td[data-column-index="0"]` as the item's heading (CR-061), so
+something must be guaranteed to sit there.
+
+**A user-added column shows at every width, phone included.** Default columns
+keep the page's own `hidden md:table-cell` rules; a column the user switched on
+themselves gets `show-on-card` instead. Turning a column on and then not
+finding it on the device in your hand would read as the setting being broken.
+
+**Order is changed with buttons, not dragging.** This has to work on a phone,
+where the lists are most cramped and HTML5 drag-and-drop does not work at all.
+
+**No Save button.** Changes apply and persist immediately; the list behind the
+panel is the preview. "Reset to default" is the way back.
+
+### The one backend change
+
+`ProductSummaryResponse` gained `description`, `modelNo`, `barcode`, `hsnCode`
+and `mrpDisplay`. Product was the only named list whose extra columns did not
+already arrive — Category and Brand already carried `description`, and
+Supplier already carried `contactPerson` and `gstNo` with nowhere to show them.
+
+**Purchase price was deliberately NOT added and must not be.** That DTO
+documents the rule: a list of 100 products does not carry cost past the
+network even for a `PRODUCT_VIEW_COST` holder, and cost is read on the detail
+screen. All five fields added here are already visible on the detail screen and
+on the printed pack, so none widens what a `PRODUCT_VIEW` holder may read.
+`ProductControllerIT.searchCarriesColumnPickerFields` pins both halves — the
+new fields arrive, and purchase price still does not.
+
+### Not done
+
+Column **width** and **sorting** are untouched; this CR is visibility and order
+only. The remaining list pages (customer, payment, expense, stock, project,
+labour, coupon, user, role, support) still render fixed columns — the mechanism
+is generic and applying it to them is mechanical, but it was not in the ask.
+
+
+---
+
+## CR-067 — Shop data reset, behind a CAPTCHA and a typed confirmation (APPROVED, 2026-09-08)
+
+**Source:** User, 2026-09-08 — "add captcha option important things in this
+project and while reset the specified entire data from this project. it helps
+the like double confirmation."
+
+Two asks in one sentence, scoped with the owner before any code was written:
+
+1. **Which data a reset removes** — transactional data only. Invoices,
+   quotations, sales orders, delivery challans, credit notes, payments,
+   purchases, expenses, projects, labour attendance and wages, and the whole
+   stock ledger. **Kept:** users, roles, shop settings, and every master
+   record — products, customers, suppliers, categories, brands, workers, work
+   types, expense categories and coupon definitions.
+2. **Which actions get the CAPTCHA** — the reset, and only the reset. A
+   challenge on all 48 `ConfirmDialog` sites was offered and declined: a
+   CAPTCHA on "delete this brand" is trained away in a week and then means
+   nothing on the one screen where it matters.
+3. **What the confirmation requires** — the typed shop name **and** the
+   Turnstile challenge. Password re-entry was offered and not taken.
+
+### Why a typed phrase as well as the CAPTCHA, and not the CAPTCHA alone
+
+`app.captcha` is inactive unless `enabled` is true **and** both keys are
+present (`CaptchaProperties.active()`, CR-038) — deliberately, so an install
+that never configures Turnstile does not lock every user out. A CAPTCHA-only
+gate would therefore be **no gate at all** on exactly those installs, and the
+screen would still say "security check" while performing none. The typed shop
+name is the half that cannot be switched off by configuration; the CAPTCHA is
+the half that stops a script. Turnstile is also usually invisible to a real
+user, so on its own it is a poor "are you sure" — it proves *human*, never
+*this human meant it*.
+
+`CaptchaService.verify` was already generic (`token`, `remoteIp`) and needed no
+change. This CR is the first caller other than `POST /v1/auth/login`.
+
+### API
+
+| Method | Path | Permission |
+|---|---|---|
+| GET | `/v1/settings/data-reset/preview` | `DATA_RESET` |
+| POST | `/v1/settings/data-reset` | `DATA_RESET` |
+
+The preview is not decoration. It follows the same **preview → confirm →
+commit** shape the project already requires of Purchase Bill Import and Product
+Import: the dialog states the exact number of invoices, payments and stock
+movements about to be destroyed, counted from the caller's own tenant a moment
+before they confirm.
+
+### Permission — `DATA_RESET`, a new code, not `SETTINGS_MANAGE`
+
+Seeded by `V54__data_reset_permission.sql` in module `SETTINGS`, granted to
+**OWNER only**. It is deliberately not folded into `SETTINGS_MANAGE`: a manager
+who may correct the shop's GSTIN must not thereby inherit the power to erase
+its trading history. MANAGER already lacks `SETTINGS_MANAGE`, but a future
+owner who grants it should not be handing over a wipe button as a side effect.
+
+Withheld explicitly from MANAGER, ACCOUNTANT and STAFF in `RoleGrantDriftTest`
+so the decision is recorded rather than defaulted. OWNER receives it through
+the existing "every permission except the DEVELOPER module" grant in
+`TenantRegistrationServiceImpl`, so newly registered shops need no further
+change.
+
+### Delete order, and why it is written out rather than left to cascades
+
+Twenty-seven statements in explicit foreign-key order, every one scoped by
+`tenant_id` taken from `SecurityUtils.requireCurrentTenantId()` — never from
+the request. Child tables (`invoice_item`, `quotation_item`, `purchase_item`,
+`sales_order_item`, `delivery_challan_item`, `credit_note_item`,
+`expense_receipt`) carry **no `tenant_id` of their own** by design, so each is
+scoped through a subquery against its already-scoped parent.
+
+Most of those children do cascade from their parent, and relying on that would
+have been shorter. It was rejected for two reasons: a cascade reports no row
+count, so the confirmation dialog could not honestly say what it removed; and
+the order matters in one place a cascade would not have caught —
+`credit_note_item` references `invoice_item`, so credit notes must be deleted
+before invoices or the transaction fails on a constraint.
+
+The table list is a hardcoded constant. There is no endpoint, parameter or
+column anywhere in this feature that lets a caller name a table.
+
+### Two follow-on effects found while tracing the workflow, and fixed here
+
+Neither was in the ask; both would have left the shop in a state that
+contradicts what the reset claims to do.
+
+- **`coupon.times_used`** is a counter on a *kept* master that counts
+  redemptions on *deleted* invoices. Left alone, a coupon with
+  `usage_limit = 100` and 100 wiped redemptions would be permanently
+  exhausted against invoices that no longer exist. Reset to 0.
+- **`document_sequence`** would keep issuing INV-0341 into an empty invoice
+  list. Reset to 1 for `INVOICE`, `QUOTATION`, `PURCHASE` and `PROJECT` only —
+  the master types (`CUSTOMER`, `SUPPLIER`, `PRODUCT`, `CATEGORY`, `BRAND`)
+  are untouched, because those records survive and their numbers must not
+  collide.
+
+`stock` rows are deleted rather than zeroed. `StockServiceImpl` already creates
+them lazily (`orElseGet(() -> createStockRow(...))`), so the next movement
+recreates the row at zero — and deleting keeps the ledger and the balance
+agreeing, which zeroing the balance while deleting the movements would not.
+
+### What is deliberately NOT deleted
+
+`activity_log` and `security_audit_log` survive the reset, and the reset writes
+to both. That is the whole point of hard rule 8 and of the project's
+soft-delete convention: a wipe that also erases the record of who performed it
+is not an audit trail. The dialog says so, so nobody expects otherwise.
+
+`subscription_coupon.times_used` is **not** reset — those are billing
+redemptions against the platform, not shop transactions.
+
+### Tests
+
+`DataResetIT` (Testcontainers): a second tenant is seeded alongside the one
+being reset and asserted untouched afterwards — the isolation guarantee is the
+one thing a bug here would breach catastrophically. Also covers masters
+surviving, the wrong phrase returning 400 with nothing deleted, and a caller
+without `DATA_RESET` returning 403.
+
+---
+
+## CR-069 — Premium auth screens, rebuilt on theme tokens (APPROVED, 2026-09-08)
+
+**Approval.** Directed by the product owner on 2026-09-08, who supplied a
+detailed Stripe/Linear-style specification for the sign-in and shop-registration
+screens.
+
+**This partially reverses CR-062, deliberately and with the owner's explicit
+decision.** CR-062 cut the auth brand panel down to a 30% strip after the owner
+judged the previous version "too absurd and too complex". The new specification
+asked for that panel back, denser than before. Rather than silently rebuild
+what was rejected three days earlier, the conflict was raised first; the owner
+chose "premium polish, theme-driven, restrained". So the panel returns, but the
+two properties that made the old one fail are held out:
+
+- **It is not half the viewport.** `lg:w-[38%] lg:max-w-md`, capped, still
+  dropped entirely below `lg`. The old one was 44-50%.
+- **It carries no invented social proof.** See below.
+
+### What was refused, and why
+
+The specification contained three items that were not built as written.
+
+**1. Fabricated live statistics.** It asked for floating badges reading
+"🟢 1,240+ Hardware stores managing billing right now" and "⚡ Over 450+
+Hardware & Paint shops joined this month". Those numbers do not come from
+anywhere - they would be invented telemetry shown to real users. The owner
+chose to drop them entirely. No stat badge exists on either screen.
+
+**2. A false product claim.** The onboarding panel was specified to advertise
+"Pre-loaded Hardware Items - 10,000+ default products catalog". The only
+product seed in the repository is `V902__seed_dev_products.sql`: twelve rows,
+loaded by the dev and test profiles only, never in production. The card now
+reads "Bulk import - Bring your catalogue in from a sheet", which is the real
+capability (`/v1/products/import`). Every remaining caption on both panels was
+checked against shipped code the same way.
+
+**3. Demo credential pills.** "Demo Owner" / "Demo Billing Staff" quick-fill
+pills on the production sign-in page were not built. Auto-filling working
+credentials on a live auth screen is a security regression, and CR-045 already
+establishes the correct shape for anything like it: two independent
+server-side gates, never a frontend check. Proposing it properly is a separate
+CR.
+
+### Hardcoded colour was the main technical problem
+
+The specification was written in fixed Tailwind palette values - `bg-slate-950`,
+`bg-[#0b0f19]`, `from-blue-600 to-indigo-600`, `focus:ring-blue-600`,
+`shadow-blue-500/25`. `colorThemes.ts` defines **eleven** user-selectable themes,
+each with a light and dark variant. A fixed blue sign-in page would match
+nothing else in the app for a shop on emerald, rose or amber.
+
+Everything is therefore painted from tokens:
+
+| Design intent | Token used |
+|---|---|
+| "Rich deep dark background" | `--sidebar` - the one token that is deep and dark (lightness 6-13%) in all twenty-two theme/mode combinations, always paired with a near-white `--sidebar-foreground` |
+| Glassmorphic borders and cards | `--sidebar-foreground` at 5-15% alpha |
+| Ambient radial mesh | `--chart-1` / `--chart-3` at low alpha |
+| Gradient headline mask | `--chart-1` -> `--chart-3` |
+| Vibrant micro-icon glows | `--chart-1..4`, the only tokens that stay visibly distinct from one another across every theme |
+
+Using `--sidebar` here does **not** contradict CR-061's rule that mobile chrome
+must never be painted from the sidebar tokens. That rule exists because a navy
+slab occupies a third of a phone screen; this panel is `lg`-only and never
+renders on a phone.
+
+### The CTA gradient, and a measurement that changed the design
+
+A new `gradient` Button variant carries the CTA on both screens. Its first
+draft mixed `--primary` 60% with `--chart-3` for the far stop, on the reasoning
+that keeping most of primary would keep primary's guaranteed contrast. **That
+reasoning was wrong, and measuring caught it.**
+
+Contrast was measured by rendering the real button in all eleven themes x both
+modes, reading the computed gradient stops, and rasterising them through a
+canvas to get sRGB. `--chart-3` is lighter than `--primary` in every light
+theme, so the hue shift always lightened the far end: worst case **3.52:1** on
+teal/light, below AA for 14px text. Sweeping the mix weight did not fix it -
+even 85/15 only reached 3.96:1.
+
+The fix is a second, mode-aware step: after shifting hue toward `--chart-3`,
+the colour is corrected *away* from the text sitting on it - 30% toward black
+under light mode's near-white `--primary-foreground`, 22% toward white under
+dark mode's near-black one. Worst case across all twenty-two combinations is
+now **6.94:1**.
+
+**Adjacent finding, not fixed here.** The same measurement showed the existing
+`default` Button variant - plain `bg-primary`, used across the whole
+application - falls below AA in two combinations: **amber/light at 4.29:1** and
+**indigo/dark at 4.30:1**. That is pre-existing and design-system-wide, not
+introduced by this CR, and correcting those two palettes belongs in its own CR
+rather than being pulled in unscoped.
+
+### Other changes
+
+- **"Remember me" stores the identifier only, never a token.** The obvious
+  reading is "keep me signed in longer", which is deliberately not what it
+  does - session lifetime belongs to the HttpOnly refresh cookie, and hard rule
+  9 keeps the access token in memory. The label says "Remember my number" so it
+  does not imply a longer session the server never granted. Storage access is
+  wrapped in try/catch: a private-mode browser throws rather than returning
+  null, which would otherwise take the sign-in form down.
+- **Stepper.** Completed steps go to `--success`, not `--primary`. On the slate
+  and minimal themes primary is a near-neutral, and a finished step tinted with
+  it read as just another inactive circle. The connector animates by growing a
+  fill over a permanent track rather than swapping colours.
+- **Step transitions are direction-aware.** Forward slides in from the right,
+  Back from the left, including the backward jumps `submit()` makes when the
+  server rejects a duplicate mobile/email. BUG-FE-023 was a slide aimed the
+  wrong way; hardcoding `slide-in-from-right` would have reintroduced it.
+- **`FormField` gains an optional `hintTone`.** Additive, defaults to `muted`,
+  every existing call site unchanged. It lets the registration form's live
+  shop-name lookup report "Available" in `--success` rather than in muted grey,
+  which read as neutral advice rather than a cleared check.
+- No `motion-safe:` prefixes were added - `index.css` already neutralises every
+  animation under `prefers-reduced-motion: reduce`.
+
+### Verification
+
+Rendered in Chromium via Playwright at 1440x900 and 390x844, in light and dark,
+on the royal-blue, emerald and rose themes. No page errors and **zero
+horizontal overflow** at any viewport. The registration wizard was driven end to
+end: empty step 1 refuses to advance and shows both field errors; a malformed
+mobile/email/password refuses to advance and shows all three; Back returns and
+slides the other way; tabbing from the last field reaches the CTA with a
+visible focus ring.
+
+**Not verified:** the shop-name "Available" success hint. It needs a running
+backend, and the availability lookup fails closed to `idle` without one.
