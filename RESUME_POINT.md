@@ -1,6 +1,22 @@
 # RESUME POINT
 
-**Updated:** 2026-09-09 (**CR-072 — the business audit trail becomes readable; BUG-BE-002**). One feature and one high-severity defect found inside it.
+**Updated:** 2026-09-09 (**BUG-FE-036 — the sidebar active state had never once rendered**).
+
+## Start here
+
+**BUG-FE-036 is committed. CR-073 is finished but deliberately NOT committed — see below.**
+
+**BUG-FE-036: a CSS rule that could never match.** `.sidebar-link[data-active='true']` needed the class and the attribute on one element; the class was on the `NavLink` anchor and `data-active` on a span inside it. The rail never highlighted the current page, on any route, for the life of the styling. Now keyed on `aria-current='page'`, which `NavLink` sets on the anchor itself, so the highlight and the screen-reader signal are the same fact.
+
+**Half of that fix was accidentally committed inside CR-072 (8501899).** `Sidebar.tsx` lost its `data-active` span there while `index.css` still keyed on it, so **every commit from 8501899 until this one has the sidebar highlight fully broken** — worth knowing if you bisect through that range.
+
+**The regression test is `frontend/tests/navigation/sidebar.spec.mjs`**, registered in `tests/run.mjs`. It asserts `getComputedStyle`, including the `::before` pseudo-element, because a selector that matches nothing is invisible to typecheck, build and render tests alike. Verified to fail 9 assertions against the old CSS and pass against the new. Suite: **95/95** (was 72/72).
+
+### CR-073 — done, verified, held back
+
+Contact-admin accepts an optional screenshot, emailed as a MIME attachment and never stored. Backend, frontend, registries and five unit tests are all complete in the working tree; `EmailAttachmentTest` passes 5/5 and the frontend builds clean.
+
+**It is uncommitted because another session is mid-refactor in the same files.** `EmailNotificationProvider.java` now also declares `implements EmailTransport` and references an untracked `SendGridEmailProvider`/`EmailTransport`/`TwilioProperties` set. Staging it would either sweep up that unfinished work or produce a commit that cannot compile. **Commit CR-073 once the SendGrid/Twilio transport refactor lands**, not before.
 
 **The ask was the deferred backlog, worked through one item at a time, tested, committed and pushed.** Four earlier passes in this session cleared the registry work; this is the last and largest item.
 

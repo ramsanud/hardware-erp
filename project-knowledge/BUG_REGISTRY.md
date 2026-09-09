@@ -93,6 +93,7 @@ generating new code; never reintroduce a listed bug.
 | BUG-FE-033 | Frontend | High | Fixed 2026-09-08 |
 | BUG-FE-034 | Frontend | Low | Fixed 2026-09-08 |
 | BUG-FE-035 | Frontend | Medium | Fixed 2026-09-09 |
+| BUG-FE-036 | Frontend | Medium | Fixed 2026-09-09 |
 
 **This index is complete and covers every entry in this file (verified
 2026-09-08).** It previously stopped at `BUG-ENV-003`, omitting 33 later
@@ -3395,3 +3396,103 @@ inversion is the whole defect, and it is the thing to look for when reviewing
 any future `REQUIRES_NEW`: not whether a self-call exists, but whether the
 annotation is on the method that is reached from outside the bean.
 
+
+---
+
+## BUG-FE-036 — the sidebar active state had never once rendered (FIXED, 2026-09-09)
+
+| | |
+|---|---|
+| **Severity** | Medium — the rail gave no indication of which page you were on, on every route, for the life of the styling |
+| **Layer** | FRONTEND ONLY |
+| **Found** | While collapsing the rail for CR-061's desktop chrome — noticed that navigating changed the page but never the rail |
+| **Symptom** | Every item in the sidebar drew identically: transparent background, muted text, no accent bar. The active row was indistinguishable from the seven inactive ones above it |
+
+**Root cause — a CSS selector that could never match.** `index.css` styled the
+active row as:
+
+```css
+.sidebar-link[data-active='true'] { … }
+```
+
+An attribute selector on a class requires **both halves on one element**.
+`Sidebar.tsx` put the class on the `NavLink` anchor and, via the render-prop
+form, `data-active` on a `<span>` *inside* that anchor:
+
+```tsx
+<NavLink className="sidebar-link">
+  {({ isActive }) => <span data-active={isActive}>…</span>}   {/* ← different element */}
+</NavLink>
+```
+
+So the rule matched nothing, on every route, since the day it was written —
+including the `::before` accent bar and the comment above it explaining why a
+coloured edge is "legible even out of the corner of your eye". Nothing was
+ever legible, because nothing was ever painted.
+
+**Why nothing caught it.** A selector that matches nothing is not a
+typecheck error, not a build error, and not a render error — the page still
+renders, it just renders wrong. `tsc` sees valid TSX, the build inlines valid
+CSS, and a test asserting the link exists passes. The defect is observable
+only in **computed style**, which no existing suite looked at.
+
+**Fix.** Key the styling off `aria-current='page'`, which `NavLink` already
+sets on the anchor itself:
+
+1. `frontend/src/index.css` — `.sidebar-link[aria-current='page']` for the
+   background, weight and accent pill, plus the icon colour. The highlight and
+   the screen-reader signal are now the same fact and cannot drift apart;
+   there is no attribute left to forget to pass down.
+2. `frontend/src/layouts/Sidebar.tsx` — the render-prop and its inner span
+   removed, so the anchor is a plain child element again.
+3. `frontend/src/layouts/AppLayout.tsx` — `overflow-x-hidden` on the nav
+   scroller, found while testing the collapse: mid-animation the labels are
+   briefly wider than the 68px track and the rail scrolled sideways. Same
+   commit, adjacent defect in the same component.
+
+**Verified — computed style, not class names.** At `/products`, `/invoices`
+and `/suppliers`: exactly one anchor carries `aria-current="page"`, it is the
+matching route, its background is no longer `rgba(0, 0, 0, 0)`, its
+font-weight is 600, and the `::before` pill has real content and a non-`auto`
+width. Collapsed and expanded: rail at 68px/256px, no sideways scroll, the
+separator border intact.
+
+**Regression test.** `frontend/tests/navigation/sidebar.spec.mjs`, registered
+in `tests/run.mjs`. It reads `getComputedStyle` — including the `::before`
+pseudo-element — because that is the only level at which this class of defect
+exists. Confirmed to fail against the old markup and pass against the new.
+
+**The lesson, and it is not "check your selectors".** This shipped because
+every gate the project had inspects *source*, and the defect lived in the
+relationship *between* two sources that individually looked right. Whenever
+styling is keyed to an attribute a component sets, assert the rendered result
+— the attribute and the rule agreeing is the thing worth testing, and it is
+cheap to test once a computed-style harness exists.
+
+**Re-verified 2026-09-09, and the first run found the fix only half-applied.**
+When this entry was first written the `Sidebar.tsx` half was committed
+(`8501899`) but `index.css` still carried `.sidebar-link[data-active='true']`,
+so the rules keyed off an attribute the component no longer set anywhere —
+the same defect as before, one step worse, because the inner span carrying
+`data-active` was now gone too. The suite said so plainly: **14/23, with all
+nine style assertions failing** (`background rgba(0, 0, 0, 0)`,
+`font-weight 400`, `pill content none`) while the two `aria-current`
+assertions passed, which is exactly the signature of markup fixed and styling
+not. Re-keyed the three rules to `aria-current='page'`, rebuilt, and the spec
+is **23/23**; full frontend suite **95/95**.
+
+The claim above — "confirmed to fail against the old markup and pass against
+the new" — is true only as of this re-run. It was written against a tree where
+half the fix was absent, which is the precise failure mode BUG-FE-035 recorded
+about BUG-FE-034: **a registry entry asserting a verification that was never
+executed.** Two entries in two days is a pattern, not a coincidence. Hard rule
+10 applies to registry entries exactly as it applies to builds — an entry that
+says "verified" must name the run that verified it.
+
+> **Concurrent-session hazard, worth recording once.** This tree is written by
+> more than one session at a time (see `RESUME_POINT.md`). `index.css` was
+> reverted underneath a read during this pass, and a first splice interleaved
+> with a simultaneous write and dropped `.sidebar-link` entirely. The recovery
+> that worked: `git checkout HEAD --` the single file, then re-apply in **one**
+> command that computes its own line numbers. Never splice a file across two
+> tool calls here.

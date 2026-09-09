@@ -15,6 +15,7 @@ const SPECS = [
   ['products', './products/product-grid.spec.mjs'],
   ['navigation', './navigation/responsive.spec.mjs'],
   ['page-header', './navigation/page-header.spec.mjs'],
+  ['sidebar', './navigation/sidebar.spec.mjs'],
 ];
 
 const external = Boolean(process.env.E2E_BASE_URL);

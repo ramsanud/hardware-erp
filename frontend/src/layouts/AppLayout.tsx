@@ -65,14 +65,16 @@ function AppLayoutInner() {
           below that (CR-061). */}
       <aside
         className={cn(
-          'hidden shrink-0 transition-[width] duration-200 lg:block',
+          'hidden shrink-0 border-r border-sidebar-border bg-sidebar transition-[width] duration-200 lg:block',
           collapsed ? 'w-[68px]' : 'w-64',
         )}
-        style={{ background: 'hsl(var(--sidebar))' }}
       >
         <div className="sticky top-0 flex h-dvh flex-col">
-          <SidebarBrand collapsed={collapsed} />
-          <div className="flex-1 overflow-y-auto">
+          <SidebarBrand collapsed={collapsed} onToggleCollapsed={() => setCollapsed(true)} />
+          {/* overflow-x-hidden, not just -y-auto: while the rail animates to
+              68px the labels are briefly wider than the track, and without
+              this the sidebar itself scrolls sideways mid-transition. */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden">
             <SidebarNav collapsed={collapsed} />
           </div>
           <SidebarFooter collapsed={collapsed} />
