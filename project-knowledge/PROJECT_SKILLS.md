@@ -386,3 +386,33 @@ Lessons learned. Read before every module; append after every module.
     underlying client (`JavaMailSender`, `HttpClient`, an SDK type) -
     the ones that never went through the interface are exactly the ones
     that will not move with it.
+
+18. **A failing test suite in this repo is not a failing test suite until
+    you have re-run it in a private worktree.** Multiple Claude sessions
+    work this checkout at once, and Maven's `target/` is shared mutable
+    state: one session's `mvn clean` deletes the class files another
+    session's suite is halfway through loading. On 2026-09-09 that cost
+    three full `mvn clean verify` runs and produced three different,
+    entirely fictional "bugs":
+
+    | Run | Symptom | Real cause |
+    |---|---|---|
+    | 1 | `DataResetIT`, `SupportTicketFlowIT` — *Unable to find a `@SpringBootConfiguration`* | `target/classes` emptied mid-run; these two are last alphabetically, so they ran after the wipe |
+    | 2 | `RateLimitIT` — *No qualifying bean of type `TotpService`* | same wipe, caught during a component scan |
+    | 3 | 101 of 108 integration tests | `ClassNotFoundException: RateLimitFilter$CachedBodyHttpServletRequest` — a nested class file that vanished underneath the JVM |
+
+    Every one of them passed on an isolated re-run, and the same commit
+    then gave **510 unit + 228 integration tests, exit 0** in a clean
+    worktree. The tell is the *shape* of the error: `ClassNotFoundException`,
+    "no qualifying bean" for an unconditional `@Service`, or a failed
+    `@SpringBootConfiguration` search are all **"a classpath scan found
+    nothing"** — a category that essentially never means the code changed
+    and almost always means the class files moved. A genuine regression
+    fails an assertion.
+
+    So: `git worktree add --detach <tmp> <commit>` and verify there. It
+    gets its own `target/`, it pins the exact commit rather than a tree
+    someone else is still typing into, and it is the only way to make the
+    "verified on the merge result itself, in a clean worktree" claim in
+    CLAUDE.md honestly. Never "fix" a test that fails this way — there is
+    nothing to fix, and the edit will be wrong.

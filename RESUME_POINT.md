@@ -8,6 +8,14 @@
 
 **The defect this surfaced, fixed in the same commit.** Switching only the notification channel would have left three divergent email paths — `SmtpMailService` (password-reset links), `InvoiceEmailServiceImpl` (invoice PDF) and `MailDiagnosticServiceImpl` (the Settings test button) each reached for `JavaMailSender` directly. **A deployment with a SendGrid key and no `MAIL_USER` would have looked healthy, sent invoices, and silently dropped every password-reset link.** All three now go through one `EmailTransport`; `SmtpMailService` is renamed `PasswordResetMailService`, since SMTP is no longer necessarily how it sends.
 
+### Verified on the commit itself, in a clean worktree
+
+`18ca265`, checked out detached into its own worktree so nothing else could touch its `target/`: **510 unit tests and 228 integration tests, 0 failures, 0 errors, `mvn clean verify` exit 0.** Frontend: `tsc -b --force` exit 0, `vite build` exit 0, E2E **95/95**.
+
+That isolation was not ceremony. Three earlier full runs in the shared checkout failed with three different phantom defects — a missing `@SpringBootConfiguration`, a missing `TotpService` bean, and 101 errors from a vanished nested class — all caused by another session running `mvn clean` against the same `target/`. See lesson 18 in `PROJECT_SKILLS.md`; do not chase these.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this machine (hard rule 10).
+
 ### Also in this commit — CR-073, and why it could not be separated
 
 **Contact admin accepts an optional screenshot** (CR-073): PNG/JPEG/WebP, 2MB, validated by the same shared `ImageValidation.PHOTO_TYPES` as avatar, logo and expense receipts. Emailed as a MIME attachment and **never stored** — `notification_log.body` keeps only the name, type and size. A second mapping on the same path, separated by `consumes`, so the JSON contract is untouched. Five unit tests in `EmailAttachmentTest`.
