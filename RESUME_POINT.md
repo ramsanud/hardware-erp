@@ -1,5 +1,25 @@
 # RESUME POINT
 
+**Updated:** 2026-09-09 (**CR-071 — the two registries the last pass did not reach**). Documentation only. No code, no schema, no endpoint.
+
+**What was asked:** confirm every registry is complete, verify the architecture, test it, then commit and merge to `main`.
+
+**Eight of ten registries were already sound.** `SECURITY_REGISTRY`, `PROJECT_SKILLS`, `PROJECT_REGISTRY`, `CHANGE_REQUEST_REGISTRY`, `BUG_REGISTRY`, `API_REGISTRY`, `DATABASE_REGISTRY` and `VERSION` all survived checking. Every CR from CR-001 to CR-070 is documented — early ones as index-table rows, CR-045 onward as full sections — and the only two absent, **CR-042 and CR-044, are absent on purpose**: the registry itself records that they were never allocated.
+
+**Two were not merely stale, they were wrong.** `MODULE_DEPENDENCY_MAP.md` (untouched since the CR-007 era) and `FEATURE_REGISTRY.md` (since CR-016) both still named **MySQL** as the database — flatly contradicting hard rule 3 — and the feature registry listed Inventory, Customer, Invoice, Payment, Purchase and Quotation as *planned* when all six have shipped, claimed Testcontainers ran MySQL 8, and left CR-008 and CR-009 "awaiting decision" thirteen months after both were approved. A session trusting either file would have built against the wrong database and treated finished modules as greenfield. Both rebuilt from the source tree: the dependency map from the actual `com.hardware.erp.*` import graph rather than the original plan, the feature registry as built / backend-only / cross-tenant / deliberately absent.
+
+**The architecture check found one real thing.** There is a **`product` ↔ `invoice` package cycle**: `invoice` imports `product` for its line items, and `ProductServiceImpl` injects `InvoiceItemRepository` plus `InvoiceStatus` so `priceHistory()` can list recent actual sale prices. `ProductImportServiceImpl` also reaches into `purchase` for `DocumentUploadValidation`, shared upload validation that belongs in `common/`. **Behaviour is correct and tenant-scoped in both cases, so neither was changed** — untangling them is a refactor and needs its own CR. It is now written into the dependency map rather than left invisible. `invoice` itself was checked and imports nothing upward: no `salesorder`, `creditnote`, `deliverychallan`, `project`, `labour`, `dashboard`, `analytics` or `expense`.
+
+**What else held up.** No `hasRole(...)` anywhere in business authorization. No token in `localStorage`. `ddl-auto: validate`. Money is `BIGINT` paise throughout, with `BigDecimal` appearing only as intermediate precision in `LineDiscount` and `IndianCurrencyFormat` and rounded back to whole paise exactly once. Hard deletes exist only where a referential guard precedes them — `BrandServiceImpl` refuses while products reference the brand, `RoleServiceImpl` while users hold the role. Repositories with no `tenantId` in their signatures are either platform-level, global reference data, or child tables reached through a parent resolved by `findByIdAndTenantId` first: `SupplierServiceImpl.updateContact` is the pattern, and it carries the comment explaining why.
+
+**Also corrected:** CLAUDE.md said 215 integration tests (now 217); CR-070 had a section but no index row; and CR-001's resolution text, which predates CR-014 by hours, is now annotated as superseded in part rather than rewritten — the record of what was decided stays verbatim.
+
+**Verified — executed, not claimed.** `mvn clean verify`: **474 unit + 217 Testcontainers integration tests, 0 failures, 0 errors, BUILD SUCCESS**. `tsc -b --force` exit 0. `vite build` exit 0. `registry/static_check.py` **not executed** — `python3` is not installed on this machine (hard rule 10).
+
+**The four `qa-*.mjs`/`qa-smoke.png` debug files** the previous pass left deliberately uncommitted have been moved out of the working tree to the session scratchpad. They pointed at `localhost:5173` and nothing in `frontend/tests/` referenced them.
+
+---
+
 **Updated:** 2026-09-09 (**registry reconciliation, BUG-FE-017 regression tests, and the first green merge to `main`**). No new feature — this pass closed the gaps the registries themselves had recorded and left open.
 
 **The one defect that mattered.** The branch **had not compiled since `ed77812`**. CR-068 widened `ProductSummaryResponse` to fifteen components so the column picker could offer description, model no, barcode, HSN and MRP; `ProductMapper` was left passing the original ten. It went unnoticed because `mvn clean verify` was being run against a working tree that carried the missing fix *uncommitted*. Verifying the **merge result** in a clean worktree is what surfaced it, and that is now the rule this file recommends: a green suite on a dirty tree proves nothing about what you are about to merge.
