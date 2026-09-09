@@ -118,13 +118,23 @@ jobs:
         run: |
           set -euo pipefail
           pattern='(API_KEY|APIKEY|SECRET|PASSWORD|PASSWD|TOKEN|PRIVATE_KEY|SERVICE_ROLE_KEY)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_/+=-]{16,}'
+          # A Spring ${ENV_VAR:default} reference is not an assigned secret -
+          # it names the variable that supplies one. This step always meant to
+          # skip them (see the comment above the step), but the pattern never
+          # actually did, so every such default in application.yml failed the
+          # scan. Dropping them here is what makes the rest of this step
+          # meaningful: a check that cries wolf on its own config gets muted.
+          envref='\$\{[A-Za-z_][A-Za-z0-9_]*:'
           # Known-safe placeholders, each one deliberate:
           #   the two base64 strings are the documented development and unit-test
           #   JWT secrets, both listed in JwtSecretGuard.KNOWN_PLACEHOLDERS, and
           #   the application refuses to start with either under the prod profile.
-          allow='Y2hhbmdlLW1lLWluLXByb2R1Y3Rpb24|dGVzdC1zZWNyZXQta2V5|b3RoZXItc2VjcmV0LWtle|change-me|yourpassword|your-password|xxxxx'
+          #   test_webhook_secret is a unit-test constant in
+          #   SubscriptionBillingServiceImplTest, never read at runtime.
+          allow='Y2hhbmdlLW1lLWluLXByb2R1Y3Rpb24|dGVzdC1zZWNyZXQta2V5|b3RoZXItc2VjcmV0LWtle|change-me|yourpassword|your-password|xxxxx|test_webhook_secret'
           if grep -rIEn --exclude-dir=.git --exclude-dir=node_modules \
                --exclude-dir=target --exclude-dir=dist "$pattern" . \
+               | grep -vE "$envref" \
                | grep -vE "$allow"; then
             echo "::error::A literal secret-like value is present. Move it to an environment variable."
             exit 1

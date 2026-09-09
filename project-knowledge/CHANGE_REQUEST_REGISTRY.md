@@ -78,6 +78,8 @@ Nothing is implemented from conversation memory.
 | CR-068 | 2026-09-08 | User | Per-user column choice on every list | **APPLIED, 2026-09-09** |
 | CR-067 | 2026-09-08 | User | Shop data reset, behind a CAPTCHA and a typed confirmation | **APPLIED, 2026-09-09** |
 | CR-069 | 2026-09-08 | User | Premium auth screens, rebuilt on theme tokens | **APPLIED, 2026-09-09** |
+| CR-070 | 2026-09-09 | User | Stock list filters to what is actually out of stock | **APPLIED, 2026-09-09** |
+| CR-071 | 2026-09-09 | Claude | Documentation only. Rebuild `FEATURE_REGISTRY.md` and `MODULE_DEPENDENCY_MAP.md` against the real source tree; both had drifted far enough to mislead — they named MySQL as the database and listed shipped modules as "planned". Records the `product` ↔ `invoice` package cycle rather than hiding it. No code change. | **APPLIED, 2026-09-09** |
 ---
 
 
@@ -390,6 +392,11 @@ Layout B is confirmed. No architecture change. One Spring Boot application, one
 React application, one MySQL database. Module folders express **boundaries**,
 not deployment units, so a module could be extracted later if the architecture
 ever evolves — but nothing is extracted now.
+
+> **Superseded in part.** "One MySQL database" was true when this resolution
+> was written and was replaced the same day by **CR-014** (MySQL 8 →
+> PostgreSQL). The database is PostgreSQL 16. Retained verbatim as the record
+> of what was decided; the layout ruling itself still stands.
 
 Base package stays `com.hardware.erp`. `com/company/erp` was placeholder text.
 
@@ -4118,3 +4125,63 @@ arithmetically honest even though the split is not shown.
 Money is `BIGINT` paise throughout, never `double`. Percentage arithmetic runs
 at `BigDecimal` precision and rounds to whole paise exactly once, `HALF_UP`,
 matching the rounding used everywhere else.
+
+---
+
+## CR-071 — Registry accuracy pass: FEATURE_REGISTRY and MODULE_DEPENDENCY_MAP (APPLIED 2026-09-09)
+
+**Raised by:** Claude, during a full-registry completeness check.
+**Type:** documentation only. No code, no schema, no migration, no endpoint.
+
+### Why it was needed
+
+Both files had drifted past the point of being merely out of date and had
+become actively misleading to anyone reading them as source of truth:
+
+| File | Last real update | What it claimed | Reality |
+|---|---|---|---|
+| `MODULE_DEPENDENCY_MAP.md` | 2026-08-13 (CR-007 era) | "one **MySQL** database"; 12 modules | PostgreSQL 16 since CR-014; 29 backend packages, 22 frontend modules |
+| `FEATURE_REGISTRY.md` | 2026-08-22 (CR-016 era) | Auth "in progress"; Inventory, Customer, Invoice, Payment, Purchase, Quotation listed as **planned**; "Testcontainers **MySQL 8**"; CR-008 and CR-009 "awaiting decision" | all shipped and green; Testcontainers PostgreSQL 16; both CRs approved 2026-08-13 |
+
+The MySQL claims directly contradicted hard rule 3 (PostgreSQL only). A
+session starting from either file would have built against the wrong database
+and treated finished modules as greenfield work — the same class of failure
+the BUG-ENV-001 note in CLAUDE.md was written to prevent.
+
+### What changed
+
+- `MODULE_DEPENDENCY_MAP.md` rebuilt from the actual import graph, derived by
+  scanning `com.hardware.erp.*` imports per package rather than from the
+  original plan. Adds the foundation layer, the newer business modules
+  (sales order, delivery challan, credit note, project, labour, coupon,
+  expense, analytics, export, support ticket), and states plainly that
+  `platformadmin` sits outside tenant isolation by design.
+- `FEATURE_REGISTRY.md` rebuilt as built / backend-only / cross-tenant /
+  deliberately absent, with the CR-004 business rules kept and each one marked
+  where it still awaits Product Variant.
+- CR-001 resolution text annotated as superseded in part by CR-014, rather
+  than rewritten — the record of what was decided stays verbatim.
+- CLAUDE.md integration-test count corrected from 215 to 217.
+- CR-070 gained its missing row in the index table.
+
+### Recorded, deliberately not fixed: the `product` ↔ `invoice` cycle
+
+`ProductServiceImpl` injects `InvoiceItemRepository` and imports
+`InvoiceStatus` so that `priceHistory()` can list recent actual sale prices,
+while `invoice` imports `product` for its line items. That is a bidirectional
+package dependency. `ProductImportServiceImpl` likewise reaches into
+`purchase` for `DocumentUploadValidation`, shared upload validation that
+belongs in `common/`.
+
+Behaviour is correct in both cases and tenant-scoped, so nothing was changed
+under a documentation pass. Untangling them is a refactor and needs its own
+CR, per the "never silently build large new subsystems" bound in CLAUDE.md.
+The cycle is now written down in `MODULE_DEPENDENCY_MAP.md` instead of being
+quietly absent from it.
+
+### Verification
+
+`mvn clean verify` green on the same tree: 474 unit tests, 217 Testcontainers
+integration tests, 0 failures, exit 0. Frontend `tsc -b --force` and
+`vite build` both exit 0. `registry/static_check.py` **not executed** —
+python3 is not installed on this machine (hard rule 10).

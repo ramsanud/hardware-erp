@@ -293,7 +293,7 @@ false picture.
 None outstanding. The document-number race previously listed here was fixed by
 **CR-041** (`document_sequence`, V29, `SELECT … FOR UPDATE`).
 
-The full suite is green as of 2026-09-09: **474 unit tests and 215
+The full suite is green as of 2026-09-09: **474 unit tests and 217
 Testcontainers integration tests**, `mvn clean verify`, exit 0 — verified on
 the merge result itself, in a clean worktree, not on a working tree carrying
 uncommitted fixes. That distinction is not pedantic: it is exactly what caught
