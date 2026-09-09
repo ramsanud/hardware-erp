@@ -4,7 +4,10 @@ import com.hardware.erp.common.dto.ErrorResponse;
 import com.hardware.erp.common.web.RequestCorrelationFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.query.sqm.UnknownPathException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
+import org.springframework.data.mapping.PropertyReferenceException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,10 +31,16 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    /** Matches Hibernate's "Could not resolve attribute 'foo' of 'Bar'". */
+    private static final Pattern UNKNOWN_ATTRIBUTE =
+            Pattern.compile("attribute '([^']+)'");
 
     private String requestId(HttpServletRequest req) {
         return RequestCorrelationFilter.currentRequestId(req);
@@ -191,6 +200,75 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleOptimisticLock(HttpServletRequest req) {
         return build(HttpStatus.CONFLICT, "STALE_RECORD",
                 "Someone else changed this record. Please reload and try again.", req);
+    }
+
+    /**
+     * BUG-BE-004: an unknown ?sort= field is a bad request, not a server fault.
+     *
+     * The list endpoints that bind a Pageable directly let Spring append the
+     * client's sort property to the JPQL order-by. An attribute the entity does
+     * not have then fails when the query is built - Hibernate's
+     * UnknownPathException, or Spring Data's PropertyReferenceException on a
+     * derived query - and both landed in handleUnexpected() as a 500. Nine list
+     * endpoints answered INTERNAL_ERROR for a typo in a query string.
+     *
+     * Deliberately narrow. PropertyReferenceException only ever means a
+     * property name that does not resolve, so it maps whole. Its Hibernate
+     * counterpart arrives wrapped in InvalidDataAccessApiUsageException, which
+     * also covers genuine mistakes in our own queries - those must keep
+     * surfacing as 500s, so the cause is inspected and anything else is
+     * rethrown rather than quietly downgraded to a client error.
+     */
+    @ExceptionHandler(PropertyReferenceException.class)
+    public ResponseEntity<ErrorResponse> handleUnknownSortProperty(PropertyReferenceException ex,
+                                                                   HttpServletRequest req) {
+        log.warn("[{}] Unknown sort property at {}: {}", requestId(req), req.getRequestURI(),
+                ex.getPropertyName());
+        return badSort(ex.getPropertyName(), req);
+    }
+
+    @ExceptionHandler(InvalidDataAccessApiUsageException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidQueryUsage(InvalidDataAccessApiUsageException ex,
+                                                                 HttpServletRequest req) {
+        // Walked, not read one level down: Hibernate nests UnknownPathException
+        // at varying depths depending on where in query building it surfaced,
+        // and checking only getCause() misses it for most queries.
+        for (Throwable cause = ex.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof UnknownPathException) {
+                log.warn("[{}] Unknown sort property at {}: {}", requestId(req),
+                        req.getRequestURI(), cause.getMessage());
+                return badSort(attributeNameFrom(cause.getMessage()), req);
+            }
+            if (cause == cause.getCause()) {
+                break;
+            }
+        }
+        // Not a client's doing: a query this application built is wrong. Handled
+        // here rather than rethrown - Spring does not re-resolve an exception
+        // thrown out of an @ExceptionHandler, so rethrowing would escape the
+        // ErrorResponse contract and hand the caller a container error page.
+        return handleUnexpected(ex, req);
+    }
+
+    /**
+     * Hibernate names the attribute only inside its message ("Could not resolve
+     * attribute 'foo' of '...'"), so it is lifted out to keep the client-facing
+     * error as useful as the Spring Data one, which carries it as a field.
+     * Returns null if the message ever stops carrying it - the caller degrades
+     * to "that field" rather than to a broken sentence.
+     */
+    private static String attributeNameFrom(String message) {
+        if (message == null) {
+            return null;
+        }
+        Matcher matcher = UNKNOWN_ATTRIBUTE.matcher(message);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    private ResponseEntity<ErrorResponse> badSort(String property, HttpServletRequest req) {
+        String named = property == null || property.isBlank() ? "that field" : "'" + property + "'";
+        return build(HttpStatus.BAD_REQUEST, "INVALID_SORT_FIELD",
+                "Cannot sort by " + named + " - no such field on this resource.", req);
     }
 
     /** Anything here is a bug. Log it in full, tell the client nothing. */

@@ -94,6 +94,8 @@ generating new code; never reintroduce a listed bug.
 | BUG-FE-034 | Frontend | Low | Fixed 2026-09-08 |
 | BUG-FE-035 | Frontend | Medium | Fixed 2026-09-09 |
 | BUG-FE-036 | Frontend | Medium | Fixed 2026-09-09 |
+| BUG-BE-003 | Backend / Inventory | High | Fixed 2026-09-09 |
+| BUG-BE-004 | Backend / Common | Medium | Fixed 2026-09-09 |
 
 **This index is complete and covers every entry in this file (verified
 2026-09-08).** It previously stopped at `BUG-ENV-003`, omitting 33 later
@@ -3496,3 +3498,128 @@ says "verified" must name the run that verified it.
 > that worked: `git checkout HEAD --` the single file, then re-apply in **one**
 > command that computes its own line numbers. Never splice a file across two
 > tool calls here.
+
+
+---
+
+## BUG-BE-003 — reading the stock of a product with no stock row returned 500 (FIXED, 2026-09-09)
+
+| | |
+|---|---|
+| **Severity** | High — the Inventory detail view was unreachable for a newly created product, which is every product until its first stock movement |
+| **Layer** | BACKEND ONLY |
+| **Found** | Sweeping every GET in the OpenAPI document against a running dev instance (2026-09-09), not from a user report |
+| **Symptom** | `GET /v1/stock/{productId}` and `GET /v1/stock/{productId}/movements` answered `500 INTERNAL_ERROR`. On the dev database this was **10,004 of 10,018 products**; the 14 that worked were the seeded ones |
+
+**Root cause — a read that tried to write.** `StockServiceImpl` keeps one Stock
+row per (tenant, product) and, by design, creates it "lazily on first access"
+so that Inventory stays a module Product need not know about. That lazy
+creation was reached from the read path:
+
+```java
+@Transactional(readOnly = true)
+public StockResponse get(Long productId) {
+    return stockMapper.toResponse(requireStock(productId, ...));  // requireStock -> save()
+}
+```
+
+PostgreSQL refuses an INSERT inside a read-only transaction outright
+(`SQLState 25006, cannot execute INSERT in a read-only transaction`), so the
+lazy branch could never succeed — it could only throw. The endpoint worked for
+exactly those products whose row already existed.
+
+**Why the whole suite was green over it.** The dev/test seed inserts opening
+stock for every product it creates, with the comment *"Real opening stock for
+every product above, so a sale can be made immediately - not a Stock row
+created lazily at zero on first API call."* Every product any test could reach
+therefore already had a row, and no test ever entered the lazy branch through a
+read. The seed comment is not incidental to this bug; it is the reason it
+survived to be found by an external sweep.
+
+**Fix.** Reads no longer write. `readStock(...)` returns an **unsaved**
+zero-quantity Stock when the row is absent; `StockMapper` reads only the
+product and the quantity, so a transient instance maps to exactly the response
+a freshly-created row would have produced. The write path (`applyMovement`)
+still creates the row for real — the only place that legitimately can. A
+product the tenant does not own still 404s, from the same `findByIdAndTenantId`
+as before.
+
+**Rejected: dropping `readOnly`.** It would also have turned the 500 into a
+200, while leaving a GET that writes a row to the database on every view. The
+regression test asserts the absence of the write for that reason, not just the
+status code.
+
+**Regression tests — verified against the defect, not merely written.**
+`StockReadWithoutRowIT` (4 cases: zero read, empty movements, no row persisted,
+unknown product still 404) — **3 of 4 fail against the pre-fix code**, the
+fourth being the 404 guard that must pass in both directions. Plus two cases in
+`StockServiceImplTest` asserting a read never calls `save()`, which **both fail
+pre-fix**. Both were run against a clean worktree at the previous commit to
+confirm the failure, then against the fix.
+
+The IT creates its own product rather than hunting for one without stock —
+that is both the real-world path (add a product, open it, 500) and the only way
+to reach the branch given what the seed guarantees.
+
+---
+
+## BUG-BE-004 — an unknown `?sort=` field returned 500 on nine list endpoints (FIXED, 2026-09-09)
+
+| | |
+|---|---|
+| **Severity** | Medium — a typo, a stale bookmark or a renamed frontend column produced a server error instead of a client error; no data at risk |
+| **Layer** | BACKEND ONLY |
+| **Found** | Same OpenAPI sweep, probing `?sort=nosuchfield,asc` across every list endpoint |
+| **Symptom** | `500 INTERNAL_ERROR` on `/v1/customers`, `/v1/invoices`, `/v1/purchases`, `/v1/quotations`, `/v1/payments`, `/v1/expenses`, `/v1/stock`, `/v1/projects`, `/v1/coupons` |
+
+**Root cause — an unmapped exception.** These endpoints bind a Spring
+`Pageable` directly, so the client's sort property is appended to the JPQL
+order-by:
+
+```
+order by c.customerName asc, c.nosuchfield asc
+```
+
+Hibernate then throws `UnknownPathException` when the query is built, wrapped
+in `InvalidDataAccessApiUsageException`. Nothing handled it, so it fell to
+`handleUnexpected(Exception.class)` and was reported as a server fault.
+
+**Why four list endpoints were immune, and it is not luck.** Products,
+suppliers, categories and brands do not accept a `Pageable` at all — they take
+`sortBy`/`sortDir` and map them through an explicit `SORTABLE` whitelist,
+falling back to a default for anything unrecognised, and clamp page size while
+they are at it. Those are the modules most tests exercise, which is why the
+defect was invisible from the inside.
+
+**Fix — one handler, not nine controllers.** `GlobalExceptionHandler` now maps
+`PropertyReferenceException` (Spring Data's own, thrown on derived queries) and
+`InvalidDataAccessApiUsageException` **caused by** `UnknownPathException` to
+`400 INVALID_SORT_FIELD`. The fault was one unmapped exception; converting nine
+modules to the whitelist pattern is a refactor and would need its own CR.
+
+Two details that are deliberate:
+
+- **The cause chain is walked, not read one level down.** Hibernate nests
+  `UnknownPathException` at varying depths, and checking only `getCause()`
+  caught none of the real cases — the first attempt at this fix still returned
+  500 for exactly that reason.
+- **A non-sort `InvalidDataAccessApiUsageException` is still a 500.** That
+  exception also covers genuinely broken queries of our own, which must keep
+  surfacing as server errors. It is handled in place rather than rethrown,
+  because **Spring does not re-resolve an exception thrown out of an
+  `@ExceptionHandler`** — rethrowing would have escaped the `ErrorResponse`
+  contract and returned a container error page.
+
+**Regression test.** `InvalidSortFieldIT` — all nine endpoints must answer 400
+`INVALID_SORT_FIELD`; a valid sort and an absent sort must still return 200;
+and the two whitelist endpoints must keep *ignoring* an unknown sort rather
+than starting to reject it, so a later "consistency" pass cannot silently break
+working requests. **Fails against the pre-fix code (500), passes against the
+fix**, confirmed on a clean worktree at the previous commit.
+
+> **Build note for this machine.** Both fixes were briefly "not working" against
+> stale classes: Maven's incremental compilation did not pick up an edited
+> source, and `failsafe:integration-test` happily ran the previous build. Run
+> `mvn -o clean test-compile` before trusting an integration-test result here.
+> Also `javap` is not on PATH in Git Bash, so it cannot be used to check what
+> actually compiled.

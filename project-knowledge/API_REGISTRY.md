@@ -54,6 +54,7 @@ of roles.
 | 201 | resource created |
 | 204 | delete succeeded, no body |
 | 400 | malformed JSON, bad parameter, validation failure |
+| 400 | `INVALID_SORT_FIELD` - a `?sort=` property the entity does not have. BUG-BE-004: the list endpoints that bind a `Pageable` used to answer 500 for this. The endpoints taking `sortBy`/`sortDir` through a whitelist (products, suppliers, categories, brands) instead **ignore** an unknown value and still return 200 - a deliberate difference, asserted by `InvalidSortFieldIT` |
 | 401 | missing/invalid/expired token, invalid credentials |
 | 403 | authenticated but lacks the permission |
 | 404 | resource or endpoint not found |
