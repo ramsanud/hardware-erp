@@ -717,3 +717,34 @@ reset writes a `DATA_RESET` entry to both.
 `coupon.times_used` back to 0, and `document_sequence.next_value` back to 1 for
 `INVOICE`, `QUOTATION`, `PURCHASE` and `PROJECT` only — never for the master
 document types, whose records survive and whose codes must not be reissued.
+
+---
+
+## CR-070 — `outOfStockOnly` on the stock list
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/v1/stock` | `INVENTORY_VIEW` | Gained `outOfStockOnly` (boolean, default `false`) alongside the existing `search` and `lowStockOnly`. |
+
+**It is a second flag, not a reinterpretation of `lowStockOnly`.** Low means
+at or below the reorder level — a purchasing prompt, and the shop is still
+selling. Out means the counter has nothing to hand over. A shop wants the
+second on its own.
+
+**The two AND.** Sending both returns rows that are both, which for any
+non-negative reorder level is exactly the out-of-stock set — so no combination
+of the two returns something incoherent, and neither flag was made to override
+the other.
+
+**The predicate is `<= 0`, not `= 0`.** A negative balance is unreachable
+through the application (`StockService` refuses to write one) but reachable by
+a direct database edit or a future bug, and a row the shop cannot sell from
+belongs on the list that exists to show exactly that.
+
+Unblocks CR-066's `out-of-stock-list` widget, which was recorded as needing
+"only a zero-quantity filter on `GET /v1/stock`". Regression test:
+`StockOutOfStockFilterIT`, 2 tests against real PostgreSQL.
+
+**`GET /v1/activity-log` was NOT added** — see CR-070 in the change request
+registry. `activity_log` has no `tenant_id`, so a shop-wide viewer over the
+existing repository query would have read every tenant's business changes.

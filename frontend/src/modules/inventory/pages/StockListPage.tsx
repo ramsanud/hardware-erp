@@ -83,6 +83,7 @@ export function StockListPage() {
   const columns = useColumnPreferences('stock', STOCK_COLUMNS);
   const [search, setSearch] = useState('');
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [outOfStockOnly, setOutOfStockOnly] = useState(false);
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   const [adjusting, setAdjusting] = useState<StockResponse | null>(null);
@@ -90,14 +91,14 @@ export function StockListPage() {
 
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
 
-  useEffect(() => { setPage(0); }, [debouncedSearch, lowStockOnly, size]);
+  useEffect(() => { setPage(0); }, [debouncedSearch, lowStockOnly, outOfStockOnly, size]);
 
   const fetcher = useCallback(
-    () => stockService.search({ search: debouncedSearch || undefined, lowStockOnly, page, size }),
-    [debouncedSearch, lowStockOnly, page, size],
+    () => stockService.search({ search: debouncedSearch || undefined, lowStockOnly, outOfStockOnly, page, size }),
+    [debouncedSearch, lowStockOnly, outOfStockOnly, page, size],
   );
 
-  const { data, loading, error, reload } = useAsyncList(fetcher, [debouncedSearch, lowStockOnly, page, size]);
+  const { data, loading, error, reload } = useAsyncList(fetcher, [debouncedSearch, lowStockOnly, outOfStockOnly, page, size]);
 
   const {
     register, handleSubmit, reset, formState: { errors, isSubmitting },
@@ -159,6 +160,16 @@ export function StockListPage() {
         <label className="flex items-center gap-2 text-sm">
           <Checkbox checked={lowStockOnly} onCheckedChange={(v) => setLowStockOnly(Boolean(v))} />
           Low stock only
+        </label>
+        {/*
+          CR-070. Kept as a second checkbox rather than folded into the first:
+          "low" is a prompt to reorder, "out" is a customer standing at the
+          counter with nothing to buy. The two AND server-side, so ticking both
+          narrows to out-of-stock rather than contradicting itself.
+        */}
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={outOfStockOnly} onCheckedChange={(v) => setOutOfStockOnly(Boolean(v))} />
+          Out of stock only
         </label>
       </div>
 

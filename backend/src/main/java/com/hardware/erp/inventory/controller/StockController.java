@@ -27,8 +27,11 @@ public class StockController {
     public ApiResponse<PageResponse<StockResponse>> search(
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "false") boolean lowStockOnly,
+            // CR-070. Out of stock is a different question from low stock: low
+            // is a purchasing prompt, zero is a lost sale in progress.
+            @RequestParam(defaultValue = "false") boolean outOfStockOnly,
             @PageableDefault(size = 20) Pageable pageable) {
-        return ApiResponse.ok(stockService.search(search, lowStockOnly, pageable));
+        return ApiResponse.ok(stockService.search(search, lowStockOnly, outOfStockOnly, pageable));
     }
 
     @GetMapping("/{productId}")

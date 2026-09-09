@@ -269,8 +269,8 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
     description: 'Products with no sellable quantity left.',
     category: 'inventory',
     permission: PERMISSIONS.INVENTORY_VIEW,
-    dataSource: 'needs-endpoint',
-    blockedReason: 'GET /v1/stock has only a lowStockOnly flag; there is no zero-quantity filter.',
+    // CR-070 added the outOfStockOnly flag this was waiting on.
+    dataSource: 'available',
   },
   {
     id: 'stock-value',
