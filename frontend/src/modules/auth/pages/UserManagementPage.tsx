@@ -258,7 +258,7 @@ export function UserManagementPage() {
         title="Users"
         description="Employee accounts. There is no self-registration: every account is created here."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="user" />
             <PermissionGate permission={PERMISSIONS.USER_MANAGE}>
               <Button onClick={() => setCreating(true)}>

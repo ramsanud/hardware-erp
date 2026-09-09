@@ -144,7 +144,7 @@ export function BrandListPage() {
         title="Brands"
         description="Brand master for the product catalogue."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="brand" />
             <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>
               <Button onClick={() => setCreating(true)}>Add brand</Button>

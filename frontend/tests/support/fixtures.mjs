@@ -23,7 +23,11 @@ export const OWNER = {
     'CUSTOMER_VIEW', 'CUSTOMER_MANAGE', 'SUPPLIER_VIEW', 'SUPPLIER_MANAGE',
     'PRODUCT_VIEW', 'PRODUCT_MANAGE', 'PRODUCT_VIEW_COST', 'PRODUCT_VIEW_STOCK',
     'PURCHASE_VIEW', 'PURCHASE_MANAGE', 'QUOTATION_VIEW', 'QUOTATION_MANAGE',
-    'INVOICE_VIEW', 'INVOICE_CREATE', 'INVENTORY_VIEW', 'PAYMENT_VIEW',
+    // INVOICE_CANCEL and PAYMENT_MANAGE were missing here, so the stubbed
+    // owner rendered an invoice toolbar two buttons shorter than the real
+    // one - which is how BUG-FE-035 stayed invisible to this suite.
+    'INVOICE_VIEW', 'INVOICE_CREATE', 'INVOICE_CANCEL',
+    'INVENTORY_VIEW', 'PAYMENT_VIEW', 'PAYMENT_MANAGE',
     'EXPENSE_VIEW', 'EXPENSE_MANAGE', 'REPORT_VIEW', 'REPORT_FINANCIAL',
     'SETTINGS_VIEW', 'SETTINGS_MANAGE', 'COUPON_VIEW', 'COUPON_MANAGE',
     'PROJECT_VIEW', 'PROJECT_MANAGE', 'LABOUR_VIEW', 'LABOUR_MANAGE',
@@ -71,6 +75,8 @@ export function signedInApi({ products = PRODUCTS, user = OWNER } = {}) {
     }
     if (url.includes('/v1/auth/captcha-config')) return envelope({ enabled: false, siteKey: null });
     if (url.includes('/v1/auth/me')) return envelope(user);
+    // Before /v1/products, or the detail lookup falls through to the page stub.
+    if (/\/v1\/invoices\/\d+/.test(url)) return envelope(UNPAID_INVOICE);
     if (url.includes('/v1/products')) return pageOf(products);
     if (url.includes('/v1/categories')) return envelope([{ id: 1, categoryName: 'Plumbing', status: 'ACTIVE' }]);
     if (url.includes('/v1/brands')) return envelope([{ id: 1, brandName: 'Ashirvad', status: 'ACTIVE' }]);
@@ -82,6 +88,51 @@ export function signedInApi({ products = PRODUCTS, user = OWNER } = {}) {
     return envelope(null);
   };
 }
+
+/**
+ * invoice/dto/InvoiceResponse.java — an UNPAID invoice, which is the state
+ * that renders the most toolbar actions (BUG-FE-035). PARTIALLY_PAID and
+ * UNPAID are the two `canTakePayment` states, so this one exercises the
+ * widest header the application can produce.
+ */
+export const UNPAID_INVOICE = {
+  id: 53,
+  invoiceNumber: 'INV-000027',
+  customerId: 7,
+  customerName: 'Bug Fix Test',
+  customerMobile: '9123456700',
+  invoiceDate: '2026-09-01',
+  subtotalDisplay: '325.00',
+  gstAmountDisplay: '58.50',
+  totalDisplay: '383.50',
+  couponCode: null,
+  discountDisplay: null,
+  productDiscountDisplay: null,
+  paidDisplay: '0.00',
+  balanceDisplay: '383.50',
+  status: 'UNPAID',
+  remarks: null,
+  transportMode: null,
+  vehicleNumber: null,
+  deliveryAddress: null,
+  items: [{
+    id: 1,
+    productId: 12,
+    productName: 'Anchor 6A Modular Switch',
+    quantity: '5',
+    unitPriceDisplay: '65.00',
+    discountType: 'NONE',
+    discountValue: null,
+    discountAmountDisplay: null,
+    lineSubtotalDisplay: '383.50',
+    gstRatePercent: '18',
+  }],
+  payments: [],
+  createdAt: '2026-09-01T10:00:00',
+  bankAccountId: null,
+  bankAccountLabel: null,
+  bankAccountQrId: null,
+};
 
 /** Signed OUT: only the config lookup the login form makes on mount. */
 export function signedOutApi() {

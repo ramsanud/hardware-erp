@@ -218,7 +218,7 @@ export function SupplierListPage() {
         title="Suppliers"
         description="Businesses the shop buys from."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {deletedMode ? null : <ColumnSettings preferences={columns} label="supplier" />}
             <PermissionGate permission={PERMISSIONS.SUPPLIER_MANAGE}>
               <Button onClick={() => navigate(SUPPLIER_ROUTES.create)}>

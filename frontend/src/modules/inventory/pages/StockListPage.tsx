@@ -143,7 +143,7 @@ export function StockListPage() {
         title="Stock"
         description="Current quantity on hand for every product."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="stock" />
             {hasPermission(PERMISSIONS.INVENTORY_VIEW) ? (
               <Button variant="outline" loading={sendingAlert} onClick={() => void handleSendLowStockAlert()}>

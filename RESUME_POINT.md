@@ -1,5 +1,23 @@
 # RESUME POINT
 
+**Updated:** 2026-09-09 (**BUG-FE-035 — a busy toolbar crushed the page title**). `SCOPE: FRONTEND ONLY` — the API response was correct; the header column was 69px wide.
+
+**Reported from a screenshot** of `/invoices/53`: the invoice number rendered as `I...` and `Bug Fix Test · 9123456700 · 2026-09-01` came down the page one word per line. Measured rather than guessed at: the title column was **69px** at 1440px and **0px** at 768px, where the toolbar also ran off the page.
+
+**The root cause is that BUG-FE-034's fix never reached 19 of the 21 pages.** `PageHeader` carries `flex-wrap` on its actions container, but that wraps the container's *children* — and every caller hands it a single nested `<div className="flex items-center gap-2">`. One child, nothing to wrap, min-content width of the whole toolbar: **1039px** on Invoice detail. Both header children were free to shrink and the title, with `min-w-0` and a content-sized basis, was the one that lost. BUG-FE-034 recorded "this one edit covers all of them"; it covered exactly the two pages whose caller divs were hand-patched with `flex-wrap` in that same commit. That claim is now corrected in place in the registry rather than left standing.
+
+**Fixed in two parts, same root cause, same commit.** `sm:flex-wrap` on the header row so an oversized toolbar drops to its own row instead of taking the title's space, plus `sm:flex-1 sm:basis-64` giving the title a 16rem floor — without the basis the title is still the smaller item and still loses. Then `flex-wrap` on the 19 caller divs that lacked it, so the toolbar wraps instead of overflowing at narrow widths.
+
+**Verified by measurement.** Title column 69px → **1120px** at 1440 and 0px → **728px** at 768; description 100px → **20px**; `scrollWidth > clientWidth` **true → false** at 768. All 14 list pages re-measured at both widths still show title and actions sharing one row, so the simple headers did not regress.
+
+**The regression test, and why the suite missed this.** `frontend/tests/navigation/page-header.spec.mjs` is new. The responsive sweep beside it visits **list routes only** — a detail route needs an id — and that is exactly the gap this defect lived in. It asserts measured geometry rather than class names, and it was checked in both directions: **3 of 12 assertions fail against the old markup**, 12/12 pass against the new. Suite is **72/72**, up from 60/60.
+
+**A fixture bug found on the way, fixed here.** The stub OWNER in `tests/support/fixtures.mjs` held neither `INVOICE_CANCEL` nor `PAYMENT_MANAGE`, so the stubbed invoice toolbar rendered two buttons short — 763px against the real 1039px. The suite could not have caught this at full severity while its own fixture disagreed with the DTO. With both added the stub measures 1039px, matching the live page exactly. That is worth remembering: **a green e2e suite is only as honest as its fixtures**.
+
+**Not executed:** `registry/static_check.py` — python3 is not installed on this machine (hard rule 10). Backend untouched, so `mvn verify` was not re-run.
+
+---
+
 **Updated:** 2026-09-09 (**CR-071 — the two registries the last pass did not reach**). Documentation only. No code, no schema, no endpoint.
 
 **What was asked:** confirm every registry is complete, verify the architecture, test it, then commit and merge to `main`.

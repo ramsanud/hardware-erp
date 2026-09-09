@@ -161,7 +161,7 @@ export function CategoryListPage() {
         title="Categories"
         description="Hierarchical grouping for the product catalogue."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="category" />
             <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>
               <Button onClick={() => setCreating(true)}>Add category</Button>

@@ -344,7 +344,7 @@ export function ProductListPage() {
         title="Products"
         description="The sellable catalogue: what the shop stocks and sells."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Outside the PRODUCT_MANAGE gate on purpose: choosing what you
                 look at is not a management action, and a read-only user has
                 the same reason to want the barcode column as anyone else. */}

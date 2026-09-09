@@ -119,7 +119,7 @@ export function ProjectListPage() {
         title="Projects"
         description="Modular kitchens, fabrication, roofing and other custom work for your customers."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="project" />
             <PermissionGate permission={PERMISSIONS.PROJECT_MANAGE}>
               <Button onClick={() => navigate(PROJECT_ROUTES.create)}>

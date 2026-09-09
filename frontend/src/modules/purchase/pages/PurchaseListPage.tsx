@@ -122,7 +122,7 @@ export function PurchaseListPage() {
         title="Purchases"
         description="Bills received from suppliers, with payment status."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="purchase" />
             <PermissionGate permission={PERMISSIONS.PURCHASE_MANAGE}>
               <Button variant="outline" onClick={() => setImportOpen(true)}>

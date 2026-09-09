@@ -173,7 +173,7 @@ export function CouponListPage() {
         title="Coupons"
         description="Discount codes customers can redeem on an invoice."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="coupon" />
             <PermissionGate permission={PERMISSIONS.COUPON_MANAGE}>
               <Button onClick={() => setCreating(true)}>

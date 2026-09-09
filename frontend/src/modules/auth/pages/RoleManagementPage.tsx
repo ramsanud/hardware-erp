@@ -147,7 +147,7 @@ export function RoleManagementPage() {
         title="Roles"
         description="A role is a set of permissions. Authorisation is permission-based, never based on the role name."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="role" />
             <PermissionGate permission={PERMISSIONS.ROLE_MANAGE}>
               <Button onClick={() => setCreating(true)}>

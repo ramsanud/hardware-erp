@@ -312,7 +312,7 @@ export function InvoiceDetailPage() {
         title={invoice.invoiceNumber}
         description={`${invoice.customerName} · ${invoice.customerMobile} · ${invoice.invoiceDate}`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={handlePreviewPdf} loading={previewingPdf}>
               <Eye className="h-4 w-4" />
               <span className="hidden sm:inline">Preview</span>

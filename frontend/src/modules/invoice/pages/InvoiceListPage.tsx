@@ -148,7 +148,7 @@ export function InvoiceListPage() {
         title="Invoices"
         description="Bills raised to customers, with payment status."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="invoice" />
             <PermissionGate permission={PERMISSIONS.INVOICE_CREATE}>
               <Button onClick={() => navigate(INVOICE_ROUTES.create)}>

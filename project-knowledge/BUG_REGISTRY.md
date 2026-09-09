@@ -92,6 +92,7 @@ generating new code; never reintroduce a listed bug.
 | BUG-FE-032 | Frontend | Medium | Fixed 2026-09-07 |
 | BUG-FE-033 | Frontend | High | Fixed 2026-09-08 |
 | BUG-FE-034 | Frontend | Low | Fixed 2026-09-08 |
+| BUG-FE-035 | Frontend | Medium | Fixed 2026-09-09 |
 
 **This index is complete and covers every entry in this file (verified
 2026-09-08).** It previously stopped at `BUG-ENV-003`, omitting 33 later
@@ -3243,3 +3244,154 @@ pages clean at 390, 768 and 1440.
 page, so this one edit covers all of them; no other component pairs `shrink-0`
 with a wrapping toolbar. Invoice detail (six actions) was the next widest and
 is also clean.
+
+> **This sweep was wrong on both counts — see BUG-FE-035.** The edit did *not*
+> cover every page: `flex-wrap` on `PageHeader`'s container wraps its
+> *children*, and all 21 callers pass a single nested `<div className="flex
+> items-center gap-2">`, so there was only ever one child to wrap. Only
+> Quotation detail and Project detail were actually fixed, because those two
+> had `flex-wrap` added to the caller's own div by hand. Invoice detail was
+> never clean either — by 2026-09-09 it carried eight actions at 1039px and
+> overflowed a 768px viewport exactly as Quotation detail had.
+
+---
+
+## BUG-FE-035 — a busy toolbar crushed the page title to 69px (FIXED, 2026-09-09)
+
+| | |
+|---|---|
+| **Severity** | Medium — the invoice number, customer, mobile and date were all unreadable on the page that identifies the document |
+| **Layer** | FRONTEND ONLY |
+| **Found** | User screenshot of `/invoices/53` at desktop width |
+| **Symptom** | `INV-000027` rendered as **`I...`** in a **69px** column, with `Bug Fix Test · 9123456700 · 2026-09-01` wrapping one word per line down a 100px-tall strip. At 768px the column reached **0px** and the toolbar ran off the page |
+
+**Root cause — BUG-FE-034's fix never applied to 19 of the 21 pages.**
+`PageHeader` puts `flex-wrap` on its actions container, but that wraps the
+container's *children*, and every caller passes its buttons already wrapped in
+one div of its own:
+
+```tsx
+actions={
+  <div className="flex items-center gap-2">   {/* ← one child, cannot wrap */}
+    <Button>Preview</Button> … eight of them
+  </div>
+}
+```
+
+So the header row held a single flex item whose min-content width was the whole
+toolbar — measured at **1039px**. Nothing could shrink it, both children were
+free to shrink, and the title (with `min-w-0` and a content-sized basis) was
+the one that lost: 69px at 1440px, 0px at 768px.
+
+BUG-FE-034 had reported "this one edit covers all of them". It did not — it
+worked only for Quotation detail and Project detail, whose caller divs were
+hand-patched with `flex-wrap` at the same time. That is why the same defect
+resurfaced on Invoice detail a day later, in both of its forms.
+
+**Fix.** Two parts, same root cause, same commit:
+
+1. `frontend/src/shared/components/PageHeader.tsx` — `sm:flex-wrap` on the
+   header row so an oversized toolbar drops onto its own row instead of taking
+   the title's space, and `sm:flex-1 sm:basis-64` on the title column to give
+   it a 16rem floor. Without the basis the title is still the smaller item and
+   still loses the space race.
+2. The 19 caller pages missing `flex-wrap` on their own actions div, so the
+   toolbar itself wraps rather than overflowing at narrow widths — matching
+   what BUG-FE-034 did by hand for the other two.
+
+**Verified — measured, not eyeballed.** `/invoices/53` title column
+69px → **1120px** at 1440, 0px → **728px** at 768; description 100px → **20px**;
+`document.scrollWidth > clientWidth` **true → false** at 768. All 14 list pages
+re-measured at 1440 and 768: title and actions still share one row, no
+truncation, no overflow. Frontend suite **72/72** (was 60/60).
+
+**Regression test.** `frontend/tests/navigation/page-header.spec.mjs` — the
+responsive sweep next door covers list routes only, because a detail route
+needs an id, and that gap is precisely where this lived. Asserts measured
+geometry, not class names, at 1440 and 768. Confirmed to fail against the old
+markup (3 of 12 assertions) and pass against the new.
+
+**One fixture bug found and fixed on the way.** `tests/support/fixtures.mjs`
+gave the stub OWNER neither `INVOICE_CANCEL` nor `PAYMENT_MANAGE`, so the
+stubbed invoice toolbar rendered two buttons short — 763px against the real
+1039px. The suite could not have caught this defect at full severity while its
+own fixture disagreed with the DTO. With both permissions added the stub now
+measures 1039px, matching the live page exactly.
+
+---
+
+## BUG-BE-002 — `@Transactional(REQUIRES_NEW)` on the activity-log write was inert
+
+| | |
+|---|---|
+| **Severity** | HIGH |
+| **Layer** | BACKEND |
+| **Found** | 2026-09-09, while adding `tenant_id` under CR-072 — the one method that had to change |
+| **Status** | FIXED |
+| **Regression test** | `ActivityLogWriterPropagationIT` |
+
+### Root cause
+
+`ActivityLogServiceImpl.write(...)` was a `protected` method annotated
+`@Transactional(propagation = REQUIRES_NEW)`, called as `this.write(...)` from
+`created`, `updated`, `deleted` and `action` in the same class.
+
+That is self-invocation. The call never leaves the object, so it never passes
+through the transactional proxy, and this project uses proxy-based AOP with no
+AspectJ weaving anywhere. **The annotation did nothing.** The history write
+joined the caller's transaction — the exact opposite of what its own comment
+claimed: *"REQUIRES_NEW so a logging failure never rolls back the user's actual
+work"*.
+
+### Why the catch below it did not save the situation
+
+`write` wrapped `activityLogRepository.save(...)` in
+`catch (DataAccessException)`. With the entity using `GenerationType.IDENTITY`,
+`save()` issues the INSERT immediately, so a constraint violation *was* raised
+there and *was* swallowed — but by then the surrounding transaction is marked
+rollback-only. The user's real work, the invoice or stock movement being
+described, was then lost at commit with nothing in the response explaining
+why. **Swallowing the exception made it silent, not survivable.**
+
+### The fix, and the part that was not obvious
+
+The write moved into its own `ActivityLogWriter` bean, so the call crosses a
+proxy boundary and `REQUIRES_NEW` finally applies.
+
+**The handler had to move out of the transactional method, not travel with
+it.** The first attempt kept the try/catch inside the new bean and still
+failed: under `REQUIRES_NEW` the flush happens as the method returns and its
+transaction commits — inside the proxy, after any `try` written in the method
+body has exited — so the catch never saw it, and a catch that did swallow it
+would leave the proxy committing a transaction already marked rollback-only.
+`ActivityLogWriter.write` therefore throws, and `ActivityLogServiceImpl`
+catches outside the boundary. It catches `RuntimeException`, not
+`DataAccessException`: a flush failure surfaces through the proxy as
+`TransactionSystemException` or `UnexpectedRollbackException` at least as often.
+
+**The regression test was verified against the defect, not merely written.**
+`ActivityLogWriterPropagationIT` was run against a deliberately restored
+pre-fix shape and failed there (1 failure), then passed against the fix. It
+drives a real over-long `moduleCode` through `ActivityLogService` — the path
+every module actually uses — inside an outer transaction that also does real
+work, and asserts the real work survives.
+
+### Where else this pattern could bite
+
+Every `REQUIRES_NEW` site in the codebase was checked, and the other two are
+correct — for a reason worth stating, because they look superficially like
+this bug and are not.
+
+`SecurityAuditServiceImpl` and `JobExecutionTracker` both have a private
+helper (`write`, `finish`) called from public methods in the same class. The
+difference is **where the annotation sits**: on their PUBLIC entry points, the
+ones external callers invoke. The proxy has therefore already been crossed by
+the time the private helper runs, so the helper executes inside the new
+transaction and the propagation holds.
+
+`ActivityLogServiceImpl` had it the other way round — the annotation was on
+the inner, self-invoked method, and the public entry points carried none. That
+inversion is the whole defect, and it is the thing to look for when reviewing
+any future `REQUIRES_NEW`: not whether a self-call exists, but whether the
+annotation is on the method that is reached from outside the bean.
+

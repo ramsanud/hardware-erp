@@ -108,7 +108,7 @@ export function DashboardPage() {
         title={`Welcome back${user?.fullName ? `, ${user.fullName.split(' ')[0]}` : ''}`}
         description="A quick look at the shop today."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <PermissionGate permission={PERMISSIONS.QUOTATION_MANAGE}>
               <Button variant="outline" asChild>
                 <Link to={QUOTATION_ROUTES.create}><Plus className="h-4 w-4" />New quotation</Link>
