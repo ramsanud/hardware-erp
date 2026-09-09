@@ -71,42 +71,47 @@ Nothing is implemented from conversation memory.
 | CR-060 | 2026-09-08 | User | MFA as a switch, without deleting the second factor | **BACK-FILLED 2026-09-08** |
 | CR-061 | 2026-09-05 | User | Mobile application UI: app shell, stacked lists, sheet dialogs, themed browser chrome | **APPLIED, 2026-09-05** |
 | CR-062 | 2026-09-05 | User | Auth screens simplified; signup checks the mobile number at the step that asks for it | **APPLIED, 2026-09-05** |
-| CR-063 | 2026-09-07 | User | clearable inputs, and one status pill for the whole application | **APPROVED, 2026-09-07** |
-| CR-064 | 2026-09-07 | User | Project material consumption moves stock | **APPROVED, 2026-09-07** |
-| CR-065 | 2026-09-07 | User | Platform Admin refresh token moves to an HttpOnly cookie | **APPROVED, 2026-09-07** |
+| CR-063 | 2026-09-07 | User | clearable inputs, and one status pill for the whole application | **APPLIED, 2026-09-09** |
+| CR-064 | 2026-09-07 | User | Project material consumption moves stock | **APPLIED, 2026-09-09** |
+| CR-065 | 2026-09-07 | User | Platform Admin refresh token moves to an HttpOnly cookie | **APPLIED, 2026-09-09** |
 | CR-066 | 2026-09-08 | User | Configurable dashboard: widget catalog | **APPROVED — catalog only, 2026-09-08** |
-| CR-068 | 2026-09-08 | User | Per-user column choice on every list | **APPLIED, 2026-09-08** |
-| CR-067 | 2026-09-08 | User | Shop data reset, behind a CAPTCHA and a typed confirmation | **APPROVED, 2026-09-08** |
-| CR-069 | 2026-09-08 | User | Premium auth screens, rebuilt on theme tokens | **APPROVED, 2026-09-08** |
+| CR-068 | 2026-09-08 | User | Per-user column choice on every list | **APPLIED, 2026-09-09** |
+| CR-067 | 2026-09-08 | User | Shop data reset, behind a CAPTCHA and a typed confirmation | **APPLIED, 2026-09-09** |
+| CR-069 | 2026-09-08 | User | Premium auth screens, rebuilt on theme tokens | **APPLIED, 2026-09-09** |
 ---
 
 
-### Numbers still missing an entry (audited 2026-09-08)
+### Numbers that were missing an entry (audited 2026-09-08, closed 2026-09-09)
 
 The table above is now generated from the section headings, so the two cannot
 drift apart again. What it cannot fix is a CR that was **implemented and cited
-in code but never written down at all**. CR-058 and CR-060 were back-filled in
-this pass; these remain, with the number of files that cite each one:
+in code but never written down at all**. CR-058 and CR-060 were back-filled
+first; the seven below followed, with the number of files that cite each one:
 
-| CR | Files citing it | Nothing is recorded about |
+**CLOSED 2026-09-09. All seven now have entries** — see the back-filled
+sections at the end of this file.
+
+| CR | Files citing it | Status |
 |---|---|---|
-| CR-047 | 24 | internal labour margin (cited from CR-052's design notes) |
-| CR-049 | 17 | whole-document discount |
-| CR-050 | 15 | percentage-only discount type, labour margin |
-| CR-048 | 7 | — |
-| CR-013 | 4 | — |
-| CR-046 | 2 | — |
-| CR-043 | 1 | offline sync (named as CR-041's motivation; never built) |
+| CR-047 | 24 | Back-filled — per-line discount, V31 |
+| CR-049 | 17 | Back-filled — whole-document discount, V32 |
+| CR-050 | 15 | Back-filled — percentage-only + internal labour, V33 |
+| CR-048 | 7 | Back-filled — analytics aggregations |
+| CR-013 | 4 | Back-filled — security audit log endpoint |
+| CR-046 | 2 | Back-filled — font scale and font family |
+| CR-043 | 1 | Recorded as NEVER BUILT — offline sync |
 
 **CR-042 and CR-044 are cited nowhere** and were most likely never allocated.
+They are left unused rather than recycled.
 
-Back-filling these was **not** attempted here. CR-058 and CR-060 could be
-reconstructed honestly because their behaviour is fully described in the code
-that cites them; these six are cited mostly in passing, and writing a
-plausible-sounding entry from a passing mention would put invented reasoning
-into the file the project treats as its source of truth. That is worse than an
-acknowledged gap. Each needs its implementation read before an entry is
-written.
+The bar this audit set was that **each needs its implementation read before an
+entry is written** — writing a plausible-sounding entry from a passing mention
+would put invented reasoning into the file the project treats as its source of
+truth. That bar was met: every back-filled entry is drawn from the code, the
+migration, or the javadoc the change itself left behind. Where the code did
+not say why, the entry says so rather than guessing. CR-043 turned out to
+describe work that was **never built at all**, which is why it is recorded as
+such instead of being described as though it shipped.
 
 
 ## CR-003 — Module 1 audit corrections (APPROVED, re-baselined under CR-010)
@@ -3192,7 +3197,7 @@ new endpoint and leave its twin open.
 
 ---
 
-## CR-063 — clearable inputs, and one status pill for the whole application (APPROVED, 2026-09-07)
+## CR-063 — clearable inputs, and one status pill for the whole application (APPLIED, 2026-09-09)
 
 **Requested by**: the shop owner, during a full-application UX audit.
 
@@ -3283,7 +3288,7 @@ touched in this change. `registry/static_check.py` **not executed** —
 
 ---
 
-## CR-064 — Project material consumption moves stock (APPROVED, 2026-09-07)
+## CR-064 — Project material consumption moves stock (APPLIED, 2026-09-09)
 
 **Approval.** Directed by the product owner on 2026-09-07 as P0-1 of a
 stabilization task, with the two open business questions below put back to
@@ -3356,7 +3361,7 @@ V53 widens the column to `VARCHAR(30)` and extends the CHECK.
 
 ---
 
-## CR-065 — Platform Admin refresh token moves to an HttpOnly cookie (APPROVED, 2026-09-07)
+## CR-065 — Platform Admin refresh token moves to an HttpOnly cookie (APPLIED, 2026-09-09)
 
 **Approval.** Directed by the product owner on 2026-09-07 as P0-2 of the same
 stabilization task.
@@ -3488,7 +3493,7 @@ Awaiting the remaining specification sections.
 
 ---
 
-## CR-068 — Per-user column choice on every list (APPLIED, 2026-09-08)
+## CR-068 — Per-user column choice on every list (APPLIED, 2026-09-09)
 
 **Renumbered from CR-067 on 2026-09-08.** Two concurrent sessions each
 allocated CR-067 on the same day — this one and the shop data reset below.
@@ -3583,7 +3588,7 @@ is generic and applying it to them is mechanical, but it was not in the ask.
 
 ---
 
-## CR-067 — Shop data reset, behind a CAPTCHA and a typed confirmation (APPROVED, 2026-09-08)
+## CR-067 — Shop data reset, behind a CAPTCHA and a typed confirmation (APPLIED, 2026-09-09)
 
 **Source:** User, 2026-09-08 — "add captcha option important things in this
 project and while reset the specified entire data from this project. it helps
@@ -3705,7 +3710,7 @@ without `DATA_RESET` returning 403.
 
 ---
 
-## CR-069 — Premium auth screens, rebuilt on theme tokens (APPROVED, 2026-09-08)
+## CR-069 — Premium auth screens, rebuilt on theme tokens (APPLIED, 2026-09-09)
 
 **Approval.** Directed by the product owner on 2026-09-08, who supplied a
 detailed Stripe/Linear-style specification for the sign-in and shop-registration
@@ -3834,3 +3839,282 @@ visible focus ring.
 
 **Not verified:** the shop-name "Available" success hint. It needs a running
 backend, and the availability lookup fails closed to `idle` without one.
+
+---
+
+## CR-070 — An out-of-stock filter; and why the activity log stays write-only (APPROVED, 2026-09-08)
+
+**Approval.** Directed by the product owner on 2026-09-08, who asked for the
+registry's outstanding items to be worked through. Both halves below were
+recorded as blocked gaps by CR-066 while cataloguing the dashboard widgets.
+
+**The number was allocated by writing this entry before any code was
+changed** — see the note under CR-068 on how CR-067 came to be issued twice.
+
+### Part 1 — `outOfStockOnly` on `GET /v1/stock`
+
+CR-066 found `out-of-stock-list` needed "only a zero-quantity filter on
+`GET /v1/stock`, which currently has just `lowStockOnly`". This adds it.
+
+**Out of stock is not the same question as low stock**, which is why it is a
+second flag rather than a reinterpretation of the first. `lowStockOnly` means
+*at or below the reorder level* — a shop with 8 left and a reorder level of 10
+is low, and still selling. Zero means the counter has nothing to hand the
+customer. The first is a purchasing prompt; the second is a lost sale in
+progress, and a shop wants to see it on its own.
+
+**The two flags AND rather than conflict.** Setting both returns rows that are
+both, which for any non-negative reorder level is exactly the out-of-stock set
+— so there is no combination that returns something incoherent, and neither
+flag needed to be made to win over the other.
+
+**`<= 0`, not `= 0`.** `quantity_on_hand` is a `DECIMAL` and `StockService`
+refuses to write a negative balance, so a negative is not reachable through the
+application. It is reachable through a direct database edit or a future bug,
+and a row the shop cannot sell from should appear on the list that exists to
+show exactly that — a stock list that hides a negative balance is how one
+survives unnoticed.
+
+### Part 2 — `GET /v1/activity-log` — INVESTIGATED, NOT BUILT
+
+CR-066 recorded this as "a real gap — `activity_log` is written by roughly ten
+services under CR-015 and **no controller reads it back**, so the business
+audit trail is currently write-only." That is accurate, and it stays that way
+for now. **Building the endpoint as scoped would have been a cross-tenant data
+leak.**
+
+**`activity_log` has no `tenant_id`.** V3 created it without one and no
+migration since has added it; the entity has no tenant field either. The
+existing `ActivityLogRepository.search(moduleCode, entityType, entityId,
+userId, …)` therefore filters by none. Put a controller over it and any
+`AUDIT_VIEW` holder in one shop reads every other shop's business changes —
+including the before/after values, which is the whole reason the row is worth
+writing. That is the same class of defect as BUG-SEC-001.
+
+**Nothing is leaking today.** The one path where `activity_log` data reaches an
+endpoint is `UserServiceImpl.activity(id, …)`, and it is correctly guarded:
+`requireUser(id, SecurityUtils.requireCurrentTenantId())` runs *before*
+`findByUserIdOrderByCreatedAtDesc`, so an id from another tenant is rejected
+before the unscoped query is ever reached. `ActivityLogRepository`'s javadoc
+already warns never to expose that method behind an unverified id. This CR
+verified that guard rather than assuming it.
+
+**Why the guard does not generalise.** A shop-wide viewer has no user id to
+verify, and `moduleCode`/`entityType`/`entityId` are polymorphic — `entityId`
+is a bare `BIGINT` that means a different table per `entityType`, so there is
+no tenant-owned row to join to. Deriving the tenant through `user_id` fails on
+any row where it is null, which is every row written by a scheduled job or an
+import.
+
+**What it actually needs, as its own CR.** A `tenant_id` column on
+`activity_log`, written at all ~10 call sites, plus a backfill decision for
+existing rows — and the backfill is the genuinely hard part, because rows with
+a null `user_id` cannot be attributed after the fact and would have to be
+either dropped from the viewer or shown to nobody. That is a migration against
+a shared audit table plus ten services, which CLAUDE.md's "never silently build
+large new subsystems" rule puts behind its own approval, not a "while I'm in
+here" pass.
+
+**Until then the honest position is that the business audit trail is
+write-only**, and `CR-066`'s `recent-activity` widget stays `needs-endpoint`
+rather than being quietly wired to an unsafe query.
+
+
+---
+
+# Back-filled entries — CR-013, CR-043, CR-046, CR-047, CR-048, CR-049, CR-050 (2026-09-09)
+
+The audit above listed these as implemented and cited in code but never
+written down, and deliberately declined to back-fill them from passing
+mentions. Each has now had its implementation read, which is the bar that
+audit set. Every statement below is taken from the code, the migration, or
+the javadoc that the change itself left behind — nothing is inferred from the
+CR number alone.
+
+`CR-042` and `CR-044` are cited nowhere and were never allocated. They are
+left unused rather than recycled.
+
+---
+
+## CR-013 — Expose the security audit log that already existed (BACK-FILLED 2026-09-09)
+
+**The gap.** The `AUDIT_VIEW` permission and `SecurityAuditLogRepository.search()`
+both existed, but nothing exposed them. The permission could be granted to a
+role and then never used — an authority that reads as real to whoever grants
+it while doing nothing.
+
+**What was built.** `GET /v1/security-audit-logs`, read-only, gated on
+`AUDIT_VIEW`, plus `securityAuditService.ts` on the frontend.
+
+**Two decisions worth keeping.**
+
+- **A sort whitelist**, not a pass-through. `SORTABLE` maps the accepted sort
+  keys to column names, because a raw request parameter reaching `ORDER BY` is
+  an injection surface.
+- **`MAX_PAGE_SIZE = 100`**, so a caller cannot ask for the whole table.
+
+**Scope.** Security events only. Business history stays in each module's own
+`activity_log`, the separation CR-015 established.
+
+---
+
+## CR-043 — Offline sync (NEVER BUILT, recorded 2026-09-09)
+
+Named only as the motivation for CR-041's document-number allocator: if a
+device could write while offline, sequential per-tenant numbering would have
+to survive a merge. **No offline or sync code exists anywhere in the
+repository** — no service worker, no IndexedDB layer, no queue. CLAUDE.md
+lists "any offline/IndexedDB layer" under "Not present", and that remains
+accurate.
+
+Recorded so the number is not silently reused, and so a future reader does not
+take CR-041's reference to it as evidence that offline support shipped.
+
+---
+
+## CR-046 — Reading comfort: font scale and font family (BACK-FILLED 2026-09-09)
+
+Two axes the shop owner controls directly, stored on the same appearance
+record as the design style rather than in a second store, so one save writes
+one object.
+
+**Font scale** is applied as the **root font-size** — `compact 15px`,
+`standard 16px`, `large 17.5px`, `xlarge 19px`. Everything in the UI is sized
+in `rem`, so moving that one value scales the whole interface proportionally
+rather than only the body copy. That is what someone reading a counter screen
+at arm's length actually needs; scaling body text alone leaves the controls
+they must hit unchanged.
+
+**Font family** offers `system | indic | serif | mono` as **font stacks only —
+no webfont is downloaded**, so the feature costs nothing at load and works
+offline.
+
+**Why `indic` exists, in the authors' own words.** This ERP is used in Tamil
+Nadu, and shops type customer and product names in Tamil, Hindi or Malayalam.
+The default UI stack has no Indic coverage on some systems and those names
+render as tofu boxes. Nirmala UI ships with Windows and covers Devanagari,
+Tamil, Telugu, Kannada, Malayalam, Gujarati, Bengali, Odia and Gurmukhi; Noto
+Sans is the Android/Linux equivalent. **This makes Indic text readable; it is
+not translation of the interface**, which remains separate, unbuilt work.
+
+---
+
+## CR-047 — Per-line discount on quotations and invoices (BACK-FILLED 2026-09-09)
+
+Migration **V31 `line_item_discount`**. Added `discount_type`,
+`discount_percent` and `discount_amount_paise` to `quotation_item` and
+`invoice_item`.
+
+A negotiated discount is the deliberate exception to the rule that a line's
+figures are derived rather than sent: the client supplies it because it is a
+human decision, not an arithmetic result.
+
+`discountAmountPaise` is the authoritative money figure for both discount
+types, so the stored amount never has to be recomputed from a percentage to
+be trusted.
+
+**Superseded in part by CR-050**, which retired the fixed-amount option. See
+that entry.
+
+---
+
+## CR-048 — Analytics aggregations (BACK-FILLED 2026-09-09)
+
+`/v1/analytics/*`, every endpoint `@PreAuthorize(REPORT_VIEW)`: `summary`,
+`revenue-trend`, `sales-by-category`, `payment-methods`, plus product
+performance, value distribution and an activity matrix.
+
+**The one design decision that matters, and it is a security one.** Every
+service method takes a date range **and nothing else that identifies a
+tenant**. The tenant is resolved from the authenticated caller inside the
+implementation, never accepted as a parameter — so there is no signature in
+`AnalyticsService` that a caller could use to ask about another shop's
+figures. The isolation is enforced by the shape of the interface, not only by
+the queries behind it.
+
+`granularity` accepts `day | week | month` and rejects anything else, rather
+than interpolating a caller's string into the grouping.
+
+Read-only throughout: the module aggregates over the tenant's own invoices and
+writes nothing.
+
+---
+
+## CR-049 — Whole-document discount on a quotation (BACK-FILLED 2026-09-09)
+
+Migration **V32 `quotation_level_discount`**. A discount on the **whole**
+quotation, applied **after** the per-line discounts of CR-047.
+
+**Backwards compatible by construction.** `quotationDiscountType` and
+`quotationDiscountPercent` are nullable, so an older client that never sends
+them is read as "no quotation discount" rather than failing validation.
+Bounded at `0 … 100`.
+
+**The response carries the full ladder** so the customer-facing document can
+show what was charged, what came off, and why, without the reader doing the
+arithmetic:
+
+```
+grossSubtotalDisplay          qty x price, before any discount
+productDiscountDisplay        sum of the per-line discounts (CR-047)
+afterProductDiscountDisplay   the base the quotation discount applies to
+quotationDiscountDisplay      the whole-quotation discount (CR-049)
+subtotalDisplay               TAXABLE amount, net of both
+totalSavingsDisplay           productDiscount + quotationDiscount
+```
+
+The three discount fields are **null when zero**, so a quotation with no
+discount renders no discount rows at all rather than a row of zeroes.
+
+**This CR is the direct cause of BUG-FE-017.** Allocating a document-level
+discount by reducing `lineSubtotalPaise` broke every consumer that had been
+reconstructing a line's gross from that subtotal. See BUG-FE-017 in
+`BUG_REGISTRY.md`; it now has regression tests in both mappers.
+
+---
+
+## CR-050 — Percentage-only discount, and an internal labour margin (BACK-FILLED 2026-09-09)
+
+Migration **V33 `percentage_discount_and_internal_labour`**.
+
+**Part 1 — the fixed-amount discount was retired.** CR-047 and CR-049 allowed
+either a percentage or a fixed rupee amount; the business settled on
+percentage only. V33 converted **every stored `AMOUNT` row to the percentage
+that produces the same money**, so no money moved. The `AMOUNT` constant was
+then deleted from `LineDiscount.Type` outright rather than deprecated —
+a fixed-amount discount cannot be reintroduced by accident because the
+constant no longer exists to be referenced.
+
+**Part 2 — an internal labour margin**, a percentage of the **discounted**
+value, not of gross.
+
+**The order of operations, agreed with the owner and now enforced in one
+place:**
+
+```
+gross          quantity x unit price
+- discount     a PERCENTAGE of gross
+= afterDiscount
++ labour       a percentage of the DISCOUNTED value, not of gross
+= net          <- line_subtotal_paise, the taxable amount
++ GST          charged on net
+= total
+```
+
+**One authority, deliberately.** `LineDiscount.price()` is called by both
+`InvoiceServiceImpl.buildLine` and `QuotationServiceImpl.buildLine`. The
+arithmetic was previously written out twice — exactly the shape that lets a
+quotation and the invoice it converts into disagree by a rupee.
+
+**The discount base is the selling price, not MRP.** Every product carries an
+MRP above its selling price, so discounting from MRP would re-price the whole
+catalogue upward. MRP is carried on the line for display and comparison only.
+
+**Labour is internal.** It is an owner-side margin folded into the rate, never
+a separate line on a customer document. The rate the customer sees is the rate
+actually charged (`PricedLine.effectiveUnitPricePaise`), so the document stays
+arithmetically honest even though the split is not shown.
+
+Money is `BIGINT` paise throughout, never `double`. Percentage arithmetic runs
+at `BigDecimal` precision and rounds to whole paise exactly once, `HALF_UP`,
+matching the rounding used everywhere else.

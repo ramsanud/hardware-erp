@@ -1,5 +1,29 @@
 # RESUME POINT
 
+**Updated:** 2026-09-09 (**registry reconciliation, BUG-FE-017 regression tests, and the first green merge to `main`**). No new feature — this pass closed the gaps the registries themselves had recorded and left open.
+
+**The one defect that mattered.** The branch **had not compiled since `ed77812`**. CR-068 widened `ProductSummaryResponse` to fifteen components so the column picker could offer description, model no, barcode, HSN and MRP; `ProductMapper` was left passing the original ten. It went unnoticed because `mvn clean verify` was being run against a working tree that carried the missing fix *uncommitted*. Verifying the **merge result** in a clean worktree is what surfaced it, and that is now the rule this file recommends: a green suite on a dirty tree proves nothing about what you are about to merge.
+
+**BUG-FE-017 had no regression test** — a HIGH-severity money defect where a line's gross was reconstructed as `lineSubtotalPaise + discountAmountPaise`, which returns the discount alone once a coupon or CR-049 document discount has reduced the subtotal. `InvoiceMapperTest` and `QuotationMapperTest` now pin it in both mappers: a 3 × ₹320 line with a 10% discount and the subtotal driven to zero must still report `960.00`, where the old formula gives `96.00`. They fail against the defect and pass against the fix. These are the project's first mapper tests.
+
+**Registry integrity, which was the actual ask.** `BUG_REGISTRY.md`'s index stopped at `BUG-ENV-003` and omitted 33 entries; `BUG-ENV-002` still carried a `Status: Open` line inside an entry its own note had closed; and ten defects (`BUG-FE-012`…`BUG-FE-022`) were fixed and commented in source but never written down. All back-filled from the comments those fixes left at their call sites; the index now covers all 86 entries and **no bug is open**.
+
+**The seven CRs the previous audit declined to back-fill are now written** — CR-013, CR-046, CR-047, CR-048, CR-049, CR-050, and CR-043 recorded as **never built** (offline sync; no service worker, IndexedDB or queue exists anywhere). That audit set the bar at "each needs its implementation read before an entry is written", and that is how these were done: from the code, the migration, or the javadoc the change left behind. Where the code did not say *why*, the entry says so. **CR-042 and CR-044 were never allocated** and are left unused rather than recycled.
+
+**CLAUDE.md's own "Current state" was years of work out of date** — it claimed V1–V28 (actually V54), 508 Java files (725), and "no frontend test runner" when `frontend/tests/` now holds three Playwright suites. Corrected, because every session starts by reading it.
+
+**Statuses corrected:** CR-063, CR-064, CR-065, CR-067 and CR-069 all read APPROVED while their implementations were sitting in the working tree. Now APPLIED.
+
+**One stale comment fixed in code.** `InvoiceItemResponse` documented `discountType` as "NONE / PERCENTAGE / AMOUNT". `AMOUNT` was retired by CR-050 in V33 and the constant does not exist — the comment outlived it and cost a compile error before it was noticed.
+
+**Verified — executed, not claimed.** `mvn clean verify` on the merge result in a clean worktree: **474 unit + 215 integration tests, 0 failures, 0 errors**. `tsc -b --force` and `vite build` both exit 0. `registry/static_check.py` **not executed** — `python3` is not installed on this machine.
+
+**Left deliberately uncommitted:** `frontend/qa-login.mjs`, `qa-smoke.mjs`, `qa-smoke2.mjs` and `qa-smoke.png` — ad-hoc debug scripts pointing at `localhost:5173`, unreferenced by the real `frontend/tests/` suite. A 154 KB screenshot and three throwaway scripts do not belong in the repository.
+
+**A note on branch policy.** This work was merged **straight to `main`** at the owner's explicit instruction. CLAUDE.md routes feature branches through `develop` and reserves `main` for tagged releases. The deviation is recorded in the merge commit body so it is not read as the new convention.
+
+---
+
 **Updated:** 2026-09-08 (**CR-067 — shop data reset, behind a CAPTCHA and a typed confirmation**). One new feature, scoped with the owner before any code was written.
 
 **The ask was two things in one sentence**: a CAPTCHA on important actions, and a "reset the entire specified data" operation, the CAPTCHA acting as a double confirmation. The second did not exist anywhere — grepping the backend, frontend and `API_REGISTRY.md` turned up only password resets — so it was a new build, not a change, and the scope was put back to the owner rather than assumed. Answers: **transactional data only** (masters, users, roles and settings survive); **the reset is the only new CAPTCHA site**; **typed shop name plus CAPTCHA**, not password re-entry.

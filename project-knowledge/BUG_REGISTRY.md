@@ -2283,13 +2283,28 @@ are never rewritten, so they are the one honest source.
 **Same-root-cause sweep.** Fixed in **both** mappers in the same pass —
 `QuotationMapper.java:104` carried the identical reconstruction.
 
-**Regression test — MISSING, and this is a real gap.** No test in
-`backend/src/test/` covers `lineGross` in either mapper (verified 2026-09-08 by
-grep). This is a HIGH-severity money defect with no regression test, which
-breaks the project's own rule that "a bug fixed without a test will return."
-**Recommended: add `InvoiceMapperTest.lineGrossSurvivesCouponAllocation` and
-the `QuotationMapper` equivalent.** Not written as part of this back-fill,
-because back-filling documentation should not quietly become a code change.
+**Regression test — WRITTEN 2026-09-09, closing the gap this entry opened.**
+
+```
+InvoiceMapperTest.lineGrossSurvivesCouponAllocation
+QuotationMapperTest.lineGrossSurvivesCouponAllocation
+```
+
+Both model the documented reproduction: a 3 × ₹320 line (gross ₹960) carrying
+a 10% line discount, where a coupon or CR-049 document discount has then
+driven `lineSubtotalPaise` to zero. Each asserts `lineGrossDisplay` is
+`"960.00"`. Under the old reconstruction the same fixture evaluates to
+`0 + 9_600` = `"96.00"`, so the tests **fail against the defect and pass
+against the fix** rather than merely passing today.
+
+Both mappers are covered because both carried the identical reconstruction.
+These are the first mapper tests in the project; they need no Spring context
+and construct the entity directly, so they cost nothing to run.
+
+**A note on why this gap existed for so long.** The fix shipped without a
+test, and nothing in the build could notice — which is the case for the
+project's "a bug fixed without a test will return" rule, not an exception to
+it.
 
 ---
 

@@ -15,7 +15,11 @@ public record InvoiceItemResponse(
         String lineSubtotalDisplay,
         String lineGstDisplay,
         String lineTotalDisplay,
-        /** CR-047. NONE / PERCENTAGE / AMOUNT - what the owner chose. */
+        /**
+         * CR-047, narrowed by CR-050. NONE / PERCENTAGE - what the owner chose.
+         * AMOUNT was retired in V33 and the constant no longer exists; this
+         * comment outlived it and said otherwise.
+         */
         LineDiscount.Type discountType,
         /** Only meaningful for PERCENTAGE; "0" otherwise. */
         String discountPercent,

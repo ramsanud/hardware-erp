@@ -239,20 +239,21 @@ docker compose up -d                      # PostgreSQL 16
 
 ---
 
-## Current state (verified 2026-08-26)
+## Current state (verified 2026-09-09)
 
-Seventeen backend modules and eighteen frontend modules are built and
-compiling. Migrations V1–V28 are applied. The locked module order below was
+Twenty-plus backend modules and twenty-two frontend modules are built and
+compiling. Migrations V1–V54 are applied. The locked module order below was
 **completed, not abandoned** — treat this project as in maintenance and
 extension, never as a greenfield build.
 
 | Layer | Reality |
 |---|---|
-| Backend | 508 Java files, 36 controllers, 28 Flyway migrations, 47 test classes |
-| Frontend | 238 TS/TSX files, 18 modules, 43 pages |
+| Backend | 725 Java files, 66 controllers, 54 Flyway migrations, 93 test classes |
+| Frontend | 319 TS/TSX files, 22 modules, 69 pages |
 | Built end-to-end | Auth/Users/Roles, Tenant & Settings, Supplier, Customer, Category, Brand, Product, Inventory, Purchase, Quotation, Invoice, Payment, Expense, Project, Labour, Coupon, Dashboard |
+| Frontend tests | `frontend/tests/` — Playwright, three suites (auth, product grid, responsive), run with `node tests/run.mjs` against the built `dist/` |
 | Backend-only | Notification (email live, SMS/WhatsApp stubbed), AI chat, Legal/user-consent (entities only, no controller) |
-| Not present | Any PWA surface, any offline/IndexedDB layer, any frontend test runner |
+| Not present | Any PWA surface, any offline/IndexedDB layer (CR-043 was never built) |
 
 **BUG-ENV-001 is CLOSED.** `mvn clean compile` and `tsc -b --force` both pass
 (verified 2026-08-26). The previous claim here that the backend had never been
@@ -292,8 +293,11 @@ false picture.
 None outstanding. The document-number race previously listed here was fixed by
 **CR-041** (`document_sequence`, V29, `SELECT … FOR UPDATE`).
 
-The full suite is green as of 2026-08-26: 298 unit tests and 100 Testcontainers
-integration tests, `mvn clean verify`, exit 0. Two failures found while running
+The full suite is green as of 2026-09-09: **474 unit tests and 215
+Testcontainers integration tests**, `mvn clean verify`, exit 0 — verified on
+the merge result itself, in a clean worktree, not on a working tree carrying
+uncommitted fixes. That distinction is not pedantic: it is exactly what caught
+the `ProductMapper` breakage below. Two failures found while running
 it end to end for the first time were fixed under CR-045 — **BUG-AUTH-014**
 (refresh-token reuse detection had no working test) and **BUG-SEC-003**
 (`RateLimitFilter` keyed on `getServletPath()`, which MockMvc leaves empty, so
