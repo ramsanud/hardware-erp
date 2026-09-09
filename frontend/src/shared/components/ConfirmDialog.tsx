@@ -30,6 +30,18 @@ export function ConfirmDialog({
     try {
       await onConfirm();
       onOpenChange(false);
+    } catch {
+      /*
+       * Swallowed on purpose, and only here. Callers such as
+       * ProductListPage.handleDelete deliberately re-throw after toasting, so
+       * that this dialog stays open on a failure instead of closing over an
+       * action that did not happen - which is exactly what the missing
+       * onOpenChange(false) above achieves. Without this catch the re-thrown
+       * error escaped an async onClick handler with nothing awaiting it and
+       * surfaced as an unhandled promise rejection on every failed delete.
+       * The user-facing message is the caller's job; the dialog's job is just
+       * to remain open and re-enable its button.
+       */
     } finally {
       setBusy(false);
     }

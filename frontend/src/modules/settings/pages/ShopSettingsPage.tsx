@@ -27,7 +27,8 @@ import { INDIAN_STATES } from '@/shared/data/indianStates';
 import { BANK_OTHER, INDIAN_BANKS } from '@/shared/data/indianBanks';
 import { ApiError } from '@/shared/types/api';
 import { useToast } from '@/modules/auth/hooks/useToast';
-import { AUTH_ROUTES } from '@/modules/auth/constants';
+import { AUTH_ROUTES, PERMISSIONS } from '@/modules/auth/constants';
+import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { useAppChrome } from '@/layouts/AppChromeProvider';
 import { settingsService } from '../services/settingsService';
 import { SETTINGS_ROUTES } from '../constants';
@@ -36,6 +37,7 @@ import { INVOICE_THEME_OPTIONS, INVOICE_THEMES } from '../constants/invoiceTheme
 import { SubscriptionCouponsCard } from '../components/SubscriptionCouponsCard';
 import { BillingUpgradeCard } from '../components/BillingUpgradeCard';
 import { BankAccountsCard } from '../components/BankAccountsCard';
+import { DataResetCard } from '../components/DataResetCard';
 import type { InvoiceTheme, SubscriptionTier, TenantSettingsResponse, UsageSummaryResponse } from '../types';
 
 const SETTINGS_FORM_ID = 'shop-settings-form';
@@ -89,6 +91,10 @@ function toFormValues(settings: TenantSettingsResponse): SettingsFormValues {
 
 export function ShopSettingsPage() {
   const toast = useToast();
+  // CR-067. Hides the Danger zone from anyone the server would refuse anyway -
+  // never the enforcement point, which is @PreAuthorize on DATA_RESET.
+  const { hasPermission } = useAuth();
+  const canResetData = hasPermission(PERMISSIONS.DATA_RESET);
   const { refreshBrand } = useAppChrome();
   // CR-059. A self-hosted installation has no subscription to buy, so the
   // purchase paths are hidden rather than left to fail - the server refuses
@@ -579,6 +585,12 @@ export function ShopSettingsPage() {
               <p className="text-sm">{settings.signatoryName || '—'}</p>
             </CardContent>
           </Card>
+
+          {/* CR-067. Last card on the page, and only for a role that actually
+              holds DATA_RESET - by default the owner alone. Deliberately
+              outside the settings form: it is not an edit, and a destructive
+              button inside a form invites the wrong Enter key. */}
+          {canResetData ? <DataResetCard onResetComplete={() => window.location.reload()} /> : null}
         </div>
       </>
     );

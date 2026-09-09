@@ -218,6 +218,7 @@ every call.
 | DELETE | `/v1/coupons/{id}` | COUPON_MANAGE | 204 |
 | POST | `/v1/tenants/register` | public (`permitAll`, rate-limited 5/hour/IP) | 201 - creates a new tenant + 4 default roles + owner account; body is `TenantRegistrationRequest` |
 | GET | `/v1/tenants/register/slug-available` | public | 200 - `?slug=X`, live-checked while the owner types the shop name |
+| GET | `/v1/tenants/register/identifier-available` | public | 200 - `?mobileNo=X&email=Y` (both optional), returns `{mobileAvailable, emailAvailable}`. CR-062: lets the signup wizard reject a taken identifier on **Next** instead of after the Terms step. Rate-limited (REGISTRATION_AVAILABILITY_PER_IP, 20/min) — as is slug-available, which had no limit until CR-062. |
 | POST | `/v1/notifications/contact-admin` | authenticated (any user) | 200 - `{subject, message}`, emails `app.support.admin-email` with the reporter's shop/name/mobile prepended |
 
 `POST /v1/invoices` and (once wired) `POST /v1/quotations` gained an
@@ -631,3 +632,119 @@ forced true):
   `EntitlementService` enforces no tier cap on a self-hosted install — the
   summary must describe what is actually enforced, not a ceiling that is
   never applied.
+
+## CR-068 — `ProductSummaryResponse` widened for the column picker
+
+No new endpoint, no new permission. `GET /v1/products` returns the same
+projection with five more fields, all additive:
+
+| Field | Note |
+|---|---|
+| `description` | nullable |
+| `modelNo` | nullable |
+| `barcode` | nullable |
+| `hsnCode` | nullable |
+| `mrpDisplay` | always present; `"0.00"` when unset, via `IndianCurrencyFormat` |
+
+`purchasePricePaise` is **still absent and must stay absent**. The DTO's own
+comment is the rule: a list of 100 products does not carry cost past the
+network even for a `PRODUCT_VIEW_COST` holder — cost is read on the detail
+screen. Every field added above is already on the detail screen and on the
+printed pack, so none of them widens what a `PRODUCT_VIEW` holder may read.
+Pinned by `ProductControllerIT.searchCarriesColumnPickerFields`, which asserts
+the additions arrive *and* that purchase price does not.
+
+Category, Brand and Supplier needed no change — `description` (both) and
+`contactPerson`/`gstNo` (supplier) were already in their list projections and
+simply had nowhere on screen to appear.
+
+
+---
+
+## CR-067 — Shop data reset
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/v1/settings/data-reset/preview` | `DATA_RESET` | Per-record-type counts for the caller's own tenant, plus the shop name to type back and whether a CAPTCHA token is required. Read-only. |
+| POST | `/v1/settings/data-reset` | `DATA_RESET` | Deletes the shop's transactional data in one transaction. Returns the real deleted counts. |
+
+`DATA_RESET` is a **new permission code** (V54, module `SETTINGS`), not a use
+of `SETTINGS_MANAGE`. Editing a GSTIN and erasing a shop's trading history are
+different authorities; folding the second into the first would mean any role
+ever granted `SETTINGS_MANAGE` silently acquires a wipe button. Granted to
+OWNER only.
+
+Neither endpoint takes a tenant id anywhere — path, query or body. The tenant
+comes from `SecurityUtils.requireCurrentTenantId()`, so this is the shop's own
+reset and can never be aimed at another shop.
+
+**Request** (`POST`):
+
+```json
+{ "confirmationPhrase": "Sara Hardware", "captchaToken": "0.abc..." }
+```
+
+Both are the confirmation, and neither substitutes for the other.
+`captchaToken` is optional in the DTO for exactly the reason `LoginRequest`'s
+is (CR-038): whether it is required is a runtime decision. The typed phrase is
+**not** optional, because it is the half that still works on an install with no
+Turnstile keys configured.
+
+| Condition | Response |
+|---|---|
+| CAPTCHA active, token missing or rejected | 400 `CAPTCHA_FAILED` |
+| CAPTCHA active, Cloudflare unreachable | 503 `CAPTCHA_UNAVAILABLE` |
+| Phrase does not match the shop name | 400 `RESET_CONFIRMATION_FAILED` |
+| Caller lacks `DATA_RESET` | 403 |
+
+Nothing is deleted on any of those. The phrase comparison is case-insensitive
+and collapses whitespace — it is a deliberateness check, not a password, and
+rejecting an owner's own shop name over a trailing space only teaches them to
+paste it.
+
+**Deleted:** invoices, invoice items, payments, quotations, sales orders,
+delivery challans, credit notes, purchases (bills, items, payments, documents),
+business expenses and receipts, projects (materials, expenses, payments),
+worker attendance and payments, the entire stock ledger and stock balances,
+notification log, idempotency records.
+
+**Kept:** users, roles, settings, and every master — products, customers,
+suppliers, categories, brands, workers, work types, expense categories, coupon
+definitions. `activity_log` and `security_audit_log` are kept as well, and the
+reset writes a `DATA_RESET` entry to both.
+
+**Also reset, because they describe data that no longer exists:**
+`coupon.times_used` back to 0, and `document_sequence.next_value` back to 1 for
+`INVOICE`, `QUOTATION`, `PURCHASE` and `PROJECT` only — never for the master
+document types, whose records survive and whose codes must not be reissued.
+
+---
+
+## CR-070 — `outOfStockOnly` on the stock list
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/v1/stock` | `INVENTORY_VIEW` | Gained `outOfStockOnly` (boolean, default `false`) alongside the existing `search` and `lowStockOnly`. |
+
+**It is a second flag, not a reinterpretation of `lowStockOnly`.** Low means
+at or below the reorder level — a purchasing prompt, and the shop is still
+selling. Out means the counter has nothing to hand over. A shop wants the
+second on its own.
+
+**The two AND.** Sending both returns rows that are both, which for any
+non-negative reorder level is exactly the out-of-stock set — so no combination
+of the two returns something incoherent, and neither flag was made to override
+the other.
+
+**The predicate is `<= 0`, not `= 0`.** A negative balance is unreachable
+through the application (`StockService` refuses to write one) but reachable by
+a direct database edit or a future bug, and a row the shop cannot sell from
+belongs on the list that exists to show exactly that.
+
+Unblocks CR-066's `out-of-stock-list` widget, which was recorded as needing
+"only a zero-quantity filter on `GET /v1/stock`". Regression test:
+`StockOutOfStockFilterIT`, 2 tests against real PostgreSQL.
+
+**`GET /v1/activity-log` was NOT added** — see CR-070 in the change request
+registry. `activity_log` has no `tenant_id`, so a shop-wide viewer over the
+existing repository query would have read every tenant's business changes.

@@ -15,6 +15,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -46,8 +49,57 @@ function formatUsage(row: CouponSummaryResponse): string {
   return row.usageLimit ? `${row.timesUsed} / ${row.usageLimit}` : `${row.timesUsed} / Unlimited`;
 }
 
+/** CR-068. Column catalogue - ids are persisted, so never rename them. */
+const COUPON_COLUMNS: ColumnDef<CouponSummaryResponse>[] = [
+  {
+    id: 'code',
+    header: 'Code',
+    locked: true,
+    cell: (row) => (
+      <>
+        <span className="tabular font-medium">{row.code}</span>
+        {row.restrictedToProducts ? (
+          <Badge variant="outline" className="ml-2">Restricted</Badge>
+        ) : null}
+      </>
+    ),
+  },
+  {
+    id: 'discount',
+    header: 'Discount',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'tabular hidden sm:table-cell',
+    cell: (row) => formatDiscount(row),
+  },
+  {
+    id: 'usage',
+    header: 'Usage',
+    headClassName: 'hidden md:table-cell',
+    cellClassName: 'tabular hidden md:table-cell',
+    cell: (row) => formatUsage(row),
+  },
+  {
+    id: 'currentlyValid',
+    header: 'Currently valid',
+    headClassName: 'hidden lg:table-cell',
+    cellClassName: 'hidden lg:table-cell',
+    cell: (row) => (
+      <Badge variant={row.currentlyValid ? 'success' : 'secondary'}>
+        {row.currentlyValid ? 'Yes' : 'No'}
+      </Badge>
+    ),
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cellClassName: 'status-on-card',
+    cell: (row) => <CouponStatusBadge status={row.status} />,
+  },
+];
+
 export function CouponListPage() {
   const toast = useToast();
+  const columns = useColumnPreferences('coupon', COUPON_COLUMNS);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>(ALL);
@@ -121,12 +173,15 @@ export function CouponListPage() {
         title="Coupons"
         description="Discount codes customers can redeem on an invoice."
         actions={
-          <PermissionGate permission={PERMISSIONS.COUPON_MANAGE}>
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add coupon</span>
-            </Button>
-          </PermissionGate>
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="coupon" />
+            <PermissionGate permission={PERMISSIONS.COUPON_MANAGE}>
+              <Button onClick={() => setCreating(true)}>
+                <Plus className="h-4 w-4" />
+                <span>Add coupon</span>
+              </Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -152,35 +207,26 @@ export function CouponListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Code</TableHead>
-                  <TableHead className="hidden sm:table-cell">Discount</TableHead>
-                  <TableHead className="hidden md:table-cell">Usage</TableHead>
-                  <TableHead className="hidden lg:table-cell">Currently valid</TableHead>
-                  <TableHead>Status</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={6} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length + 1} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
                     <TableRow key={row.id}>
-                      <TableCell>
-                        <span className="tabular font-medium">{row.code}</span>
-                        {row.restrictedToProducts ? (
-                          <Badge variant="outline" className="ml-2">Restricted</Badge>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="tabular hidden sm:table-cell">{formatDiscount(row)}</TableCell>
-                      <TableCell className="tabular hidden md:table-cell">{formatUsage(row)}</TableCell>
-                      <TableCell className="hidden lg:table-cell">
-                        <Badge variant={row.currentlyValid ? 'success' : 'secondary'}>
-                          {row.currentlyValid ? 'Yes' : 'No'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell><CouponStatusBadge status={row.status} /></TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                       <TableCell>
                         <PermissionGate permission={PERMISSIONS.COUPON_MANAGE}>
                           <DropdownMenu>

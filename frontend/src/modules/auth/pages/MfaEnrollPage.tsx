@@ -93,7 +93,7 @@ export function MfaEnrollPage() {
   }
 
   return (
-    <Card className="mx-auto w-full max-w-sm">
+    <Card className="mx-auto w-full max-w-md">
       <CardHeader>
         <CardTitle className="text-xl">Set up two-factor authentication</CardTitle>
         <CardDescription>

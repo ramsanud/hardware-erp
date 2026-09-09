@@ -7,6 +7,14 @@ interface FormFieldProps {
   label: string;
   error?: string;
   hint?: string;
+  /**
+   * CR-069. Lets a live check report a *pass*, not just a failure - the
+   * registration form's shop-name lookup had no way to say "available" in
+   * anything but muted grey, which reads as neutral advice rather than a
+   * cleared check. Defaults to 'muted', so every existing call site is
+   * unchanged.
+   */
+  hintTone?: 'muted' | 'success';
   required?: boolean;
   className?: string;
   children: ReactNode;
@@ -18,7 +26,7 @@ interface FormFieldProps {
  * makes the error audible to a screen reader.
  */
 export function FormField({
-  id, label, error, hint, required, className, children,
+  id, label, error, hint, hintTone = 'muted', required, className, children,
 }: FormFieldProps) {
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
 
@@ -32,7 +40,12 @@ export function FormField({
       {error ? (
         <p id={`${id}-error`} role="alert" className="text-sm text-destructive">{error}</p>
       ) : hint ? (
-        <p id={`${id}-hint`} className="text-sm text-muted-foreground">{hint}</p>
+        <p
+          id={`${id}-hint`}
+          className={cn('text-sm', hintTone === 'success' ? 'font-medium text-success' : 'text-muted-foreground')}
+        >
+          {hint}
+        </p>
       ) : null}
     </div>
   );

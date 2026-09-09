@@ -242,3 +242,35 @@ export interface WhatsAppConnectionRequest {
   phoneNumberId: string;
   accessToken: string;
 }
+
+// ---------------------------------------------------------------------
+// CR-067 - shop data reset
+// ---------------------------------------------------------------------
+
+/** Mirrors backend tenant/dto/DataResetPreviewResponse.java $Group. */
+export interface DataResetGroup {
+  label: string;
+  count: number;
+}
+
+/** Mirrors backend tenant/dto/DataResetPreviewResponse.java. */
+export interface DataResetPreviewResponse {
+  /** The phrase the owner must type back, served with the counts so the dialog never guesses it. */
+  shopName: string;
+  groups: DataResetGroup[];
+  totalRecords: number;
+  /** False on installs that never configured Turnstile - the typed phrase still applies. */
+  captchaRequired: boolean;
+}
+
+/** Mirrors backend tenant/dto/DataResetRequest.java. */
+export interface DataResetRequest {
+  confirmationPhrase: string;
+  captchaToken?: string | null;
+}
+
+/** Mirrors backend tenant/dto/DataResetResponse.java. */
+export interface DataResetResponse {
+  groups: DataResetGroup[];
+  totalRecords: number;
+}

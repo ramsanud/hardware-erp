@@ -7,6 +7,7 @@ import com.hardware.erp.auth.repository.PermissionRepository;
 import com.hardware.erp.auth.repository.RoleRepository;
 import com.hardware.erp.auth.repository.UserRepository;
 import com.hardware.erp.common.exception.DuplicateResourceException;
+import com.hardware.erp.tenant.dto.IdentifierAvailabilityResponse;
 import com.hardware.erp.tenant.dto.TenantRegistrationRequest;
 import com.hardware.erp.tenant.dto.TenantRegistrationResponse;
 import com.hardware.erp.tenant.entity.SubscriptionTier;
@@ -266,5 +267,72 @@ class TenantRegistrationServiceImplTest {
                 .findFirst().orElseThrow();
         assertThat(terms.getDocumentVersion())
                 .isEqualTo(com.hardware.erp.legal.LegalDocumentVersions.TERMS_VERSION);
+    }
+
+    // ---------------------------------------------------------------------
+    // CR-062 - identifier availability, the check the signup wizard runs on
+    // Next so a taken mobile number is not discovered after the Terms step.
+    // ---------------------------------------------------------------------
+
+    @Test
+    @DisplayName("identifier availability reports a registered mobile as taken")
+    void identifierAvailabilityDetectsTakenMobile() {
+        when(userRepository.existsByMobileNo("9876543210")).thenReturn(true);
+        when(userRepository.existsByEmailIgnoreCase("free@shop.in")).thenReturn(false);
+
+        IdentifierAvailabilityResponse result =
+                service.isIdentifierAvailable("9876543210", "free@shop.in");
+
+        assertThat(result.mobileAvailable()).isFalse();
+        assertThat(result.emailAvailable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("identifier availability reports a registered email as taken")
+    void identifierAvailabilityDetectsTakenEmail() {
+        when(userRepository.existsByMobileNo("9123456780")).thenReturn(false);
+        when(userRepository.existsByEmailIgnoreCase("taken@shop.in")).thenReturn(true);
+
+        IdentifierAvailabilityResponse result =
+                service.isIdentifierAvailable("9123456780", "taken@shop.in");
+
+        assertThat(result.mobileAvailable()).isTrue();
+        assertThat(result.emailAvailable()).isFalse();
+    }
+
+    @Test
+    @DisplayName("both free when neither identifier is registered")
+    void identifierAvailabilityAllowsFreeIdentifiers() {
+        when(userRepository.existsByMobileNo(any())).thenReturn(false);
+        when(userRepository.existsByEmailIgnoreCase(any())).thenReturn(false);
+
+        IdentifierAvailabilityResponse result =
+                service.isIdentifierAvailable("9123456780", "free@shop.in");
+
+        assertThat(result.mobileAvailable()).isTrue();
+        assertThat(result.emailAvailable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("an omitted identifier is never reported as taken, and is never looked up")
+    void identifierAvailabilityIgnoresBlankArguments() {
+        when(userRepository.existsByMobileNo("9123456780")).thenReturn(false);
+
+        IdentifierAvailabilityResponse result = service.isIdentifierAvailable("9123456780", "   ");
+
+        assertThat(result.emailAvailable()).isTrue();
+        // The point of the blank guard: no verdict is volunteered about a
+        // value the caller never sent, and no needless query is issued.
+        verify(userRepository, never()).existsByEmailIgnoreCase(any());
+    }
+
+    @Test
+    @DisplayName("availability trims, matching the trim register() applies before its own duplicate guard")
+    void identifierAvailabilityTrimsLikeRegister() {
+        when(userRepository.existsByMobileNo("9876543210")).thenReturn(true);
+
+        IdentifierAvailabilityResponse result = service.isIdentifierAvailable("  9876543210  ", null);
+
+        assertThat(result.mobileAvailable()).isFalse();
     }
 }

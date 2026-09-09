@@ -5,6 +5,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios';
 import { ApiError, type ApiErrorResponse, type ApiResponse } from '@/shared/types/api';
+import { resolveApiBaseUrl } from './apiBaseUrl';
 import { tokenStorage } from './tokenStorage';
 
 /**
@@ -13,45 +14,7 @@ import { tokenStorage } from './tokenStorage';
  * place.
  */
 
-/**
- * Where the API lives.
- *
- * Unset - the intended configuration - means the relative '/api', so requests
- * are same-origin: the Vite dev proxy locally, the vercel.json rewrite in
- * production. That is not a convenience. The refresh token cookie is
- * SameSite=Strict, so a cross-origin XHR never sends it, and sign-in silently
- * stops persisting the moment the 15-minute access token expires.
- *
- * When it IS set, the '/api' suffix is added if missing. The server's
- * context-path is a fixed '/api' (application.yml), so a base URL without it
- * cannot be right - and getting it wrong produces
- * '<host>/v1/auth/login', a 404 whose CORS preflight failure looks like a
- * CORS problem rather than a path one. That cost a deploy on 2026-09-05.
- */
-function resolveBaseUrl(): string {
-  const configured = import.meta.env.VITE_API_BASE_URL?.trim();
-  if (!configured) {
-    return '/api';
-  }
-
-  const trimmed = configured.replace(/\/+$/, '');
-  const normalised = trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
-
-  // An absolute URL means cross-origin, which breaks the refresh cookie. Say
-  // so once, loudly, rather than letting it surface days later as users being
-  // logged out at seemingly random moments.
-  if (/^https?:\/\//i.test(normalised)) {
-    console.warn(
-      `[apiClient] VITE_API_BASE_URL is set to an absolute URL (${normalised}). ` +
-      'Requests will be cross-origin, and the SameSite=Strict refresh cookie will NOT be sent - ' +
-      'sign-in will stop persisting once the access token expires. Prefer leaving ' +
-      'VITE_API_BASE_URL unset and routing /api through the vercel.json rewrite (or the Vite dev proxy).',
-    );
-  }
-  return normalised;
-}
-
-const BASE_URL = resolveBaseUrl();
+const BASE_URL = resolveApiBaseUrl();
 
 /** Never retried on 401 - a failure here means the session is genuinely over. */
 const REFRESH_PATH = '/v1/auth/refresh';
@@ -64,11 +27,30 @@ const PUBLIC_PATHS = [
 
 interface RetryConfig extends InternalAxiosRequestConfig {
   _retried?: boolean;
+  /** Separate from _retried so a 401-refresh and a timeout retry cannot cancel each other out. */
+  _timeoutRetried?: boolean;
 }
 
+/**
+ * BUG-FE-033. 90s, not 30s.
+ *
+ * A timeout here does NOT mean "the server is down". The TLS handshake
+ * completed and the request was accepted - measured at 0.18s against the
+ * production host - so something upstream is merely busy. A genuinely
+ * unreachable server fails at connect time instead and surfaces as
+ * NETWORK_ERROR in seconds, which is why raising this ceiling costs nothing
+ * in that case.
+ *
+ * What it buys: the free Render tier sleeps after 15 minutes and documents a
+ * 30-60s cold start (docs/DEPLOYMENT.md), so a 30s timeout was BELOW the
+ * platform's own best case - the first action after any idle period was
+ * guaranteed to fail. Measured worse than that in practice, because Hibernate
+ * runs ddl-auto: validate over ~50 tables at boot and each round trip pays the
+ * latency between the service and its database.
+ */
 export const http: AxiosInstance = axios.create({
   baseURL: BASE_URL,
-  timeout: 30_000,
+  timeout: 90_000,
   // Required for the HttpOnly refresh cookie to be sent.
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
@@ -122,6 +104,26 @@ http.interceptors.response.use(
     const config = error.config as RetryConfig | undefined;
     const status = error.response?.status;
 
+    /*
+     * BUG-FE-033. One retry of a SAFE method turns a cold start into a slow
+     * page load rather than an error screen.
+     *
+     * Deliberately GET only. A timed-out write may already have been applied
+     * server-side - the response was lost, not the request - and this client
+     * sends no Idempotency-Key, so replaying a POST could duplicate a record.
+     * The backend has an IdempotencyService but no frontend call site uses it
+     * yet; wiring that up is the prerequisite for ever retrying a write here.
+     */
+    if (
+      error.code === 'ECONNABORTED'
+      && config
+      && !config._timeoutRetried
+      && (config.method ?? 'get').toLowerCase() === 'get'
+    ) {
+      config._timeoutRetried = true;
+      return await http.request(config);
+    }
+
     const canRetry =
       status === 401 &&
       config &&
@@ -165,7 +167,10 @@ function toApiError(error: AxiosError<ApiErrorResponse>): ApiError {
 
   if (error.code === 'ECONNABORTED') {
     return new ApiError({
-      message: 'The server took too long to respond. Please try again.',
+      // Names the usual cause. "Took too long" reads as a fault the user
+      // caused or can fix by retrying immediately; on a sleeping free-tier
+      // instance the truthful advice is to wait a few seconds and retry.
+      message: 'The server is still starting up. Give it a few seconds and try again.',
       code: 'TIMEOUT',
       status: 408,
     });

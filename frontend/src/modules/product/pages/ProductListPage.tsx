@@ -17,6 +17,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -67,9 +70,118 @@ function ProductThumbnail({ productId, hasImage, productName }: { productId: num
   );
 }
 
+/**
+ * CR-068. The column catalogue for this list: everything a user may put on
+ * screen, with the first five on by default because they are what the table
+ * showed before the picker existed - turning the feature on must not silently
+ * rearrange anybody's list.
+ *
+ * The `id` of each entry is persisted in the user's preference, so these
+ * strings are data and must never be renamed (see ColumnDef).
+ *
+ * Purchase price is deliberately absent and cannot be added here: the list
+ * endpoint does not send it at all, by the documented decision in
+ * ProductSummaryResponse that cost never leaves the detail screen.
+ */
+const PRODUCT_COLUMNS: ColumnDef<ProductSummaryResponse>[] = [
+  {
+    id: 'product',
+    header: 'Product',
+    locked: true,
+    cell: (row) => (
+      <div className="flex items-center gap-3">
+        <ProductThumbnail productId={row.id} hasImage={row.hasImage} productName={row.productName} />
+        <div>
+          <span className="font-medium">{row.productName}</span>
+          <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.productCode}</span>
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: 'category',
+    header: 'Category',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'hidden sm:table-cell',
+    cell: (row) => row.categoryName ?? '—',
+  },
+  {
+    id: 'brand',
+    header: 'Brand',
+    headClassName: 'hidden lg:table-cell',
+    cellClassName: 'hidden lg:table-cell',
+    cell: (row) => row.brandName ?? '—',
+  },
+  {
+    id: 'price',
+    header: 'Price',
+    headClassName: 'hidden md:table-cell',
+    // show-on-card: hidden in the table below md, but the price is the single
+    // most-scanned value on a phone, so it stays on the stacked card.
+    cellClassName: 'tabular hidden md:table-cell show-on-card',
+    cell: (row) => `₹${row.sellingPriceDisplay} / ${row.unit}`,
+  },
+  {
+    id: 'gst',
+    header: 'GST',
+    headClassName: 'hidden xl:table-cell',
+    cellClassName: 'tabular hidden xl:table-cell',
+    cell: (row) => `${row.gstRatePercent}%`,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cellClassName: 'status-on-card',
+    cell: (row) => <ProductStatusBadge status={row.status} />,
+  },
+  // Opt-in from here down. All five arrive on ProductSummaryResponse (CR-068).
+  {
+    id: 'description',
+    header: 'Description',
+    defaultVisible: false,
+    cell: (row) => (
+      <span className="line-clamp-2 text-muted-foreground">{row.description || '—'}</span>
+    ),
+  },
+  {
+    id: 'mrp',
+    header: 'MRP',
+    defaultVisible: false,
+    cellClassName: 'tabular',
+    cell: (row) => `₹${row.mrpDisplay}`,
+  },
+  {
+    id: 'modelNo',
+    header: 'Model no.',
+    defaultVisible: false,
+    cell: (row) => row.modelNo || '—',
+  },
+  {
+    id: 'barcode',
+    header: 'Barcode',
+    defaultVisible: false,
+    cellClassName: 'tabular',
+    cell: (row) => row.barcode || '—',
+  },
+  {
+    id: 'hsnCode',
+    header: 'HSN',
+    defaultVisible: false,
+    cellClassName: 'tabular',
+    cell: (row) => row.hsnCode || '—',
+  },
+  {
+    id: 'unit',
+    header: 'Unit',
+    defaultVisible: false,
+    cell: (row) => row.unit,
+  },
+];
+
 export function ProductListPage() {
   const navigate = useNavigate();
   const toast = useToast();
+  const columns = useColumnPreferences('product', PRODUCT_COLUMNS);
   const { hasPermission } = useAuth();
   // Editing a product means seeing and re-submitting its purchase price
   // (ProductForm requires it). A PRODUCT_MANAGE holder without
@@ -232,18 +344,22 @@ export function ProductListPage() {
         title="Products"
         description="The sellable catalogue: what the shop stocks and sells."
         actions={
-          <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            {/* Outside the PRODUCT_MANAGE gate on purpose: choosing what you
+                look at is not a management action, and a read-only user has
+                the same reason to want the barcode column as anyone else. */}
+            {deletedMode ? null : <ColumnSettings preferences={columns} label="product" />}
+            <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>
               <Button variant="outline" onClick={() => setImporting(true)}>
                 <Upload className="h-4 w-4" />
-                <span className="hidden sm:inline">Import</span>
+                <span>Import</span>
               </Button>
               <Button onClick={() => { setFormDirty(false); setCreating(true); }}>
                 <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">Add product</span>
+                <span>Add product</span>
               </Button>
-            </div>
-          </PermissionGate>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -357,18 +473,17 @@ export function ProductListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Product</TableHead>
-                  <TableHead className="hidden sm:table-cell">Category</TableHead>
-                  <TableHead className="hidden lg:table-cell">Brand</TableHead>
-                  <TableHead className="hidden md:table-cell">Selling price</TableHead>
-                  <TableHead className="hidden xl:table-cell">GST</TableHead>
-                  <TableHead>Status</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={7} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length + 1} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
@@ -377,24 +492,11 @@ export function ProductListPage() {
                       className="cursor-pointer"
                       onClick={() => navigate(PRODUCT_ROUTES.detail(row.id))}
                     >
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <ProductThumbnail productId={row.id} hasImage={row.hasImage} productName={row.productName} />
-                          <div>
-                            <span className="font-medium">{row.productName}</span>
-                            <span className="tabular mt-0.5 block text-xs text-muted-foreground">
-                              {row.productCode}
-                            </span>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">{row.categoryName ?? '—'}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{row.brandName ?? '—'}</TableCell>
-                      <TableCell className="tabular hidden md:table-cell">
-                        ₹{row.sellingPriceDisplay} / {row.unit}
-                      </TableCell>
-                      <TableCell className="tabular hidden xl:table-cell">{row.gstRatePercent}%</TableCell>
-                      <TableCell><ProductStatusBadge status={row.status} /></TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                       <TableCell onClick={(event) => event.stopPropagation()}>
                         <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>
                           <DropdownMenu>

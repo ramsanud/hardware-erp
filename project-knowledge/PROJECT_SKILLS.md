@@ -328,3 +328,32 @@ Lessons learned. Read before every module; append after every module.
     the scratchpad as reliably persistent within a single session, and
     prefer keeping durable dev artifacts (like `.env`, per the earlier
     documented incident) outside it entirely.
+54. A CAPTCHA that is "disabled unless configured" is a control that
+    silently disappears, so it must never be the *only* guard on an
+    irreversible action. `CaptchaProperties.active()` requires both keys
+    (deliberately - a missing key must not lock users out of a working
+    system), which means a CAPTCHA-only confirmation on CR-067's data
+    reset would have been no confirmation at all on every install that
+    never set the keys, while the dialog still said "security check".
+    Pair it with something that cannot be switched off by configuration
+    - CR-067 uses a typed shop name. The general rule: before layering a
+    security control onto a new action, check what that control does when
+    it is *unconfigured*, not only when it fails.
+55. Child tables in this schema carry no `tenant_id` of their own
+    (`invoice_item`, `quotation_item`, `purchase_item`,
+    `sales_order_item`, `delivery_challan_item`, `credit_note_item`,
+    `expense_receipt`). Isolation reaches them through their parent. Any
+    bulk statement written against one must be scoped by a subquery on
+    the already-scoped parent - `WHERE tenant_id = ?` will not compile
+    there, which is a useful accident, but `WHERE invoice_id IN (...)`
+    without the tenant filter on the inner query would compile fine and
+    cross tenants silently. CR-067's `DataResetIT` seeds a second shop
+    purely to catch that class of mistake.
+56. Integration tests here share one reused container with no rollback
+    between methods (`AbstractIntegrationTest`), so a test that *deletes*
+    data must never aim at the seeded tenant 1 - it would strip the
+    products, stock and movements every other IT reads, and the failures
+    would surface far away and look unrelated. CR-067's `DataResetIT`
+    registers two throwaway shops per test instead and resets one of
+    those. Same reasoning as `WhatsAppConnectionSecurityIT`'s upsert and
+    `SupplierControllerIT`'s unique-per-test values, one step further.

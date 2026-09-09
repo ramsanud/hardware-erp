@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { navigableItems } from '@/layouts/Sidebar';
+import { cn } from '@/shared/lib/utils';
 import { productService } from '@/modules/product/services/productService';
 import { supplierService } from '@/modules/supplier/services/supplierService';
 import { customerService } from '@/modules/customer/services/customerService';
@@ -31,7 +32,19 @@ import type { QuotationSummaryResponse } from '@/modules/quotation/types';
  * (e.g. 403 for a caller without CUSTOMER_VIEW) just renders that section
  * empty via Promise.allSettled, rather than failing the whole search.
  */
-export function GlobalSearch() {
+interface GlobalSearchProps {
+  /**
+   * Overrides the default "hidden below sm, capped at max-w-md" shell.
+   * CR-061: a phone header has no room for a permanent search box, so the
+   * mobile app bar mounts this expanded across the whole bar on demand
+   * instead of leaving phone users with no search at all.
+   */
+  className?: string;
+  /** Focus on mount - the mobile header only mounts it once asked for. */
+  autoFocus?: boolean;
+}
+
+export function GlobalSearch({ className, autoFocus = false }: GlobalSearchProps = {}) {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const [query, setQuery] = useState('');
@@ -44,6 +57,12 @@ export function GlobalSearch() {
   const [quotations, setQuotations] = useState<QuotationSummaryResponse[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // CR-061: the mobile header mounts this only after the user taps search,
+  // so the keyboard should come up with it rather than needing a second tap.
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
 
   const pages = useMemo(() => navigableItems(hasPermission), [hasPermission]);
   const matchingPages = useMemo(() => {
@@ -113,7 +132,7 @@ export function GlobalSearch() {
     || invoices.length > 0 || quotations.length > 0 || matchingPages.length > 0;
 
   return (
-    <div ref={containerRef} className="relative hidden flex-1 max-w-md sm:block">
+    <div ref={containerRef} className={cn('relative flex-1', className ?? 'hidden max-w-md sm:block')}>
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <input

@@ -1,5 +1,6 @@
 package com.hardware.erp.tenant.service;
 
+import com.hardware.erp.tenant.dto.IdentifierAvailabilityResponse;
 import com.hardware.erp.tenant.dto.TenantRegistrationRequest;
 import com.hardware.erp.tenant.dto.TenantRegistrationResponse;
 
@@ -9,4 +10,10 @@ public interface TenantRegistrationService {
     TenantRegistrationResponse register(TenantRegistrationRequest request);
 
     boolean isSlugAvailable(String slug);
+
+    /**
+     * CR-062. Whether the mobile number and/or email are still free to
+     * register. Either argument may be null or blank, meaning "not asked".
+     */
+    IdentifierAvailabilityResponse isIdentifierAvailable(String mobileNo, String email);
 }

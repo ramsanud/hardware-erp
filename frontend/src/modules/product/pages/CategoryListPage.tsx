@@ -12,6 +12,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { PRODUCT_ROUTES } from '../constants';
 import { SearchInput } from '@/shared/components/SearchInput';
@@ -35,8 +38,60 @@ async function fetchAllAsPage(): Promise<PageResponse<CategoryResponse>> {
   return { content, page: 0, size: content.length, totalElements: content.length, totalPages: 1, first: true, last: true };
 }
 
+/** CR-068. Column catalogue - ids are persisted, so never rename them. */
+const CATEGORY_COLUMNS: ColumnDef<CategoryResponse>[] = [
+  {
+    id: 'category',
+    header: 'Category',
+    locked: true,
+    cell: (row) => (
+      <>
+        <span className="font-medium">{row.categoryName}</span>
+        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.categoryCode}</span>
+      </>
+    ),
+  },
+  {
+    id: 'parent',
+    header: 'Parent',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'hidden sm:table-cell',
+    cell: (row) => row.parentCategoryName ?? '—',
+  },
+  {
+    id: 'productCount',
+    header: 'Products',
+    headClassName: 'hidden md:table-cell',
+    cellClassName: 'tabular hidden md:table-cell',
+    cell: (row) => (row.productCount > 0 ? (
+      <Link
+        to={`${PRODUCT_ROUTES.list}?categoryId=${row.id}`}
+        className="text-primary underline-offset-4 hover:underline"
+        aria-label={`View ${row.productCount} products in ${row.categoryName}`}
+      >
+        {row.productCount}
+      </Link>
+    ) : row.productCount),
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cellClassName: 'status-on-card',
+    cell: (row) => <CategoryStatusBadge status={row.status} />,
+  },
+  {
+    id: 'description',
+    header: 'Description',
+    defaultVisible: false,
+    cell: (row) => (
+      <span className="line-clamp-2 text-muted-foreground">{row.description || '—'}</span>
+    ),
+  },
+];
+
 export function CategoryListPage() {
   const toast = useToast();
+  const columns = useColumnPreferences('category', CATEGORY_COLUMNS);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<CategoryResponse | null>(null);
   const [deleting, setDeleting] = useState<CategoryResponse | null>(null);
@@ -106,9 +161,12 @@ export function CategoryListPage() {
         title="Categories"
         description="Hierarchical grouping for the product catalogue."
         actions={
-          <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>
-            <Button onClick={() => setCreating(true)}>Add category</Button>
-          </PermissionGate>
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="category" />
+            <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>
+              <Button onClick={() => setCreating(true)}>Add category</Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -129,33 +187,22 @@ export function CategoryListPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Category</TableHead>
-                <TableHead className="hidden sm:table-cell">Parent</TableHead>
-                <TableHead className="hidden md:table-cell">Products</TableHead>
-                <TableHead>Status</TableHead>
+                {columns.visible.map((column) => (
+                  <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                    {column.header}
+                  </TableHead>
+                ))}
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {categories.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell>
-                    <span className="font-medium">{row.categoryName}</span>
-                    <span className="tabular mt-0.5 block text-xs text-muted-foreground">
-                      {row.categoryCode}
-                    </span>
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell">{row.parentCategoryName ?? '—'}</TableCell>
-                  <TableCell className="tabular hidden md:table-cell">
-                    {row.productCount > 0 ? (
-                      <Link to={`${PRODUCT_ROUTES.list}?categoryId=${row.id}`}
-                            className="text-primary underline-offset-4 hover:underline"
-                            aria-label={`View ${row.productCount} products in ${row.categoryName}`}>
-                        {row.productCount}
-                      </Link>
-                    ) : row.productCount}
-                  </TableCell>
-                  <TableCell><CategoryStatusBadge status={row.status} /></TableCell>
+                  {columns.visible.map((column) => (
+                    <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                      {column.cell(row)}
+                    </TableCell>
+                  ))}
                   <TableCell>
                     <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>
                       <DropdownMenu>

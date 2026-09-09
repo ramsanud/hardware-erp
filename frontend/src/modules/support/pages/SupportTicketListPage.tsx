@@ -17,6 +17,9 @@ import {
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/shared/components/ui/dialog';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -29,7 +32,7 @@ import { formatDateTime } from '@/shared/lib/utils';
 import { useToast } from '@/modules/auth/hooks/useToast';
 import { SUPPORT_ROUTES, TICKET_CATEGORY_OPTIONS } from '../constants';
 import { supportTicketService } from '../services/supportTicketService';
-import type { TicketCategory, TicketStatus } from '../types';
+import type { SupportTicketSummaryResponse, TicketCategory, TicketStatus } from '../types';
 
 const ticketSchema = z.object({
   subject: z.string().trim().min(1, 'Enter a subject').max(200),
@@ -42,9 +45,41 @@ const STATUS_BADGE: Record<TicketStatus, 'default' | 'destructive' | 'secondary'
   OPEN: 'destructive', IN_PROGRESS: 'secondary', WAITING_FOR_USER: 'outline', RESOLVED: 'default', CLOSED: 'outline',
 };
 
+/** CR-068. Column catalogue - ids are persisted, so never rename them. */
+const TICKET_COLUMNS: ColumnDef<SupportTicketSummaryResponse>[] = [
+  {
+    id: 'subject',
+    header: 'Subject',
+    locked: true,
+    cellClassName: 'font-medium',
+    cell: (row) => row.subject,
+  },
+  {
+    id: 'category',
+    header: 'Category',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'hidden sm:table-cell text-xs text-muted-foreground',
+    cell: (row) => row.category,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cellClassName: 'status-on-card',
+    cell: (row) => <Badge variant={STATUS_BADGE[row.status]}>{row.status.replace(/_/g, ' ')}</Badge>,
+  },
+  {
+    id: 'raised',
+    header: 'Raised',
+    headClassName: 'hidden md:table-cell',
+    cellClassName: 'hidden md:table-cell text-xs text-muted-foreground',
+    cell: (row) => formatDateTime(row.createdAt),
+  },
+];
+
 export function SupportTicketListPage() {
   const navigate = useNavigate();
   const toast = useToast();
+  const columns = useColumnPreferences('supportTicket', TICKET_COLUMNS);
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -78,10 +113,13 @@ export function SupportTicketListPage() {
         title="Support"
         description="Raise a ticket for anything not working as expected."
         actions={
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">New ticket</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="ticket" />
+            <Button onClick={() => setDialogOpen(true)}>
+              <Plus className="h-4 w-4" />
+              <span>New ticket</span>
+            </Button>
+          </div>
         }
       />
 
@@ -93,23 +131,25 @@ export function SupportTicketListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Subject</TableHead>
-                  <TableHead className="hidden sm:table-cell">Category</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="hidden md:table-cell">Raised</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={4} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
                     <TableRow key={row.id} className="cursor-pointer" onClick={() => navigate(SUPPORT_ROUTES.detail(row.id))}>
-                      <TableCell className="font-medium">{row.subject}</TableCell>
-                      <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">{row.category}</TableCell>
-                      <TableCell><Badge variant={STATUS_BADGE[row.status]}>{row.status.replace(/_/g, ' ')}</Badge></TableCell>
-                      <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{formatDateTime(row.createdAt)}</TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                     </TableRow>
                   ))}
                 </TableBody>

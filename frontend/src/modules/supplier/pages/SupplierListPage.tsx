@@ -12,6 +12,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -45,9 +48,79 @@ const ALL = '__all__';
  */
 const DELETED = '__deleted__';
 
+/**
+ * CR-068. Column catalogue - ids are persisted, so never rename them.
+ *
+ * Contact person and GST number are opt-in rather than new: both already
+ * arrive on SupplierSummaryResponse and were already searchable ("Name, code,
+ * mobile, contact or GST…"), they simply had nowhere to be displayed. Status
+ * keeps its full pill - Inactive and Blocked are different states that a
+ * colour dot could not separate.
+ */
+const SUPPLIER_COLUMNS: ColumnDef<SupplierSummaryResponse>[] = [
+  {
+    id: 'supplier',
+    header: 'Supplier',
+    locked: true,
+    cell: (row) => (
+      <>
+        <span className="font-medium">{row.supplierName}</span>
+        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.supplierCode}</span>
+      </>
+    ),
+  },
+  {
+    id: 'mobile',
+    header: 'Mobile',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'tabular hidden sm:table-cell',
+    cell: (row) => row.mobileNo,
+  },
+  {
+    id: 'city',
+    header: 'City',
+    headClassName: 'hidden lg:table-cell',
+    cellClassName: 'hidden lg:table-cell',
+    cell: (row) => row.city ?? '—',
+  },
+  {
+    id: 'paymentTerms',
+    header: 'Payment terms',
+    headClassName: 'hidden xl:table-cell',
+    cellClassName: 'tabular hidden xl:table-cell',
+    cell: (row) => `${row.paymentTermsDays} days`,
+  },
+  {
+    id: 'creditLimit',
+    header: 'Credit limit',
+    headClassName: 'hidden md:table-cell',
+    cellClassName: 'tabular hidden md:table-cell',
+    cell: (row) => `₹${row.creditLimitDisplay}`,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cell: (row) => <SupplierStatusBadge status={row.status} />,
+  },
+  {
+    id: 'contactPerson',
+    header: 'Contact person',
+    defaultVisible: false,
+    cell: (row) => row.contactPerson || '—',
+  },
+  {
+    id: 'gstNo',
+    header: 'GST number',
+    defaultVisible: false,
+    cellClassName: 'tabular',
+    cell: (row) => row.gstNo || '—',
+  },
+];
+
 export function SupplierListPage() {
   const navigate = useNavigate();
   const toast = useToast();
+  const columns = useColumnPreferences('supplier', SUPPLIER_COLUMNS);
   const { hasPermission } = useAuth();
   // The deleted list and restore both require SUPPLIER_MANAGE server-side, so
   // a SUPPLIER_VIEW-only user is never offered the filter that would 403.
@@ -114,7 +187,11 @@ export function SupplierListPage() {
   useEffect(() => {
     void (async () => {
       try {
-        setCities(await supplierService.cities());
+        // ?? [] as well as the catch: the catch only covers a rejected
+        // request, and a 200 carrying a null body would otherwise put null
+        // into state and white-screen the whole page on cities.map() below -
+        // a filter dropdown taking down the list it filters.
+        setCities(await supplierService.cities() ?? []);
       } catch {
         // Cities only populate the filter dropdown; a failure here must not
         // block the supplier list, which is the point of the page.
@@ -141,12 +218,15 @@ export function SupplierListPage() {
         title="Suppliers"
         description="Businesses the shop buys from."
         actions={
-          <PermissionGate permission={PERMISSIONS.SUPPLIER_MANAGE}>
-            <Button onClick={() => navigate(SUPPLIER_ROUTES.create)}>
-              <UserPlus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add supplier</span>
-            </Button>
-          </PermissionGate>
+          <div className="flex items-center gap-2">
+            {deletedMode ? null : <ColumnSettings preferences={columns} label="supplier" />}
+            <PermissionGate permission={PERMISSIONS.SUPPLIER_MANAGE}>
+              <Button onClick={() => navigate(SUPPLIER_ROUTES.create)}>
+                <UserPlus className="h-4 w-4" />
+                <span>Add supplier</span>
+              </Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -250,18 +330,17 @@ export function SupplierListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead className="hidden sm:table-cell">Mobile</TableHead>
-                  <TableHead className="hidden lg:table-cell">City</TableHead>
-                  <TableHead className="hidden xl:table-cell">Payment terms</TableHead>
-                  <TableHead className="hidden md:table-cell">Credit limit</TableHead>
-                  <TableHead>Status</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={7} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length + 1} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
@@ -270,21 +349,11 @@ export function SupplierListPage() {
                       className="cursor-pointer"
                       onClick={() => navigate(SUPPLIER_ROUTES.detail(row.id))}
                     >
-                      <TableCell>
-                        <span className="font-medium">{row.supplierName}</span>
-                        <span className="tabular mt-0.5 block text-xs text-muted-foreground">
-                          {row.supplierCode}
-                        </span>
-                      </TableCell>
-                      <TableCell className="tabular hidden sm:table-cell">{row.mobileNo}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{row.city ?? '—'}</TableCell>
-                      <TableCell className="tabular hidden xl:table-cell">
-                        {row.paymentTermsDays} days
-                      </TableCell>
-                      <TableCell className="tabular hidden md:table-cell">
-                        ₹{row.creditLimitDisplay}
-                      </TableCell>
-                      <TableCell><SupplierStatusBadge status={row.status} /></TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                       <TableCell onClick={(event) => event.stopPropagation()}>
                         <PermissionGate permission={PERMISSIONS.SUPPLIER_MANAGE}>
                           <DropdownMenu>

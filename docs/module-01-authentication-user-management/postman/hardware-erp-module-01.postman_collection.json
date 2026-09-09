@@ -2569,6 +2569,276 @@
           ]
         }
       ]
+    },
+    {
+      "name": "7. Tenant Registration",
+      "description": "CR-028's public signup, plus CR-062's two availability lookups. All three are unauthenticated (permitAll) and rate-limited. The availability endpoints exist so the signup wizard can reject a taken shop name or mobile number at the step that asks for it, rather than after the plan and Terms steps - see CR-062. They are a deliberate, documented enumeration surface governed by REGISTRATION_AVAILABILITY_PER_IP (20/min/IP), shared across both.",
+      "item": [
+        {
+          "name": "Shop name available",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/tenants/register/slug-available?slug=A Brand New Shop",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "tenants",
+                "register",
+                "slug-available"
+              ],
+              "query": [
+                {
+                  "key": "slug",
+                  "value": "A Brand New Shop"
+                }
+              ]
+            },
+            "description": "Live-checked while the owner types the shop name."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Success envelope shape', function () {",
+                  "    pm.expect(body).to.have.property('success', true);",
+                  "    pm.expect(body).to.have.property('timestamp');",
+                  "});",
+                  "pm.test('Reports availability', function () {",
+                  "    pm.expect(pm.response.json().data.available).to.be.a('boolean');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Shop name taken",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/tenants/register/slug-available?slug=Default",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "tenants",
+                "register",
+                "slug-available"
+              ],
+              "query": [
+                {
+                  "key": "slug",
+                  "value": "Default"
+                }
+              ]
+            },
+            "description": "V6 seeds the 'default' tenant in every install, so this name is reliably taken anywhere the collection runs. (An earlier draft used the seeded shop's display name, which is renameable - and had in fact been renamed on the dev box, so the assertion was already false.)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Seeded shop name is not available', function () {",
+                  "    pm.expect(pm.response.json().data.available).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mobile and email available",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/tenants/register/identifier-available?mobileNo=9000000999&email=availability.probe@example.in",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "tenants",
+                "register",
+                "identifier-available"
+              ],
+              "query": [
+                {
+                  "key": "mobileNo",
+                  "value": "9000000999"
+                },
+                {
+                  "key": "email",
+                  "value": "availability.probe@example.in"
+                }
+              ]
+            },
+            "description": "CR-062. Both params are optional; an omitted one always reports available, so no verdict is volunteered about a value the caller never sent. These two values are deliberately NOT the ones the register request below uses, so running the whole folder does not make this assertion fail on the second pass."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Success envelope shape', function () {",
+                  "    pm.expect(body).to.have.property('success', true);",
+                  "    pm.expect(body).to.have.property('timestamp');",
+                  "});",
+                  "pm.test('Both identifiers free', function () {",
+                  "    const d = pm.response.json().data;",
+                  "    pm.expect(d.mobileAvailable).to.eql(true);",
+                  "    pm.expect(d.emailAvailable).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mobile already registered",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/tenants/register/identifier-available?mobileNo=9876543210",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "tenants",
+                "register",
+                "identifier-available"
+              ],
+              "query": [
+                {
+                  "key": "mobileNo",
+                  "value": "9876543210"
+                }
+              ]
+            },
+            "description": "The seeded OWNER's number. This is the case that used to sail through the wizard and only fail on the final Create account call, after the Terms had been accepted."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Seeded owner mobile is not available', function () {",
+                  "    pm.expect(pm.response.json().data.mobileAvailable).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register a new shop",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/tenants/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "tenants",
+                "register"
+              ]
+            },
+            "description": "Creates a tenant, its role set and its first OWNER. Rerunning this returns 409 on the duplicate mobile - which is exactly the late failure CR-062's availability check now surfaces three steps earlier.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shopName\": \"Postman Test Hardware\",\n  \"ownerFullName\": \"Postman Owner\",\n  \"mobileNo\": \"9000000123\",\n  \"email\": \"brand.new@example.in\",\n  \"password\": \"Passw0rd\",\n  \"subscriptionTier\": \"FREE\",\n  \"termsAccepted\": true,\n  \"termsVersion\": \"1.0\",\n  \"privacyVersion\": \"1.0\",\n  \"marketingConsent\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Created, or already exists from a previous run', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "BUG-SEC-005: availability lookups are rate limited",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/tenants/register/slug-available?slug=Enumeration Probe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "tenants",
+                "register",
+                "slug-available"
+              ],
+              "query": [
+                {
+                  "key": "slug",
+                  "value": "Enumeration Probe"
+                }
+              ]
+            },
+            "description": "Run with Postman's Runner (iterations: 30) under the default profile. Until CR-062 this endpoint had NO limit at all: RateLimitFilter dispatches on exact path equality and '/v1/tenants/register/slug-available' is not equal to '/v1/tenants/register', so it fell through ungoverned next to a sibling metered at 5/hour. It now shares a 20/min/IP bucket with identifier-available."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Either answered or rate limited', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 429]);",
+                  "});",
+                  "if (pm.response.code === 429) {",
+                  "    pm.test('Code is RATE_LIMIT_EXCEEDED', function () {",
+                  "        pm.expect(pm.response.json().code).to.eql('RATE_LIMIT_EXCEEDED');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "event": [

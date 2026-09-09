@@ -37,7 +37,7 @@ const SheetOverlay = React.forwardRef<
 ));
 SheetOverlay.displayName = 'SheetOverlay';
 
-type SheetSide = 'left' | 'right';
+type SheetSide = 'left' | 'right' | 'bottom';
 
 interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
@@ -46,9 +46,16 @@ interface SheetContentProps
   showClose?: boolean;
 }
 
+/*
+ * Size lives here rather than on SheetContent, because a bottom sheet is the
+ * opposite shape from an edge drawer - full width, content height - and a
+ * shared `h-dvh w-[17rem]` cannot describe both (CR-062).
+ */
 const SIDE_CLASSES: Record<SheetSide, string> = {
-  left: 'inset-y-0 left-0 border-r data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left',
-  right: 'inset-y-0 right-0 border-l data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right',
+  left: 'inset-y-0 left-0 h-dvh w-[17rem] max-w-[85vw] border-r data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left',
+  right: 'inset-y-0 right-0 h-dvh w-[17rem] max-w-[85vw] border-l data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right',
+  // max-h, not h: a short menu should not stretch to fill the screen.
+  bottom: 'inset-x-0 bottom-0 max-h-[85dvh] w-full rounded-t-2xl border-t data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom',
 };
 
 const SheetContent = React.forwardRef<
@@ -62,7 +69,7 @@ const SheetContent = React.forwardRef<
       className={cn(
         // h-dvh, not h-screen: mobile browser chrome shrinks the visual
         // viewport and h-screen would push the footer under it.
-        'fixed z-50 flex h-dvh w-[17rem] max-w-[85vw] flex-col shadow-xl',
+        'fixed z-50 flex flex-col shadow-xl',
         'data-[state=open]:animate-in data-[state=closed]:animate-out duration-300 ease-out',
         SIDE_CLASSES[side],
         className,

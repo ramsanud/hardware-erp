@@ -359,3 +359,277 @@
     --surface-border-opacity: 1 !important;
   }
 }
+
+/*
+ * ============================================================================
+ * CR-061 - mobile application chrome
+ * ============================================================================
+ *
+ * Everything below is the phone/tablet build. It is CSS rather than a
+ * `useMediaQuery` hook on purpose: a JS breakpoint has to render once at the
+ * wrong size before it corrects itself, and this app is a shell wrapping 43
+ * pages - that flash would show on every route change.
+ */
+@layer components {
+  /* The notch inset is padding on top of a fixed 56px/64px bar, so the bar
+     grows into the safe area instead of the title sliding under an iPhone's
+     status bar. */
+  .app-bar {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  /*
+   * Clearance for fixed furniture, not spacing: the tab bar (~3.25rem plus
+   * its safe-area inset) and the chat FAB sitting above it. At lg the tab bar
+   * is gone and only the FAB needs room - which is what the old pb-24 was.
+   */
+  .app-main {
+    padding-bottom: calc(7.5rem + env(safe-area-inset-bottom));
+  }
+  @media (min-width: 1024px) {
+    .app-main {
+      padding-bottom: 6rem;
+    }
+  }
+
+  .tab-bar-item {
+    @apply flex items-center justify-center py-1.5;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tab-bar-item-inner {
+    @apply flex min-h-[2.75rem] flex-col items-center justify-center gap-0.5;
+    color: hsl(var(--muted-foreground));
+    transition: color var(--motion-duration) ease;
+  }
+  /* The pill behind the icon is the active affordance, not the label colour
+     alone - at 11px a colour change is easy to miss, and a filled shape is
+     legible at a glance the way the rail's left accent bar is. */
+  .tab-bar-icon {
+    @apply flex h-7 w-[3.25rem] items-center justify-center rounded-full;
+    transition: background-color var(--motion-duration) ease;
+  }
+  .tab-bar-label {
+    @apply text-[0.6875rem] font-medium leading-none;
+  }
+  .tab-bar-item-inner[data-active='true'] {
+    color: hsl(var(--primary));
+  }
+  .tab-bar-item-inner[data-active='true'] .tab-bar-icon {
+    background: hsl(var(--primary) / 0.12);
+  }
+  .tab-bar-item-inner[data-active='true'] .tab-bar-label {
+    @apply font-semibold;
+  }
+}
+
+/*
+ * Touch behaviour below the rail. `touch-action: manipulation` removes the
+ * ~300ms click delay browsers keep for double-tap-to-zoom, which is most of
+ * what makes a web app feel slower than a native one on the same phone.
+ */
+@media (max-width: 1023px) {
+  body {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button, a, [role='button'], summary {
+    touch-action: manipulation;
+  }
+}
+
+/*
+ * ----------------------------------------------------------------------------
+ * Tables become a stacked list below `sm` (see shared/components/ui/table.tsx)
+ * ----------------------------------------------------------------------------
+ *
+ * Unlayered and last in the file so it beats the Tailwind utilities on the
+ * cells themselves - `px-3 py-2.5` on every td would otherwise fight the
+ * list padding.
+ *
+ * `td:not(.hidden)` is load-bearing. Pages mark their optional columns
+ * `hidden sm:table-cell`; below sm that resolves to a plain `.hidden`, and a
+ * blanket `display: flex` here would have un-hidden exactly the columns each
+ * page had already decided a phone should not see.
+ */
+@media (max-width: 639px) {
+  [data-table-cards='true'] table,
+  [data-table-cards='true'] tbody,
+  [data-table-cards='true'] tr {
+    display: block;
+    width: 100%;
+  }
+  [data-table-cards='true'] thead {
+    display: none;
+  }
+  [data-table-cards='true'] tr {
+    padding: 0.75rem 0.875rem 0.875rem;
+  }
+  [data-table-cards='true'] td:not(.hidden) {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    width: 100%;
+    padding: 0.1875rem 0;
+    border: 0;
+    text-align: right;
+  }
+  [data-table-cards='true'] td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    text-align: left;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+  /* The first column identifies the record - it reads as the item's heading,
+     not as one more label/value pair repeating what the page title said. The
+     right padding is standing room for the actions button pinned below. */
+  [data-table-cards='true'] td[data-column-index='0']:not(.hidden) {
+    display: block;
+    text-align: left;
+    padding-bottom: 0.375rem;
+    padding-right: 2.75rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
+  }
+  [data-table-cards='true'] td[data-column-index='0']::before {
+    content: none;
+  }
+  /*
+   * The row's ⋯ menu - the one cell whose column heading is deliberately
+   * blank. Left in flow it claimed a full-width line of its own and left a
+   * dead band under every list item; pinned to the top-right corner it reads
+   * as the item's trailing action, which is where a phone user reaches for it.
+   */
+  [data-table-cards='true'] tr {
+    position: relative;
+  }
+  /*
+   * BUG-FE-026. A column can be hidden on a *narrow desktop* and still be
+   * essential on the card - Selling price is the case that exposed it: marked
+   * `hidden md:table-cell` so it drops out of a cramped tablet table, it
+   * therefore also vanished from the phone list, which then showed a product
+   * name and a status pill and no price at all. A price list with no prices.
+   *
+   * `show-on-card` lets a column say "hide me in the table, keep me on the
+   * card" without the page having to duplicate the value into a second
+   * mobile-only cell. It outranks Tailwind's .hidden (0-1-0) on specificity
+   * and lives inside this max-width block, so it can only ever affect the
+   * stacked list.
+   */
+  [data-table-cards='true'] td.show-on-card {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    width: 100%;
+    padding: 0.1875rem 0;
+    border: 0;
+    text-align: right;
+  }
+
+  [data-table-cards='true'] td:last-child:not([data-label]):not([data-column-index='0']) {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    width: auto;
+    padding: 0;
+    justify-content: flex-end;
+  }
+
+  /*
+   * Status as a corner dot on the card, not a labelled row of its own.
+   *
+   * On the phone list every status was spending a full line - "STATUS
+   * <pill>" - on one bit of information, which pushed the price and the next
+   * product further down for no gain. Pinned beside the row's own actions
+   * button it costs no vertical space at all, and it lands where the eye
+   * already goes for "what is this item's state".
+   *
+   * Colour is NOT the only carrier: the label is clipped to screen-reader-only
+   * rather than removed, so assistive technology still reads "Active" /
+   * "Inactive". A sighted user gets the same distinction the badge always
+   * used - success green against destructive red (StatusBadge).
+   */
+  [data-table-cards='true'] td.status-on-card {
+    position: absolute;
+    /* Clear of the actions button pinned at right: 0.5rem (h-8 w-8 = 2rem). */
+    top: 0.5rem;
+    right: 2.75rem;
+    display: flex;
+    align-items: center;
+    width: auto;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+  }
+  /* No "STATUS" caption - the dot is the whole message here. */
+  [data-table-cards='true'] td.status-on-card::before {
+    content: none;
+  }
+  [data-table-cards='true'] td.status-on-card .status-badge {
+    gap: 0;
+    padding: 0.3125rem;
+  }
+  [data-table-cards='true'] td.status-on-card .status-badge-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+  /*
+   * The identity cell reserves standing room for the actions button; with a
+   * status dot to its left it has to reserve for both, or a long product name
+   * runs underneath the dot.
+   */
+  [data-table-cards='true'] tr:has(td.status-on-card) td[data-column-index='0']:not(.hidden) {
+    padding-right: 4.75rem;
+  }
+}
+
+/*
+ * BUG-FE-023. The pinned Save/Cancel bar left a 16px strip of the scrolling
+ * form visible below it, inputs and all - the same "a sticky bar must occlude,
+ * not hint" defect BUG-FE-012 fixed for the dialog header, arriving this time
+ * through layout rather than through opacity.
+ *
+ * Two causes stacked. The footer carried -mb-4 to bleed over the scroll body's
+ * p-4, but (a) almost every dialog nests the footer inside a
+ * <form class="space-y-4"> so its submit button stays in its form, and
+ * Tailwind's `.space-y-4 > :not([hidden]) ~ :not([hidden])` scores 0-3-0 -
+ * every :not([hidden]) adds an attribute selector - so it beat both -mb-4 and
+ * mt-auto outright; and (b) even unopposed the margin would not have helped,
+ * because a sticky element is pinned to its scroll container's padding edge and
+ * no margin moves it past that.
+ *
+ * So the padding itself goes, and only when there is a footer to reach the
+ * edge. :has() keeps that decision in the stylesheet rather than making every
+ * call site pass a flag; where it is unsupported the result is simply today's
+ * behaviour, never worse.
+ */
+.dialog-scroll:has(.dialog-sticky-footer) {
+  padding-bottom: 0;
+}
+/*
+ * BUG-FE-028, the top-edge twin of the above. Same mechanism, same remedy:
+ * the sticky header pins to this container's padding edge, so while the
+ * container kept its pt-4 the bar rested 16px low and the scrolling form
+ * showed through the gap above it. Where :has() is unsupported the result is
+ * a slightly taller header inset, never a leak.
+ */
+.dialog-scroll:has(.dialog-sticky-header) {
+  padding-top: 0;
+}
+/* mt-auto keeps the bar at the bottom of a short form; space-y overrides it
+   with margin-top:1rem, hence the explicit win. */
+.dialog-sticky-footer {
+  margin-top: auto !important;
+  margin-bottom: 0 !important;
+}

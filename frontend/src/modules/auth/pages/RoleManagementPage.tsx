@@ -12,6 +12,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -27,8 +30,54 @@ import { RoleStatusBadge } from '../components/StatusBadge';
 import type { PermissionGroupResponse, RoleResponse } from '../types';
 import type { RoleValues } from '../validation/schemas';
 
+/** CR-068. Column catalogue - ids are persisted, so never rename them. */
+const ROLE_COLUMNS: ColumnDef<RoleResponse>[] = [
+  {
+    id: 'role',
+    header: 'Role',
+    locked: true,
+    cell: (role) => (
+      <>
+        <span className="flex flex-wrap items-center gap-2 font-medium">
+          {role.name}
+          {role.systemRole ? <Badge variant="secondary">System</Badge> : null}
+        </span>
+        <span className="mt-0.5 block font-mono text-xs text-muted-foreground">
+          {role.code}
+        </span>
+        {role.description ? (
+          <span className="mt-0.5 block text-xs text-muted-foreground lg:hidden">
+            {role.description}
+          </span>
+        ) : null}
+      </>
+    ),
+  },
+  {
+    id: 'permissions',
+    header: 'Permissions',
+    headClassName: 'hidden lg:table-cell',
+    cellClassName: 'hidden lg:table-cell',
+    cell: (role) => <Badge variant="outline">{role.permissions.length} permissions</Badge>,
+  },
+  {
+    id: 'users',
+    header: 'Users',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'tabular hidden sm:table-cell',
+    cell: (role) => role.userCount,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cellClassName: 'status-on-card',
+    cell: (role) => <RoleStatusBadge status={role.status} />,
+  },
+];
+
 export function RoleManagementPage() {
   const toast = useToast();
+  const columns = useColumnPreferences('role', ROLE_COLUMNS);
   const [roles, setRoles] = useState<RoleResponse[] | null>(null);
   const [groups, setGroups] = useState<PermissionGroupResponse[]>([]);
   const [error, setError] = useState<ApiError | null>(null);
@@ -98,12 +147,15 @@ export function RoleManagementPage() {
         title="Roles"
         description="A role is a set of permissions. Authorisation is permission-based, never based on the role name."
         actions={
-          <PermissionGate permission={PERMISSIONS.ROLE_MANAGE}>
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add role</span>
-            </Button>
-          </PermissionGate>
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="role" />
+            <PermissionGate permission={PERMISSIONS.ROLE_MANAGE}>
+              <Button onClick={() => setCreating(true)}>
+                <Plus className="h-4 w-4" />
+                <span>Add role</span>
+              </Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -120,35 +172,22 @@ export function RoleManagementPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Role</TableHead>
-                <TableHead className="hidden lg:table-cell">Permissions</TableHead>
-                <TableHead className="hidden sm:table-cell">Users</TableHead>
-                <TableHead>Status</TableHead>
+                {columns.visible.map((column) => (
+                  <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                    {column.header}
+                  </TableHead>
+                ))}
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {roles.map((role) => (
                 <TableRow key={role.id}>
-                  <TableCell>
-                    <span className="flex flex-wrap items-center gap-2 font-medium">
-                      {role.name}
-                      {role.systemRole ? <Badge variant="secondary">System</Badge> : null}
-                    </span>
-                    <span className="mt-0.5 block font-mono text-xs text-muted-foreground">
-                      {role.code}
-                    </span>
-                    {role.description ? (
-                      <span className="mt-0.5 block text-xs text-muted-foreground lg:hidden">
-                        {role.description}
-                      </span>
-                    ) : null}
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell">
-                    <Badge variant="outline">{role.permissions.length} permissions</Badge>
-                  </TableCell>
-                  <TableCell className="tabular hidden sm:table-cell">{role.userCount}</TableCell>
-                  <TableCell><RoleStatusBadge status={role.status} /></TableCell>
+                  {columns.visible.map((column) => (
+                    <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                      {column.cell(role)}
+                    </TableCell>
+                  ))}
                   <TableCell>
                     <PermissionGate permission={PERMISSIONS.ROLE_MANAGE}>
                       <DropdownMenu>

@@ -46,6 +46,16 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private static final String RESET = "/v1/auth/reset-password";
     private static final String REFRESH = "/v1/auth/refresh";
     private static final String REGISTER = "/v1/tenants/register";
+    /*
+     * CR-062. Both signup lookups. SLUG_AVAILABLE shipped ungoverned: this
+     * switch matches on exact path equality, and
+     * "/v1/tenants/register/slug-available" is not equal to
+     * "/v1/tenants/register", so it never hit the REGISTER case despite
+     * sitting under it in the URL space. Adding a second enumeration endpoint
+     * without closing that would have been indefensible.
+     */
+    private static final String SLUG_AVAILABLE = "/v1/tenants/register/slug-available";
+    private static final String IDENTIFIER_AVAILABLE = "/v1/tenants/register/identifier-available";
 
     private final RateLimitService rateLimitService;
     private final ObjectMapper objectMapper;
@@ -87,6 +97,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
                     rateLimitService.check(RateLimitRule.REFRESH_PER_IP, ip));
             case REGISTER -> decisions.add(
                     rateLimitService.check(RateLimitRule.REGISTER_PER_IP, ip));
+            case SLUG_AVAILABLE, IDENTIFIER_AVAILABLE -> decisions.add(
+                    rateLimitService.check(RateLimitRule.REGISTRATION_AVAILABILITY_PER_IP, ip));
             default -> {
                 chain.doFilter(request, response);
                 return;

@@ -4,24 +4,55 @@ import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/shared/components/ui/card';
 import { Alert, AlertDescription } from '@/shared/components/ui/alert';
+import { isAuthRoute } from '@/routes/ProtectedRoute';
 import { AUTH_ROUTES } from '../constants';
 import { useAuth } from '../hooks/AuthProvider';
 import { LoginForm } from '../forms/LoginForm';
 import type { LoginValues } from '../validation/schemas';
 
 interface LocationState {
-  from?: { pathname: string };
+  from?: { pathname: string; search?: string; hash?: string };
   registered?: boolean;
 }
 
 export function LoginPage() {
-  const { login, isAuthenticated, initialising } = useAuth();
+  const { login, isAuthenticated, initialising, cancelPendingLogin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const state = location.state as LocationState | null;
-  const from = state?.from?.pathname ?? '/dashboard';
+  // BUG-FE-024: the query string is part of where the user was going.
+  // Reducing the remembered location to its pathname silently dropped
+  // ?categoryId=, ?tab=, every deep link the app builds - so a bounced user
+  // signed in and landed on a *different* page than the one they asked for.
+  /*
+   * Defence in depth with ProtectedRoute's own guard: `from` is history
+   * state, so it also survives a Back into this entry and can be set by
+   * anything that navigates here. An auth screen arriving as the post-login
+   * destination is always wrong - sending a freshly signed-in user to
+   * /change-password or /login/verify strands them - so it degrades to the
+   * dashboard rather than being trusted.
+   */
+  const from = state?.from && !isAuthRoute(state.from.pathname)
+    ? `${state.from.pathname}${state.from.search ?? ''}${state.from.hash ?? ''}`
+    : '/dashboard';
   const justRegistered = state?.registered === true;
+
+  /*
+   * BUG-FE-025 root cause. Reaching this screen is the user saying "start
+   * again": they backed out of the second factor, clicked "Back to sign in"
+   * from the password-reset flow, or were bounced here by an expired session.
+   * Any mfaToken still held from a previous attempt is dead weight that keeps
+   * /login/verify and /login/set-up-authenticator renderable - which is how
+   * pressing Forward (or Android back-then-forward) dropped the user back into
+   * an abandoned sign-in instead of onto the form they were looking at.
+   *
+   * Clearing it on mount makes those pages redirect to /login as they already
+   * intend to, so the flow has exactly one live entry point at a time.
+   */
+  useEffect(() => {
+    cancelPendingLogin();
+  }, [cancelPendingLogin]);
 
   // Someone already signed in who lands here is bounced back, so the browser
   // back button after login does not show the form again.
@@ -49,30 +80,29 @@ export function LoginPage() {
   };
 
   return (
-    <Card className="mx-auto w-full max-w-sm">
+    <Card
+      className="mx-auto w-full max-w-md rounded-3xl shadow-2xl
+                 animate-in fade-in slide-in-from-bottom-3 duration-500 sm:p-2"
+    >
       <CardHeader>
-        <CardTitle className="text-xl">Sign in</CardTitle>
+        <CardTitle className="text-2xl font-bold tracking-tight">Sign in</CardTitle>
         <CardDescription>
           Welcome back. Enter your credentials to continue.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         {justRegistered ? (
           <Alert>
             <AlertDescription>Your shop is ready. Sign in below to get started.</AlertDescription>
           </Alert>
         ) : null}
+        {/* "Forgot password?" now sits beside Remember me inside the form, so it is not repeated here. */}
         <LoginForm onSubmit={handleSubmit} />
-        <div className="flex items-center justify-between text-sm">
-          <Link
-            to={AUTH_ROUTES.forgotPassword}
-            className="text-primary underline-offset-4 hover:underline"
-          >
-            Forgot your password?
-          </Link>
+        <div className="border-t pt-4 text-center text-sm text-muted-foreground">
+          Don&apos;t have an account?{' '}
           <Link
             to={AUTH_ROUTES.register}
-            className="text-primary underline-offset-4 hover:underline"
+            className="font-medium text-primary underline-offset-4 hover:underline"
           >
             Register your shop
           </Link>

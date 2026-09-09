@@ -14,6 +14,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -30,6 +33,44 @@ import { useToast } from '@/modules/auth/hooks/useToast';
 import { stockService } from '../services/stockService';
 import type { StockResponse } from '../types';
 
+/** CR-068. Column catalogue - ids are persisted, so never rename them. */
+const STOCK_COLUMNS: ColumnDef<StockResponse>[] = [
+  {
+    id: 'product',
+    header: 'Product',
+    locked: true,
+    cell: (row) => (
+      <>
+        <span className="font-medium">{row.productName}</span>
+        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.productCode}</span>
+      </>
+    ),
+  },
+  {
+    id: 'quantityOnHand',
+    header: 'Quantity on hand',
+    cellClassName: 'tabular',
+    cell: (row) => `${row.quantityOnHand} ${row.unit}`,
+  },
+  {
+    id: 'reorderLevel',
+    header: 'Reorder level',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'tabular hidden sm:table-cell',
+    cell: (row) => row.reorderLevel,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cellClassName: 'status-on-card',
+    cell: (row) => (
+      <Badge variant={row.lowStock ? 'warning' : 'success'}>
+        {row.lowStock ? 'Low stock' : 'OK'}
+      </Badge>
+    ),
+  },
+];
+
 const adjustSchema = z.object({
   quantityChange: z.string().trim().min(1, 'Enter a quantity').refine((v) => Number(v) !== 0, 'Cannot be zero'),
   notes: z.string().trim().max(255).optional().or(z.literal('')),
@@ -39,8 +80,10 @@ type AdjustValues = z.infer<typeof adjustSchema>;
 export function StockListPage() {
   const toast = useToast();
   const { hasPermission } = useAuth();
+  const columns = useColumnPreferences('stock', STOCK_COLUMNS);
   const [search, setSearch] = useState('');
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [outOfStockOnly, setOutOfStockOnly] = useState(false);
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   const [adjusting, setAdjusting] = useState<StockResponse | null>(null);
@@ -48,14 +91,14 @@ export function StockListPage() {
 
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
 
-  useEffect(() => { setPage(0); }, [debouncedSearch, lowStockOnly, size]);
+  useEffect(() => { setPage(0); }, [debouncedSearch, lowStockOnly, outOfStockOnly, size]);
 
   const fetcher = useCallback(
-    () => stockService.search({ search: debouncedSearch || undefined, lowStockOnly, page, size }),
-    [debouncedSearch, lowStockOnly, page, size],
+    () => stockService.search({ search: debouncedSearch || undefined, lowStockOnly, outOfStockOnly, page, size }),
+    [debouncedSearch, lowStockOnly, outOfStockOnly, page, size],
   );
 
-  const { data, loading, error, reload } = useAsyncList(fetcher, [debouncedSearch, lowStockOnly, page, size]);
+  const { data, loading, error, reload } = useAsyncList(fetcher, [debouncedSearch, lowStockOnly, outOfStockOnly, page, size]);
 
   const {
     register, handleSubmit, reset, formState: { errors, isSubmitting },
@@ -100,12 +143,15 @@ export function StockListPage() {
         title="Stock"
         description="Current quantity on hand for every product."
         actions={
-          hasPermission(PERMISSIONS.INVENTORY_VIEW) ? (
-            <Button variant="outline" loading={sendingAlert} onClick={() => void handleSendLowStockAlert()}>
-              <MessageCircle className="h-4 w-4" />
-              <span className="hidden sm:inline">Send WhatsApp Alert</span>
-            </Button>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="stock" />
+            {hasPermission(PERMISSIONS.INVENTORY_VIEW) ? (
+              <Button variant="outline" loading={sendingAlert} onClick={() => void handleSendLowStockAlert()}>
+                <MessageCircle className="h-4 w-4" />
+                <span>Send WhatsApp Alert</span>
+              </Button>
+            ) : null}
+          </div>
         }
       />
 
@@ -114,6 +160,16 @@ export function StockListPage() {
         <label className="flex items-center gap-2 text-sm">
           <Checkbox checked={lowStockOnly} onCheckedChange={(v) => setLowStockOnly(Boolean(v))} />
           Low stock only
+        </label>
+        {/*
+          CR-070. Kept as a second checkbox rather than folded into the first:
+          "low" is a prompt to reorder, "out" is a customer standing at the
+          counter with nothing to buy. The two AND server-side, so ticking both
+          narrows to out-of-stock rather than contradicting itself.
+        */}
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={outOfStockOnly} onCheckedChange={(v) => setOutOfStockOnly(Boolean(v))} />
+          Out of stock only
         </label>
       </div>
 
@@ -125,31 +181,26 @@ export function StockListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Quantity on hand</TableHead>
-                  <TableHead className="hidden sm:table-cell">Reorder level</TableHead>
-                  <TableHead>Status</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={5} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length + 1} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
                     <TableRow key={row.productId}>
-                      <TableCell>
-                        <span className="font-medium">{row.productName}</span>
-                        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.productCode}</span>
-                      </TableCell>
-                      <TableCell className="tabular">{row.quantityOnHand} {row.unit}</TableCell>
-                      <TableCell className="tabular hidden sm:table-cell">{row.reorderLevel}</TableCell>
-                      <TableCell>
-                        <Badge variant={row.lowStock ? 'warning' : 'success'}>
-                          {row.lowStock ? 'Low stock' : 'OK'}
-                        </Badge>
-                      </TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                       <TableCell>
                         {hasPermission(PERMISSIONS.INVENTORY_ADJUST) ? (
                           <Button variant="ghost" size="sm" onClick={() => setAdjusting(row)}>Adjust</Button>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FieldError, UseFormRegisterReturn } from 'react-hook-form';
 import { Eye, EyeOff } from 'lucide-react';
-import { Input } from '@/shared/components/ui/input';
+import { ClearableInput } from '@/shared/components/ui/clearable-input';
 import { FormField } from '@/shared/components/FormField';
 
 interface PasswordInputProps {
@@ -25,18 +25,25 @@ export function PasswordInput({
   return (
     <FormField id={id} label={label} error={error?.message} hint={hint} required>
       <div className="relative">
-        <Input
+        {/* trailingSlot=1 parks the clear button to the left of the eye so the
+            two controls never overlap - the show/hide toggle keeps its usual
+            corner and its behaviour is untouched. */}
+        <ClearableInput
           id={id}
           type={visible ? 'text' : 'password'}
           autoComplete={autoComplete}
-          className="pr-10"
+          trailingSlot={1}
           aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
           {...registration}
         />
         <button
           type="button"
           onClick={() => setVisible((shown) => !shown)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-1.5 text-muted-foreground hover:text-foreground"
+          className="absolute right-0 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center
+                     justify-center rounded-md text-muted-foreground transition-colors
+                     hover:text-foreground focus-visible:outline-none focus-visible:ring-2
+                     focus-visible:ring-ring"
           aria-label={visible ? 'Hide password' : 'Show password'}
         >
           {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

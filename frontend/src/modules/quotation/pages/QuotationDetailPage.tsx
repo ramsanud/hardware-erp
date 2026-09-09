@@ -256,7 +256,10 @@ export function QuotationDetailPage() {
                     <TableCell className="tabular text-right">₹{item.unitPriceDisplay}</TableCell>
                     <TableCell className="tabular text-right">
                       {item.discountType === 'NONE' ? (
-                        <span className="text-muted-foreground">—</span>
+                        // "Net" rather than a dash: a dash reads as missing data,
+                        // when in fact the line is priced at full rate with nothing
+                        // taken off - a statement, not an absence.
+                        <span className="text-muted-foreground">Net</span>
                       ) : (
                         <span className="text-destructive">
                           {item.discountType === 'PERCENTAGE'

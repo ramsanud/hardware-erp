@@ -43,10 +43,11 @@ public class StockServiceImpl implements StockService {
 
     @Override
     @Transactional(readOnly = true)
-    public PageResponse<StockResponse> search(String search, boolean lowStockOnly, Pageable pageable) {
+    public PageResponse<StockResponse> search(String search, boolean lowStockOnly,
+                                              boolean outOfStockOnly, Pageable pageable) {
         Long tenantId = SecurityUtils.requireCurrentTenantId();
         return PageResponse.from(
-                stockRepository.search(tenantId, search, lowStockOnly, pageable),
+                stockRepository.search(tenantId, search, lowStockOnly, outOfStockOnly, pageable),
                 stockMapper::toResponse);
     }
 

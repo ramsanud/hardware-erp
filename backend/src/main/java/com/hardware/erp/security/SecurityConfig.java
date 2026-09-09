@@ -124,6 +124,8 @@ public class SecurityConfig {
                             "/v1/auth/mfa/verify",
                             "/v1/tenants/register",
                             "/v1/tenants/register/slug-available",
+                            // CR-062 - same public signup wizard, rate-limited alongside it.
+                            "/v1/tenants/register/identifier-available",
                             // Meta calls this with no JWT of ours - authenticity is
                             // enforced inside WhatsAppWebhookController itself (the
                             // GET handshake's hub.verify_token, the POST's

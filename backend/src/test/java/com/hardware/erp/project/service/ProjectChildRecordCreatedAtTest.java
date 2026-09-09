@@ -91,6 +91,8 @@ class ProjectChildRecordCreatedAtTest {
     @Mock private ProjectExpenseRepository projectExpenseRepository;
     @Mock private ProjectPaymentRepository projectPaymentRepository;
     @Mock private com.hardware.erp.labour.repository.WorkerAttendanceRepository workerAttendanceRepository;
+    /** CR-064 - materials now move stock, so the impl takes this too. */
+    @Mock private com.hardware.erp.inventory.service.StockService stockService;
 
     private ProjectServiceImpl projectService;
     private Project project;
@@ -135,7 +137,7 @@ class ProjectChildRecordCreatedAtTest {
         when(materialRepository.save(any(ProjectMaterial.class))).thenAnswer(i -> i.getArgument(0));
 
         var service = new ProjectMaterialServiceImpl(materialRepository, productRepository, supplierRepository,
-                projectService, tenantRepository, activityLog, new ProjectMapper());
+                projectService, stockService, tenantRepository, activityLog, new ProjectMapper());
 
         var request = new ProjectMaterialRequest(42L, null, java.math.BigDecimal.TEN, null,
                 java.math.BigDecimal.TEN, null, null, null);

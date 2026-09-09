@@ -48,6 +48,7 @@ decoration, not security.
 | Rate limit — forgot-password | 3 / hour per IP + 3 / hour per identifier |
 | Rate limit — reset-password | 10 / hour per IP |
 | Rate limit — refresh | 30 / minute per IP |
+| Rate limit — signup availability lookups | 20 / minute per IP (CR-062) |
 
 Rate limiting is Bucket4j in-process with a Caffeine cache. A single-shop
 monolith is one JVM; Redis would be cost with no benefit.
@@ -344,13 +345,150 @@ verified via a real rotate-then-replay sequence in
 tenant side.
 
 **Explicitly not built in Phase 1, flagged rather than silently deferred**:
-an HttpOnly-cookie refresh-token transport (the raw token currently travels
-in the JSON response/request body both ways — an XSS bug in the future
+~~an HttpOnly-cookie refresh-token transport~~ — **CLOSED by CR-065 on
+2026-09-07**, see below; the note that follows is kept because its prediction
+came true and is worth reading as written. (The raw token travelled in the
+JSON response/request body both ways — an XSS bug in the future
 platform-admin frontend could read it directly, unlike the tenant side's
 cookie-scoped token; accepted for now because a page reload also drops the
 in-memory access token, so the practical exposure window is short, but this
 is the first thing to close before this console handles anything more
-sensitive than viewing its own identity); a Platform Admin Console-specific
+sensitive than viewing its own identity.) Still open: a Platform Admin Console-specific
 CSP/CORS origin (currently reuses the tenant `SecurityConfig`'s CORS
 configuration source bean, which is broad enough today because there is no
 separate admin subdomain yet).
+
+---
+
+## Signup availability lookups are an accepted enumeration surface (CR-062, 2026-09-05)
+
+`GET /v1/tenants/register/slug-available` and
+`GET /v1/tenants/register/identifier-available` are public, unauthenticated
+oracles: the first says whether a shop name is taken, the second whether a
+mobile number or email already has an account. Because login identifiers are
+globally unique across tenants by CR-016's deliberate design, the second
+answers **platform-wide**, not per-shop.
+
+**This was put to the owner before it was built, and accepted.** The reasoning:
+
+- `POST /v1/tenants/register` already answered exactly the same question to
+  anyone willing to submit the form, so no new fact is exposed — only a cheaper
+  way to ask it.
+- The alternative was leaving a signup wizard that lets someone choose a plan
+  and accept the Terms before revealing their number is taken: a real and
+  constant cost to genuine users, weighed against a speculative one.
+
+**The control is the rate limit, not secrecy.**
+`REGISTRATION_AVAILABILITY_PER_IP`, 20/minute/IP, shared by both endpoints so
+alternating between them does not double the budget. `slug-available` had **no
+limit at all** until this work — see BUG-SEC-005 in `BUG_REGISTRY.md`.
+
+**What would change this judgement**: if the platform ever serves shops whose
+mere existence is sensitive, or if these endpoints become reachable by a caller
+pool wider than "people on the public signup page", they should move behind the
+CAPTCHA the login already supports (`/v1/auth/captcha-config`, CR-038) rather
+than relying on the IP bucket alone.
+
+
+---
+
+## CR-065 — Platform Admin refresh token transport (2026-09-07)
+
+**Closes the Phase 1 deferral recorded above, and the prediction it made was
+correct.** That note said the cookie was "the first thing to close before this
+console handles anything more sensitive than viewing its own identity". By
+CR-057 the console had tenant suspension and billing, and the deferral was
+still open. Recorded as BUG-SEC-006.
+
+**Refresh token:** `HttpOnly; Secure; SameSite=Strict;
+Path=/api/v1/platform-admin/auth` cookie, named `erp_pa_refresh_token`.
+
+Two values differ from the tenant cookie, and both deliberately:
+
+| | tenant | platform admin |
+|---|---|---|
+| name | `erp_refresh_token` | `erp_pa_refresh_token` |
+| path | `/api/v1/auth` | `/api/v1/platform-admin/auth` |
+
+A shared **name** would mean whichever console signed in last silently
+destroyed the other's session, since the frontend deliberately keeps two
+independent clients so the two never share state. A shared **path** would ship
+a staff credential to every ERP call any shop makes. Neither is configurable.
+
+**CSRF.** Unchanged, and not weakened. `SameSite=Strict` plus the path scope
+is the existing justification for `SecurityConfig.csrf.disable()`; the new
+cookie was configured so that justification is true of it as well. The cookie
+is never attached to a cross-site request, so there is no cross-site form to
+forge.
+
+**Not changed:** refresh-token rotation, replay-as-theft detection
+(`REUSE_DETECTED` + `token_version` bump), MFA, or the separate
+`/v1/platform-admin/**` filter chain. This was a transport change only, and
+`PlatformAdminRefreshCookieIT` re-asserts rotation and reuse detection
+*through* the cookie specifically to prove it.
+
+**Still true after the change:** the access token remains in memory only. A
+page reload now restores the session from the cookie
+(`PlatformAdminAuthProvider`'s bootstrap) rather than signing the admin out —
+the durable half is the cookie, which JavaScript cannot read.
+
+**Transport switch honoured:** `app.security.refresh-token-transport=JSON`
+still returns the token in the body for a non-browser client, as on the tenant
+side. `COOKIE` is the default, and a blank value resolves to it.
+
+
+---
+
+## CR-067 — CAPTCHA beyond the sign-in page, and what it can and cannot carry
+
+Turnstile (CR-038) now guards a second action: `POST /v1/settings/data-reset`.
+`CaptchaService.verify(token, remoteIp)` needed no change — it was already
+generic — and the call is placed in the same position it occupies in
+`AuthController.login`: **first, before any other check**, so a caller who
+cannot pass the challenge does not learn whether their confirmation phrase was
+right either.
+
+### Why the reset is the only new place it appears
+
+Extending it to all 48 `ConfirmDialog` sites was considered and rejected with
+the owner. A CAPTCHA on "delete this brand" is dismissed reflexively within a
+week, and a control that has been trained away is worse than no control,
+because the screen still claims a security check is happening. It guards the
+one irreversible, many-table action instead.
+
+### Why a CAPTCHA alone was not accepted as the confirmation
+
+`CaptchaProperties.active()` requires `enabled` **and** both keys — deliberately,
+so an unconfigured install does not lock everyone out. Two consequences follow,
+and both matter more here than on the login page:
+
+1. On an install that never configured Turnstile, a CAPTCHA-only gate is **no
+   gate at all**, while the UI still says "security check".
+2. Turnstile is usually invisible to a real user. It proves *a human*; it never
+   proves *this human meant it*.
+
+So the typed shop name is required unconditionally and cannot be switched off
+by configuration, and the CAPTCHA is layered on top where it is available. The
+comparison is case-insensitive and whitespace-collapsing on purpose — it is a
+deliberateness check, not a secret, and a phrase strict enough to fail on a
+trailing space just trains owners to paste it.
+
+### Audit
+
+Both the success and the phrase-mismatch failure write to `security_audit_log`
+under a new `DATA_RESET` action (the column is `VARCHAR(40)` with no CHECK
+constraint, so no migration was needed), and the success also writes an
+`activity_log` entry naming the counts.
+
+**Neither log is deleted by the reset**, and that is the point: a wipe that
+also erased the record of who ran it would not be an audit trail. The
+confirmation dialog states this before the owner confirms, so nobody discovers
+it afterwards.
+
+### Authorization
+
+`DATA_RESET`, a permission of its own (V54), OWNER only — never
+`SETTINGS_MANAGE`. Enforced by `@PreAuthorize` on both endpoints; the
+frontend's `hasPermission` check only hides a card the server would refuse
+anyway. No endpoint in this feature accepts a tenant id, so the blast radius is
+structurally limited to the caller's own shop.

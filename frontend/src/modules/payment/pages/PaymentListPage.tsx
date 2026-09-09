@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Wallet } from 'lucide-react';
 import { Card } from '@/shared/components/ui/card';
@@ -8,6 +8,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -21,7 +24,7 @@ import { formatDateTime } from '@/shared/lib/utils';
 import { INVOICE_ROUTES } from '@/modules/invoice/constants';
 import { PAYMENT_METHOD_OPTIONS } from '../constants';
 import { paymentService } from '../services/paymentService';
-import type { PaymentMethod } from '../types';
+import type { PaymentMethod, PaymentSummaryResponse } from '../types';
 
 const ALL = '__all__';
 const PERIOD_ALL = '__all__';
@@ -65,6 +68,66 @@ const METHOD_LABELS: Record<string, string> = Object.fromEntries(
 
 export function PaymentListPage() {
   const navigate = useNavigate();
+  /*
+   * CR-068. Built in the component rather than as a module constant because
+   * the Invoice cell navigates, and navigate() is a hook value. The deps are
+   * [navigate] alone - everything else the cells read comes from the row.
+   */
+  const paymentColumns = useMemo<ColumnDef<PaymentSummaryResponse>[]>(() => [
+    {
+      id: 'invoice',
+      header: 'Invoice',
+      locked: true,
+      cellClassName: 'tabular font-medium',
+      cell: (row) => (
+        <button
+          type="button"
+          className="hover:underline"
+          onClick={() => navigate(INVOICE_ROUTES.detail(row.invoiceId))}
+        >
+          {row.invoiceNumber}
+        </button>
+      ),
+    },
+    {
+      id: 'customer',
+      header: 'Customer',
+      cell: (row) => (
+        <>
+          <span>{row.customerName}</span>
+          <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.customerMobile}</span>
+        </>
+      ),
+    },
+    {
+      id: 'amount',
+      header: 'Amount',
+      cellClassName: 'tabular',
+      cell: (row) => <>&#8377;{row.amountDisplay}</>,
+    },
+    {
+      id: 'method',
+      header: 'Method',
+      headClassName: 'hidden sm:table-cell',
+      cellClassName: 'hidden sm:table-cell',
+      cell: (row) => METHOD_LABELS[row.paymentMethod] ?? row.paymentMethod,
+    },
+    {
+      id: 'date',
+      header: 'Date',
+      headClassName: 'hidden sm:table-cell',
+      cellClassName: 'hidden sm:table-cell',
+      cell: (row) => formatDateTime(row.paymentDate),
+    },
+    {
+      id: 'notes',
+      header: 'Notes',
+      headClassName: 'hidden md:table-cell',
+      cellClassName: 'hidden max-w-xs truncate md:table-cell text-muted-foreground',
+      cell: (row) => row.notes || '—',
+    },
+  ], [navigate]);
+  const columns = useColumnPreferences('payment', paymentColumns);
   const [search, setSearch] = useState('');
   const [method, setMethod] = useState<string>(ALL);
   const [period, setPeriod] = useState<string>(PERIOD_ALL);
@@ -93,6 +156,7 @@ export function PaymentListPage() {
       <PageHeader
         title="Payments"
         description="Every payment recorded against every invoice, in one place."
+        actions={<ColumnSettings preferences={columns} label="payment" />}
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -124,42 +188,25 @@ export function PaymentListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Invoice</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead className="hidden sm:table-cell">Method</TableHead>
-                  <TableHead className="hidden sm:table-cell">Date</TableHead>
-                  <TableHead className="hidden md:table-cell">Notes</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={6} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
                     <TableRow key={row.id}>
-                      <TableCell className="tabular font-medium">
-                        <button
-                          type="button"
-                          className="hover:underline"
-                          onClick={() => navigate(INVOICE_ROUTES.detail(row.invoiceId))}
-                        >
-                          {row.invoiceNumber}
-                        </button>
-                      </TableCell>
-                      <TableCell>
-                        <span>{row.customerName}</span>
-                        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.customerMobile}</span>
-                      </TableCell>
-                      <TableCell className="tabular">₹{row.amountDisplay}</TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        {METHOD_LABELS[row.paymentMethod] ?? row.paymentMethod}
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">{formatDateTime(row.paymentDate)}</TableCell>
-                      <TableCell className="hidden max-w-xs truncate md:table-cell text-muted-foreground">
-                        {row.notes || '—'}
-                      </TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                     </TableRow>
                   ))}
                 </TableBody>

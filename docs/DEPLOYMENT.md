@@ -143,6 +143,46 @@ Commit and push; Vercel redeploys automatically.
 
 ---
 
+## 3b. Check the service actually landed in the region you asked for
+
+`render.yaml` says `region: singapore`, but **Render cannot move a service
+after it is created** - if the blueprint was edited later, or the service was
+made by hand first, the live one stays where it was born and the file quietly
+disagrees with reality.
+
+This bit on 2026-09-08 (BUG-FE-033): the production service was answering from
+US West while its database sat elsewhere, and a cold start that should take
+30-60s took minutes, so every request after an idle period timed out.
+
+Check it from anywhere, no dashboard needed - the origin hostname carries the
+region:
+
+```bash
+nslookup hardware-erp-9j9f.onrender.com | grep origin
+#   gcp-us-west1-1.origin.onrender.com   <- Oregon, NOT singapore
+```
+
+And measure the distance to the database, by comparing an endpoint that touches
+it against one that does not:
+
+```bash
+curl -s -o /dev/null -w "health (DB):  %{time_total}s\n" \
+  https://<service>.onrender.com/api/actuator/health
+curl -s -o /dev/null -w "config (no DB): %{time_total}s\n" \
+  https://<service>.onrender.com/api/v1/deployment-config
+```
+
+Co-located, the gap between the two is a few milliseconds. Measured at ~270ms
+on 2026-09-08, which is a round trip to another continent - and Hibernate's
+`ddl-auto: validate` pays that once per table across ~50 tables before the app
+serves anything.
+
+**If they disagree, recreate one side in the other's region.** No amount of
+client-side timeout tuning substitutes for this; it only stops the browser
+giving up early.
+
+---
+
 ## 4. Keep-alive and health monitoring
 
 Two independent pingers, because free-tier sleep is what will make the app

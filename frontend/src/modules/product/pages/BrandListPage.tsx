@@ -12,6 +12,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { PRODUCT_ROUTES } from '../constants';
 import { SearchInput } from '@/shared/components/SearchInput';
@@ -34,8 +37,53 @@ async function fetchAllAsPage(): Promise<PageResponse<BrandResponse>> {
   return { content, page: 0, size: content.length, totalElements: content.length, totalPages: 1, first: true, last: true };
 }
 
+/** CR-068. Column catalogue - ids are persisted, so never rename them. */
+const BRAND_COLUMNS: ColumnDef<BrandResponse>[] = [
+  {
+    id: 'brand',
+    header: 'Brand',
+    locked: true,
+    cell: (row) => (
+      <>
+        <span className="font-medium">{row.brandName}</span>
+        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.brandCode}</span>
+      </>
+    ),
+  },
+  {
+    id: 'productCount',
+    header: 'Products',
+    headClassName: 'hidden md:table-cell',
+    cellClassName: 'tabular hidden md:table-cell',
+    cell: (row) => (row.productCount > 0 ? (
+      <Link
+        to={`${PRODUCT_ROUTES.list}?brandId=${row.id}`}
+        className="text-primary underline-offset-4 hover:underline"
+        aria-label={`View ${row.productCount} products for ${row.brandName}`}
+      >
+        {row.productCount}
+      </Link>
+    ) : row.productCount),
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cellClassName: 'status-on-card',
+    cell: (row) => <BrandStatusBadge status={row.status} />,
+  },
+  {
+    id: 'description',
+    header: 'Description',
+    defaultVisible: false,
+    cell: (row) => (
+      <span className="line-clamp-2 text-muted-foreground">{row.description || '—'}</span>
+    ),
+  },
+];
+
 export function BrandListPage() {
   const toast = useToast();
+  const columns = useColumnPreferences('brand', BRAND_COLUMNS);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<BrandResponse | null>(null);
   const [deleting, setDeleting] = useState<BrandResponse | null>(null);
@@ -96,9 +144,12 @@ export function BrandListPage() {
         title="Brands"
         description="Brand master for the product catalogue."
         actions={
-          <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>
-            <Button onClick={() => setCreating(true)}>Add brand</Button>
-          </PermissionGate>
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="brand" />
+            <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>
+              <Button onClick={() => setCreating(true)}>Add brand</Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -119,31 +170,22 @@ export function BrandListPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Brand</TableHead>
-                <TableHead className="hidden md:table-cell">Products</TableHead>
-                <TableHead>Status</TableHead>
+                {columns.visible.map((column) => (
+                  <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                    {column.header}
+                  </TableHead>
+                ))}
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {brands.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell>
-                    <span className="font-medium">{row.brandName}</span>
-                    <span className="tabular mt-0.5 block text-xs text-muted-foreground">
-                      {row.brandCode}
-                    </span>
-                  </TableCell>
-                  <TableCell className="tabular hidden md:table-cell">
-                    {row.productCount > 0 ? (
-                      <Link to={`${PRODUCT_ROUTES.list}?brandId=${row.id}`}
-                            className="text-primary underline-offset-4 hover:underline"
-                            aria-label={`View ${row.productCount} products for ${row.brandName}`}>
-                        {row.productCount}
-                      </Link>
-                    ) : row.productCount}
-                  </TableCell>
-                  <TableCell><BrandStatusBadge status={row.status} /></TableCell>
+                  {columns.visible.map((column) => (
+                    <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                      {column.cell(row)}
+                    </TableCell>
+                  ))}
                   <TableCell>
                     <PermissionGate permission={PERMISSIONS.PRODUCT_MANAGE}>
                       <DropdownMenu>

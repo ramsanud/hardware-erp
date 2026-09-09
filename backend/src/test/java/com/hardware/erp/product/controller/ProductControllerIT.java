@@ -166,4 +166,41 @@ class ProductControllerIT extends AbstractIntegrationTest {
         mockMvc.perform(post("/v1/products/1/restore"))
                 .andExpect(status().isUnauthorized());
     }
+
+    /**
+     * CR-068. The list projection now carries the identification fields the
+     * column picker can switch on. Two things are asserted together on
+     * purpose: that the new fields arrive, and that purchase price still does
+     * not. The DTO's contract is "everything a PRODUCT_VIEW holder may read on
+     * a list, and cost never" - a later hand adding one more field is the
+     * likely way that gets broken, so the negative is pinned here too.
+     */
+    @Test
+    @DisplayName("CR-068: product search carries description/model/barcode/HSN/MRP, never purchase price")
+    void searchCarriesColumnPickerFields() throws Exception {
+        ProductRequest request = new ProductRequest(
+                "PRD-900067", "Column Picker Test Hammer", null, null,
+                "CPT-900", null, "8901234567890", "PCS",
+                "Hardened steel body, 5 levers", "8301",
+                new BigDecimal("18.00"), 10_000L, 15_000L, 18_000L,
+                BigDecimal.ZERO, BigDecimal.ZERO, ProductStatus.ACTIVE, null, null);
+
+        mockMvc.perform(post("/v1/products").header("Authorization", owner())
+                        .contentType(APPLICATION_JSON)
+                        .content(json(request)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/v1/products").header("Authorization", owner())
+                        .param("search", "PRD-900067"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].description").value("Hardened steel body, 5 levers"))
+                .andExpect(jsonPath("$.data.content[0].modelNo").value("CPT-900"))
+                .andExpect(jsonPath("$.data.content[0].barcode").value("8901234567890"))
+                .andExpect(jsonPath("$.data.content[0].hsnCode").value("8301"))
+                .andExpect(jsonPath("$.data.content[0].mrpDisplay").value("180.00"))
+                .andExpect(jsonPath("$.data.content[0].sellingPriceDisplay").value("150.00"))
+                // Cost stays on the detail screen - see ProductSummaryResponse.
+                .andExpect(jsonPath("$.data.content[0].purchasePricePaise").doesNotExist())
+                .andExpect(jsonPath("$.data.content[0].purchasePriceDisplay").doesNotExist());
+    }
 }

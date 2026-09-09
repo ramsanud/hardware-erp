@@ -72,6 +72,15 @@ public final class PermissionCode {
     public static final String SETTINGS_VIEW   = "SETTINGS_VIEW";
     public static final String SETTINGS_MANAGE = "SETTINGS_MANAGE";
 
+    /**
+     * CR-067. Erasing a shop's trading history is not the same authority as
+     * editing its GSTIN, so this is a code of its own rather than a use of
+     * SETTINGS_MANAGE - otherwise every role ever granted SETTINGS_MANAGE
+     * would silently acquire a wipe button. OWNER only; withheld from
+     * MANAGER, ACCOUNTANT and STAFF in RoleGrantDriftTest.
+     */
+    public static final String DATA_RESET = "DATA_RESET";
+
     // PROJECT
     public static final String PROJECT_VIEW = "PROJECT_VIEW";
     public static final String PROJECT_MANAGE = "PROJECT_MANAGE";

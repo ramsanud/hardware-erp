@@ -112,7 +112,7 @@ export function PlatformAdminFeatureFlagsPage() {
         actions={canManage ? (
           <Button onClick={() => setDialogOpen(true)}>
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">New flag</span>
+            <span>New flag</span>
           </Button>
         ) : null}
       />

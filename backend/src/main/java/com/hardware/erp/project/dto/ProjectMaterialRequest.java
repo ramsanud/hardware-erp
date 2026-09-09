@@ -20,7 +20,19 @@ public record ProjectMaterialRequest(
         BigDecimal quantityEstimated,
         BigDecimal quantityActual,
 
-        @Schema(description = "Extra quantity lost to cutting, handling or damage")
+        /**
+         * How much of quantityActual was lost to cutting, handling or damage -
+         * a breakdown WITHIN what was consumed, never an addition to it
+         * (CR-064). Stock moves on quantityActual alone and totalCostPaise
+         * prices quantityActual, both ignoring this field; recording 20 actual
+         * of which 3 were wasted takes 20 from stock, not 23.
+         *
+         * The previous wording, "Extra quantity lost to ...", read as
+         * additional to actual - the opposite of the semantics CR-064 pinned.
+         * If that decision is ever revisited, consumedQuantity() and
+         * totalCost() must change in the same commit as this sentence.
+         */
+        @Schema(description = "Part of quantityActual lost to cutting, handling or damage - included in it, not added to it")
         BigDecimal quantityWastage,
 
         @Schema(description = "Paise per unit - omit to use the product's current selling price")

@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import {
-  LifeBuoy, LogOut, Menu, MonitorSmartphone, PanelLeftClose, PanelLeftOpen, UserCircle,
+  LifeBuoy, LogOut, MonitorSmartphone, PanelLeftClose, PanelLeftOpen, Search, UserCircle, X,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
-import { Sheet, SheetContent, SheetTitle } from '@/shared/components/ui/sheet';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -20,6 +19,8 @@ import { cn, initials } from '@/shared/lib/utils';
 import { AiChatWidget } from '@/modules/ai/components/AiChatWidget';
 import { ContactAdminDialog } from '@/modules/notification/components/ContactAdminDialog';
 import { AppChromeProvider, useAppChrome } from './AppChromeProvider';
+import { MobileMoreMenu } from './MobileMoreMenu';
+import { MobileTabBar } from './MobileTabBar';
 import { SidebarBrand, SidebarFooter, SidebarNav } from './Sidebar';
 
 export function AppLayout() {
@@ -36,6 +37,7 @@ function AppLayoutInner() {
   const avatarSrc = useAuthenticatedImage(avatarService.url, avatarVersion);
   const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [contactAdminOpen, setContactAdminOpen] = useState(false);
   // Persisted so the rail stays how the user left it across sessions. This is
   // layout preference, not a credential, so localStorage is fine here.
@@ -59,7 +61,8 @@ function AppLayoutInner() {
 
   return (
     <div className="flex min-h-dvh">
-      {/* Persistent rail from lg up; a dialog below that. */}
+      {/* Persistent rail from lg up; a bottom tab bar plus a "More" drawer
+          below that (CR-061). */}
       <aside
         className={cn(
           'hidden shrink-0 transition-[width] duration-200 lg:block',
@@ -77,111 +80,129 @@ function AppLayoutInner() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-40 flex h-16 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-4">
-          <Button
-            variant="ghost" size="icon" className="lg:hidden"
-            onClick={() => setMobileNavOpen(true)}
-            aria-label="Open navigation"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-
-          <Button
-            variant="ghost" size="icon" className="hidden lg:inline-flex"
-            onClick={() => setCollapsed((value) => !value)}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-          </Button>
-
-          <GlobalSearch />
-
-          {/* GlobalSearch is hidden below sm, which left the phone header as a
-              hamburger and two icons with a wide gap between them. The sidebar
-              brand is behind the drawer at that width, so nothing on screen
-              said which shop you were signed into. */}
-          <span className="truncate text-sm font-semibold sm:hidden">{brandName}</span>
-
-          <div className="flex-1" />
-
-          <ModeToggle />
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="gap-2 px-2">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                  {avatarSrc ? (
-                    <img src={avatarSrc} alt={user?.fullName ?? 'Profile photo'} className="h-full w-full object-cover object-[50%_28%]" />
-                  ) : (
-                    initials(user?.fullName)
-                  )}
-                </span>
-                <span className="hidden max-w-[10rem] truncate text-sm font-medium sm:inline">
-                  {user?.fullName}
-                </span>
+        {/*
+          CR-061: 56px on a phone - the height a native app bar uses - stepping
+          up to 64px alongside the rail. The notch inset is applied as padding
+          in .app-bar rather than folded into the height, so the bar grows into
+          the safe area instead of the title sliding under an iPhone status bar.
+        */}
+        <header
+          className="app-bar sticky top-0 z-40 flex h-14 items-center gap-1 border-b bg-background/95 px-2
+                     backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:gap-2 sm:px-4 lg:h-16"
+        >
+          {mobileSearchOpen ? (
+            /* Search takes the whole bar on a phone rather than competing with
+               the brand for the ~120px that were left over. */
+            <div className="flex w-full items-center gap-1 sm:hidden">
+              <GlobalSearch className="block flex-1" autoFocus />
+              <Button
+                variant="ghost" size="icon"
+                onClick={() => setMobileSearchOpen(false)}
+                aria-label="Close search"
+              >
+                <X className="h-5 w-5" />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-60">
-              <DropdownMenuLabel>
-                <p className="truncate">{user?.fullName}</p>
-                <p className="truncate text-xs font-normal text-muted-foreground">
-                  {user?.email ?? user?.mobileNo}
-                </p>
-                <Badge variant="secondary" className="mt-2">{user?.roleName}</Badge>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => navigate(AUTH_ROUTES.profile)}>
-                <UserCircle className="h-4 w-4" />
-                My profile
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setContactAdminOpen(true)}>
-                <LifeBuoy className="h-4 w-4" />
-                Contact admin
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleLogoutAll}>
-                <MonitorSmartphone className="h-4 w-4" />
-                Sign out of all devices
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem destructive onClick={handleLogout}>
-                <LogOut className="h-4 w-4" />
-                Sign out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </div>
+          ) : null}
+
+          <div className={cn('flex w-full items-center gap-1 sm:gap-2', mobileSearchOpen && 'hidden sm:flex')}>
+            <Button
+              variant="ghost" size="icon" className="hidden lg:inline-flex"
+              onClick={() => setCollapsed((value) => !value)}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </Button>
+
+            <GlobalSearch />
+
+            {/* The rail's brand sits behind the drawer on a phone, so without
+                this nothing on screen says which shop you are signed into. */}
+            <span className="truncate pl-1 text-base font-semibold sm:hidden">{brandName}</span>
+
+            <div className="flex-1" />
+
+            {/* Search is a destination on a phone, not a permanent field. */}
+            <Button
+              variant="ghost" size="icon" className="sm:hidden"
+              onClick={() => setMobileSearchOpen(true)}
+              aria-label="Search"
+            >
+              <Search className="h-5 w-5" />
+            </Button>
+
+            <ModeToggle />
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="gap-2 px-1.5 sm:px-2">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                    {avatarSrc ? (
+                      <img src={avatarSrc} alt={user?.fullName ?? 'Profile photo'} className="h-full w-full object-cover object-[50%_28%]" />
+                    ) : (
+                      initials(user?.fullName)
+                    )}
+                  </span>
+                  <span className="hidden max-w-[10rem] truncate text-sm font-medium sm:inline">
+                    {user?.fullName}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuLabel>
+                  <p className="truncate">{user?.fullName}</p>
+                  <p className="truncate text-xs font-normal text-muted-foreground">
+                    {user?.email ?? user?.mobileNo}
+                  </p>
+                  <Badge variant="secondary" className="mt-2">{user?.roleName}</Badge>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate(AUTH_ROUTES.profile)}>
+                  <UserCircle className="h-4 w-4" />
+                  My profile
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setContactAdminOpen(true)}>
+                  <LifeBuoy className="h-4 w-4" />
+                  Contact admin
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleLogoutAll}>
+                  <MonitorSmartphone className="h-4 w-4" />
+                  Sign out of all devices
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem destructive onClick={handleLogout}>
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
 
         {/*
-          pb-24 (not py-5's default) - the floating AiChatWidget sits fixed
-          at bottom-5 with its own 12x12 footprint, so ordinary py-5 bottom
-          padding let a long table's last rows or a chart's own x-axis
-          labels render directly underneath it. This is clearance for the
-          FAB, not a general spacing change.
+          Bottom padding is clearance for fixed furniture, not spacing - the
+          tab bar below lg plus its safe-area inset, and the floating
+          AiChatWidget at every width. Without it a long table's last rows
+          render underneath both. See .app-main in index.css.
         */}
-        <main className="flex-1 px-3 pb-24 pt-5 sm:px-5 lg:px-8">
-          <div className="mx-auto w-full max-w-7xl space-y-5">
+        <main className="app-main flex-1 px-3 pt-4 sm:px-5 sm:pt-5 lg:px-8">
+          <div className="mx-auto w-full max-w-7xl space-y-4 sm:space-y-5">
             <Outlet />
           </div>
         </main>
       </div>
 
-      {/* Drawer for anything below the lg rail - phones and tablet portrait.
-          Brand and footer are pinned; only the nav list scrolls, matching the
-          desktop rail's behaviour instead of scrolling the panel as one block. */}
-      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent
-          side="left"
-          showClose={false}
-          style={{ background: 'hsl(var(--sidebar))' }}
-        >
-          <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <SidebarBrand />
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <SidebarNav onNavigate={() => setMobileNavOpen(false)} />
-          </div>
-          <SidebarFooter />
-        </SheetContent>
-      </Sheet>
+      <MobileTabBar onOpenMore={() => setMobileNavOpen(true)} moreOpen={mobileNavOpen} />
+
+      {/* The "More" tab's destination - every section the four tabs left out.
+          A bottom sheet rising from the tab bar, not the desktop rail in a
+          left-hand drawer (CR-062). */}
+      <MobileMoreMenu
+        open={mobileNavOpen}
+        onOpenChange={setMobileNavOpen}
+        avatarSrc={avatarSrc}
+        onSignOut={handleLogout}
+      />
 
       <ContactAdminDialog open={contactAdminOpen} onOpenChange={setContactAdminOpen} />
 

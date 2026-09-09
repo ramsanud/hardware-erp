@@ -9,6 +9,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
+import {
+  ColumnSettings, useColumnPreferences, type ColumnDef,
+} from '@/shared/components/table/ColumnPreferences';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { ErrorState } from '@/shared/components/ErrorState';
@@ -23,12 +26,71 @@ import { PERMISSIONS } from '@/modules/auth/constants';
 import { PROJECT_ROUTES, PROJECT_STATUS_OPTIONS } from '../constants';
 import { projectService } from '../services/projectService';
 import { ProjectStatusBadge, ProjectOutcomeBadge } from '../components/ProjectStatusBadge';
-import type { ProjectStatus } from '../types';
+import type { ProjectStatus, ProjectSummaryResponse } from '../types';
+
+/** CR-068. Column catalogue - ids are persisted, so never rename them. */
+const PROJECT_COLUMNS: ColumnDef<ProjectSummaryResponse>[] = [
+  {
+    id: 'project',
+    header: 'Project',
+    locked: true,
+    cell: (row) => (
+      <>
+        <span className="font-medium">{row.projectName}</span>
+        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.projectNumber}</span>
+      </>
+    ),
+  },
+  {
+    id: 'customer',
+    header: 'Customer',
+    headClassName: 'hidden sm:table-cell',
+    cellClassName: 'hidden sm:table-cell',
+    cell: (row) => row.customerName,
+  },
+  {
+    id: 'workType',
+    header: 'Work type',
+    headClassName: 'hidden md:table-cell',
+    cellClassName: 'hidden md:table-cell',
+    cell: (row) => row.workTypeName,
+  },
+  {
+    id: 'value',
+    header: 'Value',
+    headClassName: 'hidden lg:table-cell',
+    cellClassName: 'tabular hidden lg:table-cell',
+    cell: (row) => <>&#8377;{row.projectValueDisplay}</>,
+  },
+  {
+    id: 'profit',
+    header: 'Profit',
+    headClassName: 'hidden lg:table-cell',
+    cell: (row) => (
+      <span className={row.profitPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}>
+        {row.profitPositive ? '+' : '-'}&#8377;{row.netProfitDisplay}
+      </span>
+    ),
+    cellClassName: 'tabular hidden lg:table-cell',
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cellClassName: 'status-on-card',
+    cell: (row) => (
+      <div className="flex flex-col gap-1">
+        <ProjectStatusBadge status={row.status} overdue={row.overdue} />
+        {row.outcome ? <ProjectOutcomeBadge outcome={row.outcome} /> : null}
+      </div>
+    ),
+  },
+];
 
 const ALL = '__all__';
 
 export function ProjectListPage() {
   const navigate = useNavigate();
+  const columns = useColumnPreferences('project', PROJECT_COLUMNS);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>(ALL);
@@ -57,12 +119,15 @@ export function ProjectListPage() {
         title="Projects"
         description="Modular kitchens, fabrication, roofing and other custom work for your customers."
         actions={
-          <PermissionGate permission={PERMISSIONS.PROJECT_MANAGE}>
-            <Button onClick={() => navigate(PROJECT_ROUTES.create)}>
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">New project</span>
-            </Button>
-          </PermissionGate>
+          <div className="flex items-center gap-2">
+            <ColumnSettings preferences={columns} label="project" />
+            <PermissionGate permission={PERMISSIONS.PROJECT_MANAGE}>
+              <Button onClick={() => navigate(PROJECT_ROUTES.create)}>
+                <Plus className="h-4 w-4" />
+                <span>New project</span>
+              </Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -88,37 +153,25 @@ export function ProjectListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Project</TableHead>
-                  <TableHead className="hidden sm:table-cell">Customer</TableHead>
-                  <TableHead className="hidden md:table-cell">Work type</TableHead>
-                  <TableHead className="hidden lg:table-cell">Value</TableHead>
-                  <TableHead className="hidden lg:table-cell">Profit</TableHead>
-                  <TableHead>Status</TableHead>
+                  {columns.visible.map((column) => (
+                    <TableHead key={column.id} className={columns.resolveClassName(column, 'head')}>
+                      {column.header}
+                    </TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
 
               {loading ? (
-                <TableSkeleton columns={6} rows={size > 10 ? 8 : 5} />
+                <TableSkeleton columns={columns.visible.length} rows={size > 10 ? 8 : 5} />
               ) : (
                 <TableBody>
                   {data?.content.map((row) => (
                     <TableRow key={row.id} className="cursor-pointer" onClick={() => navigate(PROJECT_ROUTES.detail(row.id))}>
-                      <TableCell>
-                        <span className="font-medium">{row.projectName}</span>
-                        <span className="tabular mt-0.5 block text-xs text-muted-foreground">{row.projectNumber}</span>
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">{row.customerName}</TableCell>
-                      <TableCell className="hidden md:table-cell">{row.workTypeName}</TableCell>
-                      <TableCell className="tabular hidden lg:table-cell">₹{row.projectValueDisplay}</TableCell>
-                      <TableCell className={`tabular hidden lg:table-cell ${row.profitPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
-                        {row.profitPositive ? '+' : '-'}₹{row.netProfitDisplay}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <ProjectStatusBadge status={row.status} overdue={row.overdue} />
-                          {row.outcome ? <ProjectOutcomeBadge outcome={row.outcome} /> : null}
-                        </div>
-                      </TableCell>
+                      {columns.visible.map((column) => (
+                        <TableCell key={column.id} className={columns.resolveClassName(column, 'cell')}>
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                     </TableRow>
                   ))}
                 </TableBody>

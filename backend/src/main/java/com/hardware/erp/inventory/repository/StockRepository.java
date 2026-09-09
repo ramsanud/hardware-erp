@@ -34,10 +34,13 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
                   or lower(s.product.productCode) like lower(concat('%', cast(:search as string), '%')))
              and (:lowStockOnly = false
                   or s.quantityOnHand <= s.product.reorderLevel)
+             and (:outOfStockOnly = false
+                  or s.quantityOnHand <= 0)
            """)
     Page<Stock> search(@Param("tenantId") Long tenantId,
                        @Param("search") String search,
                        @Param("lowStockOnly") boolean lowStockOnly,
+                       @Param("outOfStockOnly") boolean outOfStockOnly,
                        Pageable pageable);
 
     /** CR-053 backlog item 5 (low-stock reminder job). Same predicate as search()'s lowStockOnly flag, non-paged for the scheduled job's own use. */

@@ -28,7 +28,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.rate-limit.login-per-ip-per-minute=5",
         "app.rate-limit.login-per-identifier-per-minute=100",
         "app.rate-limit.forgot-password-per-ip-per-hour=3",
-        "app.rate-limit.forgot-password-per-identifier-per-hour=100"
+        "app.rate-limit.forgot-password-per-identifier-per-hour=100",
+        // CR-062 / BUG-SEC-005
+        "app.rate-limit.registration-availability-per-ip-per-minute=3"
 })
 class RateLimitIT extends AbstractIntegrationTest {
 
@@ -120,5 +122,54 @@ class RateLimitIT extends AbstractIntegrationTest {
                             .header("Authorization", "Bearer " + token))
                     .andExpect(status().isOk());
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // BUG-SEC-005 - both signup availability endpoints sit BENEATH
+    // /v1/tenants/register in the URL space but are not equal to it, and
+    // RateLimitFilter dispatches on exact path equality. slug-available
+    // therefore shipped ungoverned. These two assert the filter actually
+    // reaches them; without the fix the 4th call returns 200, not 429.
+    // ---------------------------------------------------------------------
+
+    @Test
+    @DisplayName("BUG-SEC-005: slug-available is rate limited, not waved through as a sub-path of register")
+    void slugAvailabilityIsRateLimited() throws Exception {
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            mockMvc.perform(org.springframework.test.web.servlet.request
+                            .MockMvcRequestBuilders.get("/v1/tenants/register/slug-available")
+                            .param("slug", "some-shop"))
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(org.springframework.test.web.servlet.request
+                        .MockMvcRequestBuilders.get("/v1/tenants/register/slug-available")
+                        .param("slug", "some-shop"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMIT_EXCEEDED"));
+    }
+
+    @Test
+    @DisplayName("CR-062: identifier-available is rate limited, and shares one bucket with slug-available")
+    void identifierAvailabilityIsRateLimited() throws Exception {
+        // Two calls to one endpoint and one to the other: a shared per-IP
+        // bucket must count all three, or an attacker just alternates.
+        mockMvc.perform(org.springframework.test.web.servlet.request
+                        .MockMvcRequestBuilders.get("/v1/tenants/register/identifier-available")
+                        .param("mobileNo", "9000000001"))
+                .andExpect(status().isOk());
+        mockMvc.perform(org.springframework.test.web.servlet.request
+                        .MockMvcRequestBuilders.get("/v1/tenants/register/slug-available")
+                        .param("slug", "another-shop"))
+                .andExpect(status().isOk());
+        mockMvc.perform(org.springframework.test.web.servlet.request
+                        .MockMvcRequestBuilders.get("/v1/tenants/register/identifier-available")
+                        .param("mobileNo", "9000000002"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request
+                        .MockMvcRequestBuilders.get("/v1/tenants/register/identifier-available")
+                        .param("mobileNo", "9000000003"))
+                .andExpect(status().isTooManyRequests());
     }
 }

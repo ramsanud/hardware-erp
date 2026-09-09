@@ -38,7 +38,7 @@ public class LowStockTool implements AiTool {
 
     @Override
     public String execute(Map<String, String> args) {
-        List<StockResponse> lowStock = stockService.search(null, true, PageRequest.of(0, 20)).content();
+        List<StockResponse> lowStock = stockService.search(null, true, false, PageRequest.of(0, 20)).content();
         if (lowStock.isEmpty()) {
             return "No products are currently at or below their reorder level.";
         }

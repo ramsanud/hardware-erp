@@ -12,6 +12,14 @@ const badgeVariants = cva(
         success: 'border-transparent bg-success/10 text-success',
         warning: 'border-transparent bg-warning/10 text-warning',
         destructive: 'border-transparent bg-destructive/10 text-destructive',
+        /*
+         * A tinted badge cannot carry two different "bad" states apart on
+         * colour alone, and Supplier/User have two: Inactive (switched off)
+         * and Blocked/Suspended (acted against). Inactive takes the soft
+         * destructive tint above; the harder state takes this solid fill, so
+         * the more serious status also reads as the louder one.
+         */
+        'destructive-solid': 'border-transparent bg-destructive text-destructive-foreground',
         outline: 'text-foreground',
       },
     },

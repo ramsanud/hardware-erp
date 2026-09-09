@@ -61,14 +61,14 @@ export function AiChatWidget() {
       <Button
         size="icon"
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-5 right-5 z-50 h-12 w-12 rounded-full shadow-lg"
+        className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] right-4 z-50 h-12 w-12 rounded-full shadow-lg lg:bottom-5 lg:right-5"
         aria-label={open ? 'Close AI assistant' : 'Open AI assistant'}
       >
         {open ? <X className="h-5 w-5" /> : <MessageCircle className="h-5 w-5" />}
       </Button>
 
       {open ? (
-        <Card className="fixed bottom-20 right-5 z-50 flex h-[28rem] w-[22rem] flex-col shadow-xl">
+        <Card className="fixed bottom-[calc(8rem+env(safe-area-inset-bottom))] right-4 z-50 flex h-[26rem] w-[calc(100vw-2rem)] max-w-[22rem] flex-col shadow-xl sm:h-[28rem] lg:bottom-20 lg:right-5">
           <CardHeader className="flex-row items-center gap-2 space-y-0 border-b py-3">
             <Sparkles className="h-4 w-4 text-primary" aria-hidden />
             <p className="text-sm font-semibold">AI assistant</p>

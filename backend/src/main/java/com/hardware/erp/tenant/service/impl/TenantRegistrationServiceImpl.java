@@ -15,6 +15,7 @@ import com.hardware.erp.legal.entity.ConsentType;
 import com.hardware.erp.legal.entity.UserConsent;
 import com.hardware.erp.legal.repository.UserConsentRepository;
 import org.springframework.http.HttpStatus;
+import com.hardware.erp.tenant.dto.IdentifierAvailabilityResponse;
 import com.hardware.erp.tenant.dto.TenantRegistrationRequest;
 import com.hardware.erp.tenant.dto.TenantRegistrationResponse;
 import com.hardware.erp.tenant.entity.SubscriptionTier;
@@ -244,6 +245,23 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 .granted(granted)
                 .recordedAt(LocalDateTime.now())
                 .build());
+    }
+
+    /**
+     * CR-062. Deliberately calls the very same two repository methods
+     * register() uses for its own duplicate guard, so the wizard's "this is
+     * free" and the create call's "this is taken" can never disagree. A blank
+     * argument means the caller did not ask, and reports available rather than
+     * volunteering a verdict on a value it never sent.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public IdentifierAvailabilityResponse isIdentifierAvailable(String mobileNo, String email) {
+        boolean mobileFree = mobileNo == null || mobileNo.isBlank()
+                || !userRepository.existsByMobileNo(mobileNo.trim());
+        boolean emailFree = email == null || email.isBlank()
+                || !userRepository.existsByEmailIgnoreCase(email.trim());
+        return new IdentifierAvailabilityResponse(mobileFree, emailFree);
     }
 
     @Override

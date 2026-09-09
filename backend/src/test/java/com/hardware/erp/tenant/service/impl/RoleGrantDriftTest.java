@@ -49,6 +49,10 @@ class RoleGrantDriftTest {
             // default role holds this - OWNER included, which is why
             // TenantRegistrationServiceImpl filters the DEVELOPER module out
             // of its otherwise-everything OWNER grant.
+            // CR-067. Erasing the shop's trading history is owner-only. It is a
+            // code of its own precisely so that granting SETTINGS_MANAGE to a
+            // role never hands over a wipe button as a side effect.
+            PermissionCode.DATA_RESET,
             PermissionCode.DEVELOPER_INSPECT);
 
     private static final Set<String> WITHHELD_FROM_ACCOUNTANT = Set.of(
@@ -77,6 +81,10 @@ class RoleGrantDriftTest {
             PermissionCode.SALES_ORDER_MANAGE,
             PermissionCode.DELIVERY_CHALLAN_MANAGE,
             // See WITHHELD_FROM_MANAGER - developer diagnostics, CR-045.
+            // CR-067. Erasing the shop's trading history is owner-only. It is a
+            // code of its own precisely so that granting SETTINGS_MANAGE to a
+            // role never hands over a wipe button as a side effect.
+            PermissionCode.DATA_RESET,
             PermissionCode.DEVELOPER_INSPECT);
 
     private static final Set<String> WITHHELD_FROM_STAFF = Set.of(
@@ -119,6 +127,10 @@ class RoleGrantDriftTest {
             PermissionCode.CREDIT_NOTE_VIEW,
             PermissionCode.CREDIT_NOTE_MANAGE,
             // See WITHHELD_FROM_MANAGER - developer diagnostics, CR-045.
+            // CR-067. Erasing the shop's trading history is owner-only. It is a
+            // code of its own precisely so that granting SETTINGS_MANAGE to a
+            // role never hands over a wipe button as a side effect.
+            PermissionCode.DATA_RESET,
             PermissionCode.DEVELOPER_INSPECT);
 
     /** Every constant declared in PermissionCode, read reflectively so a new one is picked up automatically. */

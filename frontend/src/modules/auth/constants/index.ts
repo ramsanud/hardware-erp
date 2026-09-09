@@ -41,6 +41,13 @@ export const PERMISSIONS = {
   REPORT_FINANCIAL: 'REPORT_FINANCIAL',
   SETTINGS_VIEW: 'SETTINGS_VIEW',
   SETTINGS_MANAGE: 'SETTINGS_MANAGE',
+
+  /**
+   * CR-067. Separate from SETTINGS_MANAGE on purpose: editing the shop's
+   * GSTIN and erasing its trading history are different authorities, and the
+   * Danger zone card is hidden unless a role actually holds this one.
+   */
+  DATA_RESET: 'DATA_RESET',
   COUPON_VIEW: 'COUPON_VIEW',
   COUPON_MANAGE: 'COUPON_MANAGE',
   PROJECT_VIEW: 'PROJECT_VIEW',

@@ -63,7 +63,8 @@ export function RegisterPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const {
-    register, control, handleSubmit, trigger, watch, formState: { errors, isSubmitting },
+    register, control, handleSubmit, trigger, watch, getValues, setError,
+    formState: { errors, isSubmitting },
   } = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
@@ -88,13 +89,64 @@ export function RegisterPage() {
     return () => { cancelled = true; };
   }, [debouncedShopName]);
 
+  /**
+   * CR-062. Format is validated by `trigger`; uniqueness is not, and that was
+   * the whole complaint. A well-formed but already-registered mobile number
+   * used to pass this gate, let the user choose a plan and accept the Terms,
+   * and only then fail on the create call - which threw them back here with
+   * the work done twice. The server is still the authority (submit() keeps its
+   * own handling for a number taken in the seconds since), but the answer now
+   * arrives at the step that asked the question.
+   */
+  const [checkingIdentifiers, setCheckingIdentifiers] = useState(false);
+
+  const identifiersAreFree = async () => {
+    const [mobileNo, email] = [getValues('mobileNo').trim(), getValues('email').trim()];
+    setCheckingIdentifiers(true);
+    try {
+      const { mobileAvailable, emailAvailable } = await tenantRegistrationService
+        .identifierAvailable({ mobileNo, email });
+
+      if (!mobileAvailable) {
+        setError('mobileNo', {
+          message: 'This mobile number already has a shop. Sign in instead, or use another number.',
+        });
+      }
+      if (!emailAvailable) {
+        setError('email', {
+          message: 'This email already has a shop. Sign in instead, or use another address.',
+        });
+      }
+      return mobileAvailable && emailAvailable;
+    } catch {
+      // A failed lookup must not trap someone on step 2 - the create call
+      // rejects a duplicate regardless, so falling through costs at worst the
+      // old behaviour rather than a wizard that cannot advance.
+      return true;
+    } finally {
+      setCheckingIdentifiers(false);
+    }
+  };
+
+  /*
+   * Which way the panel slides in from. BUG-FE-023 caught a slide aimed the
+   * wrong way on the mobile work; hardcoding slide-in-from-right here would
+   * reintroduce exactly that, with Back appearing to move forward.
+   */
+  const [direction, setDirection] = useState<'forward' | 'back'>('forward');
+
   const goNext = async () => {
     const fields = STEP_FIELDS[step];
     if (fields && !(await trigger(fields))) return;
+    if (step === 1 && !(await identifiersAreFree())) return;
+    setDirection('forward');
     setStep((current) => Math.min(current + 1, STEPS.length - 1));
   };
 
-  const goBack = () => setStep((current) => Math.max(current - 1, 0));
+  const goBack = () => {
+    setDirection('back');
+    setStep((current) => Math.max(current - 1, 0));
+  };
 
   const submit = handleSubmit(async (values) => {
     setFormError(null);
@@ -134,6 +186,9 @@ export function RegisterPage() {
         // field on an earlier step - send the owner back to it rather than
         // leaving them stuck on the consent step with no visible cause.
         const lower = caught.message.toLowerCase();
+        // Jumping back to an earlier step is backward travel, so the panel
+        // must slide that way too.
+        setDirection('back');
         if (lower.includes('mobile') || lower.includes('email')) setStep(1);
         else if (lower.includes('shop')) setStep(0);
         return;
@@ -143,21 +198,31 @@ export function RegisterPage() {
   });
 
   return (
-    <Card className="mx-auto w-full max-w-xl">
+    <Card
+      className="mx-auto w-full max-w-xl rounded-3xl shadow-2xl
+                 animate-in fade-in slide-in-from-bottom-3 duration-500 sm:p-2"
+    >
       <CardHeader>
-        <CardTitle>Create your account</CardTitle>
+        <CardTitle className="text-2xl font-bold tracking-tight">Create your account</CardTitle>
         <CardDescription>Register a new hardware shop - one shop, one owner login.</CardDescription>
       </CardHeader>
       <CardContent>
         <div onKeyDown={enterAdvances(() => { void goNext(); })}>
-          <ol className="mb-6 flex items-center gap-2 text-sm">
+          {/*
+            CR-069. Completed steps go to --success rather than --primary so
+            "done" and "you are here" stay distinguishable at a glance - on the
+            slate and minimal themes primary is a near-neutral, and a finished
+            step tinted with it read as just another inactive circle.
+          */}
+          <ol className="mb-7 flex items-center gap-2 text-sm">
             {STEPS.map((label, index) => (
               <li key={label} className="flex flex-1 items-center gap-2">
                 <span
+                  aria-current={index === step ? 'step' : undefined}
                   className={cn(
-                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold',
-                    index < step && 'border-primary bg-primary text-primary-foreground',
-                    index === step && 'border-primary text-primary',
+                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold transition-all duration-300',
+                    index < step && 'border-success bg-success text-success-foreground',
+                    index === step && 'scale-110 border-primary bg-primary text-primary-foreground shadow-md shadow-primary/30',
                     index > step && 'border-muted-foreground/30 text-muted-foreground',
                   )}
                 >
@@ -167,7 +232,16 @@ export function RegisterPage() {
                   {label}
                 </span>
                 {index < STEPS.length - 1 ? (
-                  <span className={cn('h-px flex-1', index < step ? 'bg-primary' : 'bg-border')} />
+                  // The track is always drawn; the fill grows over it, so the
+                  // line animates instead of snapping between two colours.
+                  <span className="relative h-0.5 flex-1 overflow-hidden rounded-full bg-border">
+                    <span
+                      className={cn(
+                        'absolute inset-y-0 left-0 rounded-full bg-success transition-[width] duration-500',
+                        index < step ? 'w-full' : 'w-0',
+                      )}
+                    />
+                  </span>
                 ) : null}
               </li>
             ))}
@@ -179,9 +253,23 @@ export function RegisterPage() {
             </Alert>
           ) : null}
 
+          {/*
+            Keyed on `step` so React remounts on every change - tailwindcss-animate
+            replays an entrance animation on mount, not on a prop change, so
+            without the key the second and third steps would appear with no
+            transition at all.
+          */}
+          <div
+            key={step}
+            className={cn(
+              'animate-in fade-in duration-300',
+              direction === 'forward' ? 'slide-in-from-right-4' : 'slide-in-from-left-4',
+            )}
+          >
           {step === 0 ? (
             <div className="space-y-4">
               <FormField id="shopName" label="Shop name" error={errors.shopName?.message} required
+                         hintTone={slugStatus === 'available' ? 'success' : 'muted'}
                          hint={slugStatus === 'checking' ? 'Checking availability…'
                            : slugStatus === 'available' ? 'Available'
                            : slugStatus === 'taken' ? 'A shop with a very similar name already exists' : undefined}>
@@ -257,21 +345,26 @@ export function RegisterPage() {
               />
             </div>
           ) : null}
+          </div>
 
           <div className="mt-6 flex items-center justify-between border-t pt-4">
-            <Button type="button" variant="outline" onClick={step === 0 ? undefined : goBack} disabled={isSubmitting}
+            <Button type="button" variant="ghost" onClick={step === 0 ? undefined : goBack} disabled={isSubmitting}
                     tabIndex={step === 0 ? -1 : 0} aria-hidden={step === 0}
                     className={step === 0 ? 'invisible' : undefined}>
               <ArrowLeft className="h-4 w-4" />
               Back
             </Button>
             {step < STEPS.length - 1 ? (
-              <Button type="button" onClick={goNext}>
-                Next
-                <ArrowRight className="h-4 w-4" />
+              // Naming the destination rather than saying "Next" tells someone
+              // mid-signup how much is left without counting the circles.
+              <Button type="button" variant="gradient" onClick={goNext} loading={checkingIdentifiers} className="group">
+                <span className="hidden sm:inline">Next: {STEPS[step + 1]}</span>
+                <span className="sm:hidden">Next</span>
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Button>
             ) : (
-              <Button type="button" onClick={submit} loading={isSubmitting} disabled={!consent.termsAccepted}>
+              <Button type="button" variant="gradient" onClick={submit} loading={isSubmitting}
+                      disabled={!consent.termsAccepted}>
                 Create account
               </Button>
             )}
