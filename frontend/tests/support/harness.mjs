@@ -53,12 +53,33 @@ export async function withBrowser(fn) {
  * specific `/refresh` one and the app never signs in - which cost an hour the
  * first time and is exactly the kind of thing this comment exists to prevent.
  */
-export async function newPage(browser, { viewport, mobile = false, api = () => null } = {}) {
+export async function newPage(browser, { viewport, mobile = false, api = () => null, firstVisit = false } = {}) {
   const context = await browser.newContext({
     viewport: viewport ?? { width: 1280, height: 800 },
     isMobile: mobile,
     hasTouch: mobile,
   });
+
+  /*
+   * CR-075: every context starts as a RETURNING user, because a fresh
+   * context has empty localStorage and the tour would otherwise open over
+   * every page this suite tries to measure - a modal that eats the clicks
+   * of specs that have nothing to do with onboarding.
+   *
+   * Pass firstVisit: true to get the real first-visit behaviour. Keys are
+   * written for both scopes themeScope can be in: "guest" before
+   * AuthProvider resolves, and the fixture user id after it does.
+   */
+  if (!firstVisit) {
+    await context.addInitScript(() => {
+      try {
+        for (const scope of ['guest', '1']) localStorage.setItem(`hardware-erp-tour:${scope}`, '1');
+      } catch {
+        // Storage disabled - the tour opening is then the least of it.
+      }
+    });
+  }
+
   const page = await context.newPage();
 
   const errors = [];

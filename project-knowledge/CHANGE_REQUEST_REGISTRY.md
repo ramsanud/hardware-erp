@@ -82,6 +82,7 @@ Nothing is implemented from conversation memory.
 | CR-073 | 2026-09-09 | User | Contact admin accepts an optional screenshot. Same 2MB / PNG-JPEG-WebP rule as every other image upload, emailed to support as a MIME attachment and never stored. The JSON endpoint keeps working unchanged; a second mapping separated by `consumes` handles the multipart case. | **APPLIED, 2026-09-09** |
 | CR-071 | 2026-09-09 | Claude | Documentation only. Rebuild `FEATURE_REGISTRY.md` and `MODULE_DEPENDENCY_MAP.md` against the real source tree; both had drifted far enough to mislead — they named MySQL as the database and listed shipped modules as "planned". Records the `product` ↔ `invoice` package cycle rather than hiding it. No code change. | **APPLIED, 2026-09-09** |
 | CR-074 | 2026-09-09 | User | SMS goes real over Twilio; email can move to SendGrid with `EMAIL_PROVIDER=sendgrid`. Credentials are app-wide, not per tenant (unlike CR-056 WhatsApp). Collapses the three divergent direct-`JavaMailSender` paths — password reset, invoice PDF, Settings test button — onto one `EmailTransport`, so a SendGrid deployment cannot silently drop password-reset mail. | **APPLIED, 2026-09-09** |
+| CR-075 | 2026-09-09 | User | A first-visit guided tour that explains the application, built from the permissions the signed-in person actually holds, so an owner, accountant, storekeeper and auditor each get their own walkthrough. Skippable at every step and replayable from the header. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-09** |
 ---
 
 
@@ -4463,6 +4464,70 @@ delivery has been proven**, and this entry does not claim otherwise.
 
 Suite after these additions: `mvn -o clean verify` exit 0 — **508 unit tests
 run (0 failures, 2 skipped: the opt-in live pair) and 224 integration tests**.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this
+machine (hard rule 10).
+
+
+---
+
+## CR-075 — A first-visit tour that explains the application (APPLIED 2026-09-09)
+
+**Raised by:** User. **Type:** new frontend capability. `SCOPE: FRONTEND ONLY`.
+
+### Why
+
+The application had no answer to "what is this and where do I start?".
+Every screen assumed you already knew the shop's workflow. The ask named the
+people who do not: an owner opening it for the first time, an accountant who
+only ever touches expenses, a storekeeper counting stock, an auditor who wants
+to know what is recorded. **A first visitor needed a tip, and a way out of it.**
+
+### Shape
+
+A dialog-based walkthrough, offered once per user, skippable at every step and
+replayable from a `?` button in the top bar.
+
+| Piece | Decision |
+|---|---|
+| Who sees which step | **Filtered by permission, never by role code.** Roles here are rows in a table the owner edits (CR-008), so `roleCode === 'ACCOUNTANT'` would describe screens a custom role cannot open. The same predicate already hides the rail entry and the route, so the tour can never point at a page the server would refuse |
+| A dialog, not spotlight bubbles | Coach marks anchored to rail entries break when the rail is collapsed, when the entry is permission-hidden, or on a phone where the rail is an off-screen drawer — all normal states here (CR-061). A dialog says the same thing at every width |
+| Storage | Client-side, scoped per user id via `themeScope` — the precedent CR-068 set for presentation state with no business consequence. The honest cost: a new device offers the tour again, which for a welcome is closer to right than wrong. "It must follow me between devices" is a new CR and a real table, exactly as CR-068 says |
+| Skip | Always visible, never behind a menu, and **every** exit route (Skip, Finish, X, Escape, overlay) records it as seen. A welcome that reappears after being dismissed is worse than none |
+| Re-entry | `?` in the top bar (`sm` and up) plus "How this works" in the profile menu, so it is reachable at every width without crowding the phone bar (BUG-FE-035) |
+| Version | `TOUR_VERSION` re-shows the tour to everyone when the content genuinely changes; a typo fix must not interrupt the whole shop |
+
+Steps are ordered as the working day runs — sell, who to, what you buy, what
+you owe — rather than in the order the modules were built, so reading straight
+through conveys the shape of the business.
+
+### What this deliberately is not
+
+**Not a Platform Admin feature.** The console has its own layout and its own
+audience — internal staff, not shop users — and a tour of counter workflows
+would be wrong there. It is unaffected.
+
+**Not backend work.** No entity, no migration, no endpoint, no permission.
+
+### Verified
+
+`tsc -b --force` exit 0, `vite build` exit 0, frontend suite **111/111**
+(was 95/95) — 16 new assertions in `frontend/tests/onboarding/tour.spec.mjs`
+covering: a first visit is offered the tour unprompted and greeted by name; an
+owner sees all 11 steps; Next/Back move; Back is absent on step 1; Skip closes
+it; it stays gone across a navigation **and a full reload**; the `?` button
+reopens it at step 1; Escape dismisses it; a returning user is never
+interrupted; and a storekeeper holding only `PRODUCT_VIEW`/`INVENTORY_VIEW`
+gets **4** steps that include stock and omit both the people/permissions and
+audit-trail steps.
+
+**One harness change was required, and it is the interesting part.** Every
+Playwright context starts with empty `localStorage`, so the new tour opened
+over every page the existing suites measure and its overlay swallowed their
+clicks — the products spec failed first. `newPage` now seeds the tour as seen
+by default and takes `firstVisit: true` to opt in. **A modal that greets new
+users is, to a test suite, a modal that greets every test**; any future
+first-run interruption has to make the same accommodation.
 
 `registry/static_check.py` **not executed** — python3 is not installed on this
 machine (hard rule 10).

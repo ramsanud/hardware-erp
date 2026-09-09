@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import {
-  LifeBuoy, LogOut, MonitorSmartphone, PanelLeftClose, PanelLeftOpen, Search, UserCircle, X,
+  HelpCircle, LifeBuoy, LogOut, MonitorSmartphone, PanelLeftClose, PanelLeftOpen, Search, UserCircle, X,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -18,6 +18,8 @@ import { useAuthenticatedImage } from '@/shared/hooks/useAuthenticatedImage';
 import { cn, initials } from '@/shared/lib/utils';
 import { AiChatWidget } from '@/modules/ai/components/AiChatWidget';
 import { ContactAdminDialog } from '@/modules/notification/components/ContactAdminDialog';
+import { WelcomeTour } from '@/modules/onboarding/components/WelcomeTour';
+import { useOnboardingTour } from '@/modules/onboarding/hooks/useOnboardingTour';
 import { AppChromeProvider, useAppChrome } from './AppChromeProvider';
 import { MobileMoreMenu } from './MobileMoreMenu';
 import { MobileTabBar } from './MobileTabBar';
@@ -33,6 +35,8 @@ export function AppLayout() {
 
 function AppLayoutInner() {
   const { user, logout, logoutAll } = useAuth();
+  // CR-075: offers itself once per user, then only when asked for.
+  const tour = useOnboardingTour();
   const { avatarVersion, brandName } = useAppChrome();
   const avatarSrc = useAuthenticatedImage(avatarService.url, avatarVersion);
   const navigate = useNavigate();
@@ -133,6 +137,19 @@ function AppLayoutInner() {
               <Search className="h-5 w-5" />
             </Button>
 
+            {/* CR-075. Beside the theme toggle rather than inside the profile
+                menu, because the person most likely to need it is the one who
+                has not worked out where the menus are yet. Hidden below sm so
+                the phone bar keeps its budget (BUG-FE-035); the profile menu
+                carries the same action at every width. */}
+            <Button
+              variant="ghost" size="icon" className="hidden sm:inline-flex"
+              onClick={tour.restart}
+              aria-label="How this application works"
+            >
+              <HelpCircle className="h-5 w-5" />
+            </Button>
+
             <ModeToggle />
 
             <DropdownMenu>
@@ -162,6 +179,10 @@ function AppLayoutInner() {
                 <DropdownMenuItem onClick={() => navigate(AUTH_ROUTES.profile)}>
                   <UserCircle className="h-4 w-4" />
                   My profile
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={tour.restart}>
+                  <HelpCircle className="h-4 w-4" />
+                  How this works
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setContactAdminOpen(true)}>
                   <LifeBuoy className="h-4 w-4" />
@@ -207,6 +228,7 @@ function AppLayoutInner() {
       />
 
       <ContactAdminDialog open={contactAdminOpen} onOpenChange={setContactAdminOpen} />
+      <WelcomeTour tour={tour} />
 
       <AiChatWidget />
     </div>
