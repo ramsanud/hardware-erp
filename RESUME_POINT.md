@@ -1,5 +1,61 @@
 # RESUME POINT
 
+**Updated:** 2026-09-09 (**CR-074 — SMS goes real over Twilio, email over SendGrid, and three email paths become one**). `SCOPE: BACKEND ONLY` — no `.tsx` file touched; the API contract did not change, so the frontend needed nothing.
+
+**The triggers were never the missing part.** `notifyInvoiceCreated` and `notifyPaymentReceived` have fired on every invoice and payment since CR-027. What they reached was a stub: `SmsNotificationProvider` logged the message and returned `LOGGED_ONLY`. **Every customer-facing SMS this application has ever "sent" was a line in a log file.** It now calls Twilio Programmable Messaging, and email can be switched to SendGrid with `EMAIL_PROVIDER=sendgrid`.
+
+**Credentials are app-wide, not per tenant — and that is deliberately unlike CR-056.** A WhatsApp message must come from the shop's own verified number, so that token has to be the tenant's. An SMS goes out from one sender the platform owns. Per-tenant Twilio would mean a table, an encrypted column, a service, a controller and a Settings screen — a CR-056-sized build. The user was asked and chose app-level config.
+
+**The defect this surfaced, fixed in the same commit.** Switching only the notification channel would have left three divergent email paths — `SmtpMailService` (password-reset links), `InvoiceEmailServiceImpl` (invoice PDF) and `MailDiagnosticServiceImpl` (the Settings test button) each reached for `JavaMailSender` directly. **A deployment with a SendGrid key and no `MAIL_USER` would have looked healthy, sent invoices, and silently dropped every password-reset link.** All three now go through one `EmailTransport`; `SmtpMailService` is renamed `PasswordResetMailService`, since SMTP is no longer necessarily how it sends.
+
+### Also in this commit — CR-073, and why it could not be separated
+
+**Contact admin accepts an optional screenshot** (CR-073): PNG/JPEG/WebP, 2MB, validated by the same shared `ImageValidation.PHOTO_TYPES` as avatar, logo and expense receipts. Emailed as a MIME attachment and **never stored** — `notification_log.body` keeps only the name, type and size. A second mapping on the same path, separated by `consumes`, so the JSON contract is untouched. Five unit tests in `EmailAttachmentTest`.
+
+**CR-073 and CR-074 were built by two sessions at once, in the same files.** `EmailNotificationProvider` carries the attachment overload *and* `implements EmailTransport`; `NotificationServiceImpl` carries both too. Neither CR compiles without the other, so they land as one commit rather than as a commit that cannot build. Worth knowing if you bisect this range expecting one concern per commit.
+
+### Shipped just before, separately — BUG-FE-036 (`e991542`)
+
+The sidebar active state had **never once rendered**: `.sidebar-link[data-active=true]` needed the class and the attribute on one element, and the component put the class on the anchor and `data-active` on a span inside it. Now keyed on `aria-current=page`. Half of that fix had been committed by accident inside CR-072 (`8501899`), so **every commit from 8501899 to e991542 has the highlight broken outright**. Regression test `frontend/tests/navigation/sidebar.spec.mjs` asserts computed style including the `::before` pill — verified to fail 9 assertions against the old CSS.
+
+**A bug only the Spring context tests could catch.** Adding a package-private constructor as a test seam left two unannotated constructors on `SmsNotificationProvider`, so Spring fell back to a default constructor that does not exist and **the whole application context failed to start**. Every unit test still passed — they call the constructors directly. `@Autowired` on the injectable constructor of both new providers fixes it. Next provider added with a test seam: annotate the constructor.
+
+**Verified — actually executed:** `mvn -o clean verify` with Docker running, exit 0 — **508 unit tests run (0 failures, 2 skipped) and 224 Testcontainers integration tests**. 29 of those tests are new: `TwilioSmsProviderTest` and `SendGridEmailProviderTest` (10 each, asserting the real wire format of both APIs rather than mocking the send), `EmailProviderSelectionTest` (7), and `LiveMailSmokeTest` (2, opt-in).
+
+**The email process was then checked end to end, and a real environment problem fell out of it.** `EmailProviderSelectionTest` proves in a real context what the provider unit tests structurally cannot — that `provider=sendgrid` **replaces** the SMTP bean rather than joining it, that exactly one bean claims EMAIL either way, and that both new property prefixes actually bind (a prefix typo leaves every field null, which reads as unconfigured and silently logs instead of sending).
+
+`LiveMailSmokeTest` then sent a **real** message through the whole chain with this machine's own `.env` credentials. The chain works — connection opened, STARTTLS negotiated, Gmail answered. **What Gmail answered was `535-5.7.8 Username and Password not accepted`.** The `MAIL_PASSWORD` in `.env` is dead; Gmail revokes app passwords the moment 2-Step Verification is switched off. The value reached Gmail intact (LF file, 16 unquoted letters, no whitespace, no trailing CR), so this is the credential, not the code.
+
+**⚠ That means email is silently failing in this environment right now, and was before CR-074 too.** `MAIL_USER` is non-blank, so `isConfigured()` is true, so the app does **not** fall back to LOGGED_ONLY — it attempts a real send, fails, writes `FAILED` to `notification_log`, and carries on. Invoice emails and password-reset links are not arriving. **To fix: generate a fresh Gmail app password** (2-Step Verification must be ON at myaccount.google.com/apppasswords), put it in `.env`, and re-run `MAIL_LIVE_TEST=true mvn -o test -Dtest=LiveMailSmokeTest` — it should turn green with no code change.
+
+**The SendGrid half is NOT proven live.** No `SENDGRID_API_KEY` exists in this environment. Request shape, payload nesting, base64 attachment, header-borne message id and error handling are unit-tested, and bean selection is context-tested, but **no real SendGrid delivery has happened**. Do not record it as proven until it has.
+
+**Stated limitation, not hidden:** India's TRAI DLT regime requires a registered sender id before an SMS reaches an Indian handset. **Twilio accepts the call and returns a message SID regardless**; the operator drops it downstream. `TWILIO_MESSAGING_SERVICE_SID` is the field that carries a DLT-registered sender. No code can satisfy that registration.
+
+**Deliberately not built, worth their own CRs:** a "Test SMS" button (email and WhatsApp both have one, SMS has none, so a wrong Twilio credential stays invisible until a customer misses a message); per-tenant Twilio/SendGrid accounts; Twilio/SendGrid delivery-status webhooks (`DELIVERED`/`READ` already exist on `NotificationStatus`, but only Meta's webhook is built).
+
+**⚠ Nothing was committed.** This tree carries at least three sessions' in-flight work — CR-073 (contact-admin screenshot), the sidebar/frontend pass, and this one. **Split before committing**; CR-073's note below about waiting for "the SendGrid/Twilio transport refactor" is referring to this entry, and that refactor has now landed in the working tree.
+
+**Not executed:** `registry/static_check.py` — python3 is not installed on this machine (hard rule 10).
+
+---
+
+**Updated:** 2026-09-09 (**BUG-FE-036 closed out — the sidebar active state, verified this time**). `SCOPE: FRONTEND ONLY` — no Java file, DTO, migration or test touched.
+
+**The ask was to clear BUG-FE-036 from the bug registry. It was not deleted, and the reason matters.** It is a genuine shipped defect with a real root cause, a fix already half-committed in `8501899`, and three code comments pointing at the ID. Deleting the entry would have erased the lesson and left those comments dangling. "Clear" was read as *close it out properly* — verify, finish, make the entry true.
+
+**Verifying it is what found that it was not fixed.** The entry claimed "confirmed to fail against the old markup and pass against the new". The regression spec was run and returned **14/23**: the two `aria-current` assertions passed, all nine style assertions failed with `background rgba(0, 0, 0, 0)`, `font-weight 400`, `pill content none`. `Sidebar.tsx` had shipped (committed), `index.css` had been reverted to `.sidebar-link[data-active='true']` — so the CSS keyed off an attribute nothing set any more, and the removal of the inner span made it *worse* than the original bug rather than better.
+
+**Fixed by re-keying the three rules to `aria-current='page'`** — the attribute `NavLink` sets on the anchor itself, so the highlight and the screen-reader signal are one fact that cannot drift apart. Spec **23/23**, full frontend suite **95/95**, `tsc -b --force` and `vite build` exit 0.
+
+**This is BUG-FE-034 → BUG-FE-035 happening a second time in two days: a registry entry asserting a verification nobody ran.** Hard rule 10 covers registry entries as much as builds — an entry that says "verified" has to name the run that verified it. The entry now carries the run that does.
+
+**⚠ Two sessions are writing this tree simultaneously.** `index.css` was reverted underneath a read mid-pass, and a first splice interleaved with a concurrent write and dropped `.sidebar-link` outright. What worked: `git checkout HEAD --` on the single file, then re-apply in **one** command that computes its own line numbers — never split a file edit across two tool calls here. **Nothing was committed**: the tree carries 28 changed files of another session's in-flight notification/SendGrid/Twilio work. Split before committing.
+
+**Not executed:** `registry/static_check.py` — python3 is not installed on this machine (hard rule 10). Backend untouched, so `mvn verify` was not re-run.
+
+---
+
 **Updated:** 2026-09-09 (**BUG-FE-036 — the sidebar active state had never once rendered**).
 
 ## Start here

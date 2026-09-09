@@ -172,8 +172,10 @@ class NotificationServiceImplTest {
 
     // ---------------------------------------------------------------
     // Real providers, not mocks - proving the "unconfigured" path in each
-    // stub logs instead of throwing, exactly like SmtpMailService already
-    // does for password-reset mail.
+    // provider logs instead of throwing, exactly like PasswordResetMailService
+    // already does for password-reset mail. CR-074 gave SMS and email real
+    // backends (Twilio, SendGrid); this degradation is the part that had to
+    // survive that, since most deployments configure neither.
 
     @Test
     @DisplayName("an unconfigured email provider logs instead of sending, and never throws")
@@ -192,11 +194,14 @@ class NotificationServiceImplTest {
     }
 
     @Test
-    @DisplayName("the SMS stub always logs and never throws")
-    void smsStubAlwaysLogsOnly() {
-        SmsNotificationProvider provider = new SmsNotificationProvider();
+    @DisplayName("an unconfigured Twilio account logs instead of sending, and never throws")
+    void unconfiguredSmsProviderLogsInsteadOfSending() {
+        // Blank credentials are the shipped default - see application.yml.
+        SmsNotificationProvider provider = new SmsNotificationProvider(
+                new TwilioProperties("https://api.twilio.com/2010-04-01", "", "", "", ""), new ObjectMapper());
 
         assertThat(provider.supportedChannels()).containsExactly(NotificationChannel.SMS);
+        assertThat(provider.isConfigured()).isFalse();
         assertThat(provider.send(1L, NotificationChannel.SMS, "9876500001", null, "test message").status())
                 .isEqualTo(NotificationStatus.LOGGED_ONLY);
     }

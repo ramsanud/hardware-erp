@@ -252,7 +252,7 @@ extension, never as a greenfield build.
 | Frontend | 319 TS/TSX files, 22 modules, 69 pages |
 | Built end-to-end | Auth/Users/Roles, Tenant & Settings, Supplier, Customer, Category, Brand, Product, Inventory, Purchase, Quotation, Invoice, Payment, Expense, Project, Labour, Coupon, Dashboard |
 | Frontend tests | `frontend/tests/` — Playwright, three suites (auth, product grid, responsive), run with `node tests/run.mjs` against the built `dist/` |
-| Backend-only | Notification (email live, SMS/WhatsApp stubbed), AI chat, Legal/user-consent (entities only, no controller) |
+| Backend-only | Notification (email live via SMTP or SendGrid, SMS live via Twilio, WhatsApp live per tenant - CR-074), AI chat, Legal/user-consent (entities only, no controller) |
 | Not present | Any PWA surface, any offline/IndexedDB layer (CR-043 was never built) |
 
 **BUG-ENV-001 is CLOSED.** `mvn clean compile` and `tsc -b --force` both pass

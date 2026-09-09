@@ -37,4 +37,21 @@ public interface NotificationProvider {
      * keeps discovering providers uniformly by channel, not by type.
      */
     NotificationSendResult send(Long tenantId, NotificationChannel channel, String toAddress, String subject, String body);
+
+    /**
+     * CR-073: the same send, with one optional file attached.
+     *
+     * A default that drops the attachment, rather than a sixth parameter on
+     * the method above, precisely so the uniform discovery described in this
+     * interface's own javadoc survives: SMS and WhatsApp have no notion of an
+     * email attachment and are not made to pretend otherwise. Only
+     * {@link com.hardware.erp.notification.service.impl.EmailNotificationProvider}
+     * overrides it. A provider that inherits this default still delivers the
+     * message - silently, and without the file, which is the correct outcome
+     * for a channel that cannot carry one.
+     */
+    default NotificationSendResult send(Long tenantId, NotificationChannel channel, String toAddress,
+                                        String subject, String body, NotificationAttachment attachment) {
+        return send(tenantId, channel, toAddress, subject, body);
+    }
 }

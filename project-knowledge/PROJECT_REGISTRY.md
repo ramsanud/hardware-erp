@@ -86,7 +86,7 @@ only two modules from the original 12 still not started.
 | 12 | Payment | DONE (standalone view, CR-027) | DONE | 3 written | IN PROGRESS |
 | — | Coupons | DONE (CR-028) | DONE | 9 written | cross-cutting, not part of the original 1-12 |
 | — | Tenant self-registration | DONE (CR-028) | DONE | 5 written | fulfills CR-016's deferred 2nd-tenant provisioning |
-| — | Notifications | DONE, email real / SMS+WhatsApp stub (CR-027) | DONE (contact-admin only, no log viewer) | 7 written | cross-cutting |
+| — | Notifications | DONE, all three channels real: email SMTP/SendGrid, SMS Twilio, WhatsApp per tenant (CR-027, CR-056, CR-074) | DONE (contact-admin only, no log viewer) | 27 written | cross-cutting |
 | — | Subscription tiers | DONE, self-declared, no payment gateway (CR-027); entitlement limits (owners/customers/suppliers/products) enforced server-side (CR-031); trial coupons to grant a plan free for a set period (CR-032) | DONE | — | cross-cutting |
 | — | AI Assistant | DONE, Anthropic-only, no key configured (CR-027) | DONE | 4 written | cross-cutting |
 | — | Product Variant (price history, loss-sale workflow) | — | — | — | deferred — see FEATURE_REGISTRY deviation note |

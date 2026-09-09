@@ -7,6 +7,7 @@ import com.hardware.erp.notification.dto.NotificationLogResponse;
 import com.hardware.erp.notification.entity.NotificationChannel;
 import com.hardware.erp.notification.entity.NotificationStatus;
 import org.springframework.data.domain.Pageable;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * Facade: builds the message text, decides which channel(s) to use, and
@@ -28,8 +29,12 @@ public interface NotificationService {
      * own data. Runs synchronously (not @Async) - the caller submitting a
      * support request wants to know it actually went through before the
      * dialog closes, unlike a background invoice notification.
+     *
+     * {@code screenshot} is optional (CR-073) and null when the reporter
+     * attached nothing. It is emailed and never stored - see
+     * {@link NotificationAttachment} for why.
      */
-    NotificationStatus contactAdmin(String subject, String message);
+    NotificationStatus contactAdmin(String subject, String message, MultipartFile screenshot);
 
     /**
      * Task 05 (WhatsApp reminders, MUST-HAVE). Sends a payment-due nudge to

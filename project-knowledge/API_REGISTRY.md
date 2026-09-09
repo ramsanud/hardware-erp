@@ -220,6 +220,7 @@ every call.
 | GET | `/v1/tenants/register/slug-available` | public | 200 - `?slug=X`, live-checked while the owner types the shop name |
 | GET | `/v1/tenants/register/identifier-available` | public | 200 - `?mobileNo=X&email=Y` (both optional), returns `{mobileAvailable, emailAvailable}`. CR-062: lets the signup wizard reject a taken identifier on **Next** instead of after the Terms step. Rate-limited (REGISTRATION_AVAILABILITY_PER_IP, 20/min) — as is slug-available, which had no limit until CR-062. |
 | POST | `/v1/notifications/contact-admin` | authenticated (any user) | 200 - `{subject, message}`, emails `app.support.admin-email` with the reporter's shop/name/mobile prepended |
+| POST | `/v1/notifications/contact-admin` | authenticated (any user) | 200 - **`multipart/form-data`** (CR-073): the same `subject`/`message` fields plus an optional `screenshot` file. PNG/JPEG/WebP, 2MB max (`ImageValidation.PHOTO_TYPES`); 422 `UNSUPPORTED_FILE_TYPE` or `FILE_TOO_LARGE` otherwise. Sent as a MIME attachment and never persisted - `notification_log.body` records only its name, type and size. Same path as the row above, selected by `consumes`, so the JSON contract is unchanged |
 
 `POST /v1/invoices` and (once wired) `POST /v1/quotations` gained an
 optional `couponCode` field on the request body - validated, priced and

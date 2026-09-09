@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Cloudflare Turnstile settings.
  *
  * Disabled by default and treated as disabled whenever `secretKey` is blank -
- * the same "unconfigured means skip, never crash" convention SmtpMailService
+ * the same "unconfigured means skip, never crash" convention PasswordResetMailService
  * and the AI clients already follow. A CAPTCHA that hard-fails when its keys
  * are missing would lock every user out of a working system, which is a worse
  * outcome than the automated sign-in attempts it exists to stop.

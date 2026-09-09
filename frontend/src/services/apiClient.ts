@@ -229,3 +229,22 @@ export async function apiUploadFile(url: string, file: File): Promise<void> {
   form.append('file', file);
   await http.put(url, form, { headers: { 'Content-Type': 'multipart/form-data' } });
 }
+
+/**
+ * A POST carrying fields AND an optional file, returning the usual envelope
+ * (CR-073) - unlike apiUploadFile above, which is the file-only 204 case.
+ *
+ * Values are appended as-is so the backend can bind them with
+ * @ModelAttribute; skipping null/undefined keeps an optional file from being
+ * sent as the literal string "undefined", which is what a bare append does.
+ */
+export async function apiPostForm<T>(url: string, fields: Record<string, string | Blob | undefined | null>): Promise<T> {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined && value !== null) form.append(key, value);
+  }
+  const { data } = await http.post<ApiResponse<T>>(url, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data.data;
+}

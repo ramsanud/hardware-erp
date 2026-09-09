@@ -79,7 +79,9 @@ Nothing is implemented from conversation memory.
 | CR-067 | 2026-09-08 | User | Shop data reset, behind a CAPTCHA and a typed confirmation | **APPLIED, 2026-09-09** |
 | CR-069 | 2026-09-08 | User | Premium auth screens, rebuilt on theme tokens | **APPLIED, 2026-09-09** |
 | CR-070 | 2026-09-09 | User | Stock list filters to what is actually out of stock | **APPLIED, 2026-09-09** |
+| CR-073 | 2026-09-09 | User | Contact admin accepts an optional screenshot. Same 2MB / PNG-JPEG-WebP rule as every other image upload, emailed to support as a MIME attachment and never stored. The JSON endpoint keeps working unchanged; a second mapping separated by `consumes` handles the multipart case. | **APPLIED, 2026-09-09** |
 | CR-071 | 2026-09-09 | Claude | Documentation only. Rebuild `FEATURE_REGISTRY.md` and `MODULE_DEPENDENCY_MAP.md` against the real source tree; both had drifted far enough to mislead — they named MySQL as the database and listed shipped modules as "planned". Records the `product` ↔ `invoice` package cycle rather than hiding it. No code change. | **APPLIED, 2026-09-09** |
+| CR-074 | 2026-09-09 | User | SMS goes real over Twilio; email can move to SendGrid with `EMAIL_PROVIDER=sendgrid`. Credentials are app-wide, not per tenant (unlike CR-056 WhatsApp). Collapses the three divergent direct-`JavaMailSender` paths — password reset, invoice PDF, Settings test button — onto one `EmailTransport`, so a SendGrid deployment cannot silently drop password-reset mail. | **APPLIED, 2026-09-09** |
 ---
 
 
@@ -4254,3 +4256,213 @@ exactly the case it was written for. Fixed by moving the write into its own
 `ActivityLogWriter` bean, so the call crosses a proxy boundary and the
 propagation takes effect. See `BUG_REGISTRY.md`.
 
+
+---
+
+## CR-073 — Contact admin accepts a screenshot (APPLIED 2026-09-09)
+
+**Raised by:** User. **Type:** new capability on an existing endpoint.
+
+### Why
+
+The dialog asked "What is going wrong?" and accepted only prose. The report
+that prompted this - "my invoice name was not show properly can you check and
+fix it" - is exactly the case where one screenshot replaces three rounds of
+questions, and the reporter already had it on screen.
+
+### Shape, and what was deliberately not built
+
+The screenshot is **emailed and never stored**. Persisting it would mean a
+table, a retention policy, a tenant-scoped download endpoint and a viewer, for
+a file only support ever opens - and support already has it, in the mailbox
+where the report landed. `notification_log.body` keeps the file name, type and
+size, so the record still says a screenshot was part of the report.
+
+| Piece | Decision |
+|---|---|
+| Endpoint | A **second mapping on the same path**, separated by `consumes`. The JSON form is a published contract with its own Postman entry; a reporter attaching nothing should not be made to send a multipart body |
+| Validation | The existing `ImageValidation.validate(file, PHOTO_TYPES)` - 2MB, PNG/JPEG/WebP. One shared validator, so this limit cannot drift from avatar, logo and expense-receipt uploads |
+| Provider interface | A **default method** carrying the attachment, not a sixth parameter on the existing `send`. SMS and WhatsApp have no notion of an email attachment; the default drops it and still delivers, so neither provider changed at all |
+| Field binding | `@Valid @ModelAttribute ContactAdminRequest`, so subject and message obey the same Bean Validation down both paths |
+
+### Verified
+
+`mvn -o clean compile` exit 0. Five new unit tests in `EmailAttachmentTest`
+covering: no attachment stays on the plain `SimpleMailMessage` path; an
+attachment becomes a real MIME multipart carrying the named part; an
+unconfigured mailbox still returns LOGGED_ONLY rather than failing; a
+non-email channel ignores the file and still sends; and `describe()` reports
+the file without exposing its bytes.
+
+Exercised against the running application, not only in tests: multipart with a
+PNG returns 200, the JSON path still returns 200 unchanged, a `text/plain`
+upload is refused with `UNSUPPORTED_FILE_TYPE` and a 3MB image with
+`FILE_TOO_LARGE`. Driven through the real dialog in a browser: a non-image is
+rejected client-side before any upload, a valid PNG shows a thumbnail with its
+name and size and a remove control, and Send posts `multipart/form-data` and
+closes the dialog.
+
+`registry/static_check.py` **not executed** - python3 is not installed on this
+machine (hard rule 10).
+
+## CR-074 — SMS over Twilio, email over SendGrid, and one way to send mail (APPLIED 2026-09-09)
+
+**Raised by:** User — "implement the email notification and sms notification
+trigger with twilio api". **Type:** real providers behind two existing channels.
+
+### Why
+
+The triggers were never the missing part. `notifyInvoiceCreated` and
+`notifyPaymentReceived` have fired on every invoice and payment since CR-027,
+and `notification_log` recorded each attempt. What they reached was a stub:
+`SmsNotificationProvider` logged the message it would have sent and returned
+`LOGGED_ONLY`, because no SMS account existed. Every customer-facing SMS this
+application has ever "sent" was a line in a log file.
+
+Email was already real over SMTP. It moves to SendGrid because the user asked
+for the Twilio stack for both halves, and because the v3 API returns a message
+id where SMTP returns nothing — `notification_log.provider_message_id` has been
+sitting null for every email ever sent, which is the column that makes an "it
+never arrived" report answerable.
+
+### App-wide credentials, not per tenant — and why that differs from CR-056
+
+WhatsApp is tenant-scoped (`tenant_whatsapp_connection`, encrypted token,
+Settings screen). SMS and email here are not, and the difference is real rather
+than an inconsistency: a WhatsApp Business message **must** come from the
+shop's own verified number, so the token has to be the tenant's. An SMS and a
+notification email go out from one sender the platform owns and pays for.
+Per-tenant Twilio accounts would mean a new table, an encrypted-token column, a
+service, a controller and a Settings screen — a build on the scale of CR-056.
+Offered to the user, who chose app-level config. If shops later need their own
+Twilio accounts, that is its own CR, not an extension of this one.
+
+### Shape
+
+| Piece | Decision |
+|---|---|
+| SMS | `SmsNotificationProvider` **kept as the single bean claiming `SMS`**, with Twilio as its backend. A second "Twilio" bean beside the stub would have collided silently in `NotificationServiceImpl`'s channel map — whichever Spring iterates last wins, no error |
+| Twilio call | `POST /Accounts/{sid}/Messages.json`, HTTP **Basic** auth (not Bearer, unlike Meta), form-encoded. `sid` from the response is stored as `provider_message_id` |
+| Email provider choice | `app.notifications.email.provider` = `smtp` (default) or `sendgrid`, each provider `@ConditionalOnProperty` — the same pattern `app.ai.provider` already uses, so exactly one EMAIL bean exists |
+| SendGrid call | `POST /v3/mail/send`, Bearer key, JSON. 202 Accepted with an empty body; the id arrives in the `X-Message-Id` header |
+| Unconfigured | Unchanged in spirit: blank credentials mean log-and-`LOGGED_ONLY`, never an error. A deployment that configures neither keeps working exactly as before |
+| Number format | 10 stored digits become `+919876543210`. Deliberately **not** shared with `WhatsAppBusinessProvider`'s helper — Meta wants E.164 *without* the `+`, Twilio *with* it |
+
+### The defect this surfaced, fixed in the same commit
+
+Switching the email channel alone would have left three divergent email paths.
+`SmtpMailService` (password-reset links), `InvoiceEmailServiceImpl` (the
+invoice PDF) and `MailDiagnosticServiceImpl` (the Settings "test email" button)
+each reached for `JavaMailSender` and `spring.mail.username` directly. A
+deployment configured with a SendGrid key and no `MAIL_USER` would have looked
+healthy, sent invoice notifications, and **silently dropped every
+password-reset link** — invisible until a locked-out owner reported it. The
+mail diagnostic would have compounded it by testing a path real mail no longer
+takes.
+
+All three now send through one `EmailTransport`, implemented by whichever
+provider is active. `SmtpMailService` was renamed `PasswordResetMailService`:
+what it does is send the password-reset mail, and SMTP is no longer necessarily
+how. The diagnostic's "not configured" text is now the provider's own, so a
+SendGrid deployment is told to set `SENDGRID_API_KEY`, not `MAIL_USER`.
+
+### Stated limitation, not hidden
+
+India's TRAI DLT regime requires every commercial SMS sender id and template to
+be registered with a real telecom operator before a message reaches an Indian
+handset. **Twilio will accept these calls and return a message SID regardless**;
+the operator then drops the message downstream. No code here can satisfy that
+registration. `TWILIO_MESSAGING_SERVICE_SID` is the field that carries a
+DLT-registered sender id and is the one to configure for a live Indian
+deployment; `TWILIO_FROM_NUMBER` is for testing and non-Indian numbers. This is
+the same class of honest limit already recorded for WhatsApp templates under
+CR-056.
+
+### Deliberately not built
+
+- **A "Test SMS" button.** Email has `POST /v1/settings/mail/test` and WhatsApp
+  has its own test send; SMS has neither, so a wrong Twilio credential stays
+  invisible until a customer does not get a message. Worth its own CR — it
+  needs an endpoint, a permission and a Settings control.
+- **Per-tenant Twilio/SendGrid accounts.** See above.
+- **Delivery-status webhooks.** Twilio and SendGrid both post delivery events,
+  and `DELIVERED`/`READ` already exist on `NotificationStatus` for exactly this
+  — but only Meta's webhook is built (CR-056). Both would need a signed public
+  endpoint each.
+
+### Verified
+
+`mvn -o clean verify`, exit 0, with Docker running: **499 unit tests and 224
+Testcontainers integration tests, 0 failures, 0 errors.**
+
+20 of those unit tests are new — `TwilioSmsProviderTest` (10) and
+`SendGridEmailProviderTest` (10) — covering, for each provider: unconfigured
+logs rather than sends and never calls the API at all; a real accepted send
+returns SENT carrying the provider's own message id; the request's URL, method,
+auth scheme (Twilio Basic, SendGrid Bearer) and content type; the exact wire
+payload (Twilio's form fields and Messaging-Service precedence, SendGrid's v3
+nesting and base64 attachment); a provider rejection throwing with the
+provider's own error text rather than a generic failure; and each still
+claiming exactly one channel.
+
+One defect was caught during this work by the existing Spring context tests and
+not by any unit test: giving `SmsNotificationProvider` a second, package-private
+constructor as a test seam left two unannotated constructors, so Spring fell
+back to a default constructor that does not exist and the whole application
+context failed to start. Unit tests passed throughout — they call the
+constructors directly. `@Autowired` on the injectable constructor of both new
+providers fixes it. Worth recording because the test seam is the thing that
+caused it, and the next provider added this way will hit the same trap.
+
+
+### Email verified end to end, against a real mail server
+
+`EmailProviderSelectionTest` (7 tests, `ApplicationContextRunner`, no Docker)
+closes the one gap the provider unit tests could not: they construct each
+provider directly, so they would keep passing if **both** EMAIL beans were
+active or **neither** was. It asserts that the default and `provider=smtp`
+both yield `EmailNotificationProvider`, that `provider=sendgrid` yields
+`SendGridEmailProvider` **and removes the SMTP bean entirely**, that exactly
+one `NotificationProvider` claims EMAIL either way, and that both new
+property prefixes actually bind — a typo in a `@ConfigurationProperties`
+prefix leaves every field null, which reads as unconfigured and silently
+logs instead of sending.
+
+`LiveMailSmokeTest` sends a **real** message through the whole chain
+(`MailDiagnosticServiceImpl` → `EmailTransport` → `EmailNotificationProvider`
+→ `JavaMailSender` → SMTP), including the MIME-multipart attachment path the
+invoice PDF and support screenshot use. It is opt-in — skipped unless
+`MAIL_LIVE_TEST=true` — because a test that mails a real mailbox on every
+`mvn verify` would spam it and fail for network reasons unrelated to the code.
+It sends to `MAIL_USER`, so the configured account mails itself and no third
+party is ever reached.
+
+**What running it found, and it is not a code defect.** The chain works: the
+connection opened, STARTTLS negotiated, and Gmail answered. What Gmail
+answered was `535-5.7.8 Username and Password not accepted` — the
+`MAIL_PASSWORD` in this machine's `.env` is dead (an app password is revoked
+the moment 2-Step Verification is turned off on the account). The value
+reached Gmail intact: the file is LF, and the value is 16 unquoted letters
+with no whitespace or trailing CR, exactly an app password's shape.
+
+This is the **worst runtime state a channel can be in, and the reason the
+diagnostic endpoint exists**: `MAIL_USER` is non-blank, so `isConfigured()`
+is true, so the application does *not* fall back to LOGGED_ONLY — it attempts
+a real send that fails, writes `FAILED` to `notification_log`, and moves on.
+Invoice emails and password-reset links are silently failing in this
+environment right now, and were before CR-074 too. `POST
+/v1/settings/mail/test` surfaces it in one click, returning Gmail's own
+sentence rather than a boolean — which is precisely what this run
+demonstrated.
+
+The SendGrid half could not be exercised live: no `SENDGRID_API_KEY` exists in
+this environment. Its request shape, payload nesting, base64 attachment,
+header-borne message id and error handling are covered by the 10 unit tests,
+and its bean selection by the context test above — but **no real SendGrid
+delivery has been proven**, and this entry does not claim otherwise.
+
+Suite after these additions: `mvn -o clean verify` exit 0 — **508 unit tests
+run (0 failures, 2 skipped: the opt-in live pair) and 224 integration tests**.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this
+machine (hard rule 10).

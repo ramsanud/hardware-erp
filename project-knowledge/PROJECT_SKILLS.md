@@ -357,3 +357,32 @@ Lessons learned. Read before every module; append after every module.
     registers two throwaway shops per test instead and resets one of
     those. Same reasoning as `WhatsAppConnectionSecurityIT`'s upsert and
     `SupplierControllerIT`'s unique-per-test values, one step further.
+57. A second constructor added purely as a test seam breaks Spring
+    injection silently at *runtime*, not at compile time. Giving
+    `SmsNotificationProvider` a package-private
+    `(properties, mapper, httpClient)` constructor beside its public
+    `(properties, mapper)` one (CR-074) left two unannotated
+    constructors, so Spring stopped autowiring, fell back to a
+    no-arg constructor that does not exist, and the whole application
+    context failed to start. **Every unit test still passed** - they
+    call the constructors directly and never ask Spring for the bean.
+    Annotate the injectable constructor with `@Autowired` whenever a
+    class gains a second one. The class of lesson is broader: unit
+    tests cannot see wiring, so a change to a bean's construction is
+    only proven by a test that actually loads the context
+    (`PermissionCodeConsistencyTest`, `SecurityFilterRegistrationTest`),
+    which is one more reason `mvn clean verify` with Docker up is the
+    real gate and `mvn test` is not.
+58. Making one channel of a cross-cutting concern real exposes every
+    other caller that reached past the abstraction. CR-074 switched the
+    EMAIL notification provider to SendGrid and found three separate
+    places - password-reset mail, invoice PDF mail, and the Settings
+    "test email" diagnostic - each holding its own `JavaMailSender` and
+    its own `spring.mail.username` check. A deployment configured for
+    SendGrid alone would have sent invoices and **silently dropped every
+    password-reset link**, with the diagnostic button cheerfully testing
+    a path real mail no longer took. Before swapping the implementation
+    behind any provider interface, grep for direct users of the
+    underlying client (`JavaMailSender`, `HttpClient`, an SDK type) -
+    the ones that never went through the interface are exactly the ones
+    that will not move with it.

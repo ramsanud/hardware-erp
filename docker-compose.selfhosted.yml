@@ -117,6 +117,17 @@ services:
       MAIL_USER: ${MAIL_USER:-}
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
 
+      # Also optional, and off the same way when unset (CR-074): SMS is
+      # logged rather than sent, and email stays on the SMTP settings above
+      # until EMAIL_PROVIDER says otherwise.
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+
       TZ: ${TZ:-Asia/Kolkata}
 
       # A shop PC is not a server. Without an explicit ceiling the JVM sizes
