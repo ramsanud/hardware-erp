@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
-  Boxes, Calculator, CalendarCheck, ChevronDown, ClipboardList, Coins, FileClock, FileDown, FileText, HardHat, KeyRound, Landmark,
-  LayoutDashboard, Layers, LifeBuoy, Package, PackageSearch, Settings,
+  Boxes, Calculator, CalendarCheck, ChevronDown, ClipboardList, Coins, FileClock, FileDown, FileText, HardHat, History, KeyRound, Landmark,
+  LayoutDashboard, Layers, LifeBuoy, Package, PackageSearch, PanelLeftClose, Settings,
   ShieldCheck, ShoppingBag, ShoppingCart, Tags, TerminalSquare, Ticket, TrendingUp, Truck,
   UserCheck, UserCircle, Users, Wallet, Wrench,
 } from 'lucide-react';
@@ -116,6 +116,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: AUTH_ROUTES.roles, label: 'Roles', icon: ShieldCheck, permission: PERMISSIONS.ROLE_VIEW, available: true },
       { to: AUTH_ROUTES.permissions, label: 'Permissions', icon: KeyRound, permission: PERMISSIONS.ROLE_VIEW, available: true },
       { to: AUTH_ROUTES.auditLog, label: 'Security log', icon: FileClock, permission: PERMISSIONS.AUDIT_VIEW, available: true },
+      { to: AUTH_ROUTES.activityLog, label: 'Activity log', icon: History, permission: PERMISSIONS.AUDIT_VIEW, available: true },
       { to: '/settings/shop', label: 'Shop settings', icon: Settings, permission: PERMISSIONS.SETTINGS_VIEW, available: true },
     ],
   },
@@ -203,26 +204,25 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
               </button>
             )}
 
+            {/*
+              No render-prop and no data-active here any more (BUG-FE-036).
+              NavLink puts aria-current="page" on this anchor by itself, and
+              .sidebar-link styles off that - so the highlight cannot fall out
+              of step with the element the CSS actually matches.
+            */}
             {(!sectionCollapsed || collapsed) ? section.items.map(({ to, label, icon: Icon }) => (
               <NavLink
                 key={to}
                 to={to}
                 onClick={onNavigate}
+                // The label is unreadable when collapsed, so it becomes the
+                // hover tooltip and the accessible name instead.
                 title={collapsed ? label : undefined}
+                aria-label={collapsed ? label : undefined}
                 className={cn('sidebar-link', collapsed && 'justify-center px-2')}
               >
-                {({ isActive }) => (
-                  <span
-                    data-active={isActive}
-                    className={cn(
-                      'flex w-full items-center gap-3',
-                      collapsed && 'justify-center',
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                    {collapsed ? null : <span className="truncate">{label}</span>}
-                  </span>
-                )}
+                <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
+                {collapsed ? null : <span className="truncate">{label}</span>}
               </NavLink>
             )) : null}
           </div>
@@ -232,20 +232,25 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
   );
 }
 
-export function SidebarBrand({ collapsed = false }: { collapsed?: boolean }) {
+interface SidebarBrandProps {
+  collapsed?: boolean;
+  /** Omitted by the mobile drawer, which has no rail to collapse. */
+  onToggleCollapsed?: () => void;
+}
+
+export function SidebarBrand({ collapsed = false, onToggleCollapsed }: SidebarBrandProps) {
   const { brandName, hasLogo, logoVersion } = useAppChrome();
 
   const logoSrc = useAuthenticatedImage(hasLogo ? brandService.logoUrl : null, logoVersion);
 
   return (
     <div
-      className="flex h-16 items-center gap-2.5 px-4"
-      style={{ borderBottom: '1px solid hsl(var(--sidebar-border))' }}
+      className={cn(
+        'flex h-16 items-center border-b border-sidebar-border',
+        collapsed ? 'justify-center px-2' : 'gap-2.5 px-4',
+      )}
     >
-      <span
-        className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg"
-        style={{ background: 'hsl(var(--sidebar-active))' }}
-      >
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-sidebar-active">
         {logoSrc ? (
           <img src={logoSrc} alt={`${brandName ?? APP_NAME} logo`} className="h-full w-full object-cover" />
         ) : (
@@ -253,12 +258,29 @@ export function SidebarBrand({ collapsed = false }: { collapsed?: boolean }) {
         )}
       </span>
       {collapsed ? null : (
-        <span
-          className="truncate text-sm font-medium leading-tight"
-          style={{ color: 'hsl(var(--sidebar-foreground))' }}
-        >
-          {brandName ?? APP_NAME}
-        </span>
+        <>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight text-sidebar-foreground">
+            {brandName ?? APP_NAME}
+          </span>
+          {/*
+            The toggle lives beside the shop name, where the thing it resizes
+            actually is, rather than out in the app bar. Hidden when collapsed
+            because the rail is 68px wide there - the header keeps its own
+            copy, which is the only way back out.
+          */}
+          {onToggleCollapsed ? (
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-label="Collapse sidebar"
+              className="-mr-1 shrink-0 rounded-md p-1.5 text-sidebar-muted transition-colors
+                         hover:bg-sidebar-hover hover:text-sidebar-foreground
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-active"
+            >
+              <PanelLeftClose className="h-4 w-4" aria-hidden />
+            </button>
+          ) : null}
+        </>
       )}
     </div>
   );
@@ -267,13 +289,7 @@ export function SidebarBrand({ collapsed = false }: { collapsed?: boolean }) {
 export function SidebarFooter({ collapsed = false }: { collapsed?: boolean }) {
   if (collapsed) return null;
   return (
-    <div
-      className="px-4 py-3 text-[11px] leading-relaxed"
-      style={{
-        color: 'hsl(var(--sidebar-section))',
-        borderTop: '1px solid hsl(var(--sidebar-border))',
-      }}
-    >
+    <div className="border-t border-sidebar-border px-4 py-3 text-[11px] leading-relaxed text-sidebar-section">
       <p>&copy; {new Date().getFullYear()} U.Ram sangar</p>
     </div>
   );

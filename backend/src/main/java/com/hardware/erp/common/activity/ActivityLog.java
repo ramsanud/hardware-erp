@@ -26,6 +26,16 @@ public class ActivityLog {
     @Column(name = "activity_id")
     private Long id;
 
+    /**
+     * CR-072. Nullable on purpose: a row written by a scheduled job or an
+     * import has no signed-in user and therefore no tenant to attribute it
+     * to. Every read filters `tenant_id = :tenantId`, and NULL never equals
+     * anything in SQL, so an unattributable row is invisible to every tenant
+     * rather than visible to all of them. See V55.
+     */
+    @Column(name = "tenant_id")
+    private Long tenantId;
+
     @Column(name = "module_code", nullable = false, length = 30)
     private String moduleCode;
 

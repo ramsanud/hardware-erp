@@ -6,10 +6,7 @@ import com.hardware.erp.security.SecurityUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -33,7 +30,7 @@ public class ActivityLogServiceImpl implements ActivityLogService {
             "token", "tokenHash", "refreshToken", "accessToken",
             "bankAccountNo", "bankAccountNumber");
 
-    private final ActivityLogRepository activityLogRepository;
+    private final ActivityLogWriter activityLogWriter;
 
     @Override
     public void created(String moduleCode, String entityType, Long entityId,
@@ -85,38 +82,53 @@ public class ActivityLogServiceImpl implements ActivityLogService {
     }
 
     /**
-     * REQUIRES_NEW so a logging failure never rolls back the user's actual
-     * work, and so the attempt survives even if that work then fails.
+     * Builds the row and hands it to {@link ActivityLogWriter}, which owns the
+     * REQUIRES_NEW boundary. BUG-BE-002: this used to be a protected method
+     * carrying the annotation itself and calling itself through {@code this},
+     * which never reaches the proxy, so the propagation never applied.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    protected void write(String moduleCode, String entityType, Long entityId,
-                         String entityLabel, ActivityAction action,
-                         Map<String, Object> oldValues, Map<String, Object> newValues,
-                         String remarks) {
+    private void write(String moduleCode, String entityType, Long entityId,
+                       String entityLabel, ActivityAction action,
+                       Map<String, Object> oldValues, Map<String, Object> newValues,
+                       String remarks) {
         Optional<AppUserDetails> current = SecurityUtils.currentUser();
         HttpServletRequest request = currentRequest();
+        ActivityLog entry = ActivityLog.builder()
+                // CR-072. From the JWT, never a request parameter. Empty for a
+                // scheduled job or an import, and that row is then readable by
+                // nobody - see V55.
+                .tenantId(SecurityUtils.currentTenantId().orElse(null))
+                .moduleCode(moduleCode)
+                .entityType(entityType)
+                .entityId(entityId)
+                .entityLabel(truncate(entityLabel, 255))
+                .action(action)
+                .oldValues(oldValues)
+                .newValues(newValues)
+                .userId(current.map(AppUserDetails::getId).orElse(null))
+                .fullName(current.map(AppUserDetails::getFullName).orElse("SYSTEM"))
+                .roleCode(current.map(AppUserDetails::getRoleCode).orElse(null))
+                .ipAddress(request != null ? SecurityUtils.clientIp(request) : null)
+                .requestId(request != null
+                        ? RequestCorrelationFilter.currentRequestId(request) : null)
+                .remarks(truncate(remarks, 500))
+                .build();
+
         try {
-            activityLogRepository.save(ActivityLog.builder()
-                    .moduleCode(moduleCode)
-                    .entityType(entityType)
-                    .entityId(entityId)
-                    .entityLabel(truncate(entityLabel, 255))
-                    .action(action)
-                    .oldValues(oldValues)
-                    .newValues(newValues)
-                    .userId(current.map(AppUserDetails::getId).orElse(null))
-                    .fullName(current.map(AppUserDetails::getFullName).orElse("SYSTEM"))
-                    .roleCode(current.map(AppUserDetails::getRoleCode).orElse(null))
-                    .ipAddress(request != null ? SecurityUtils.clientIp(request) : null)
-                    .requestId(request != null
-                            ? RequestCorrelationFilter.currentRequestId(request) : null)
-                    .remarks(truncate(remarks, 500))
-                    .build());
-        } catch (DataAccessException ex) {
-            // Logged at ERROR so a broken history surfaces in monitoring rather
-            // than at the next audit, but never breaks the user's action.
-            log.error("ACTIVITY LOG WRITE FAILED module={} entity={} id={} action={}",
-                    moduleCode, entityType, entityId, action, ex);
+            activityLogWriter.write(entry);
+        } catch (RuntimeException ex) {
+            // OUTSIDE the REQUIRES_NEW boundary on purpose - see
+            // ActivityLogWriter. The failure has already rolled back the
+            // writer's own transaction and nothing else, so the caller's work
+            // is intact and this is genuinely safe to swallow.
+            //
+            // RuntimeException rather than DataAccessException: a flush
+            // failure surfaces through the proxy as TransactionSystemException
+            // or UnexpectedRollbackException just as often as it does as a
+            // DataAccessException, and the contract here is that a history
+            // row can never break the sale it describes.
+            log.error("ACTIVITY LOG WRITE FAILED tenant={} module={} entity={} id={} action={}",
+                    entry.getTenantId(), moduleCode, entityType, entityId, action, ex);
         }
     }
 

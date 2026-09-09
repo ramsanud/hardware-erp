@@ -18,7 +18,7 @@ const ROUTES = [
   '/invoices', '/quotations', '/purchases',
   '/stock', '/payments', '/expenses', '/coupons',
   '/projects', '/labour/workers', '/labour/attendance',
-  '/users', '/roles', '/permissions', '/security-audit-log',
+  '/users', '/roles', '/permissions', '/security-audit-log', '/activity-log',
   '/profile', '/profile/appearance',
   '/settings/shop', '/tools/gst-calculator', '/support',
 ];

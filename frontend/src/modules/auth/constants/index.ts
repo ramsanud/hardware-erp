@@ -102,4 +102,6 @@ export const AUTH_ROUTES = {
   roles: '/roles',
   permissions: '/permissions',
   auditLog: '/security-audit-log',
+  /** CR-072. Business changes, not security events - CR-015 keeps the two apart. */
+  activityLog: '/activity-log',
 } as const;

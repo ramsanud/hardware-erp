@@ -4185,3 +4185,72 @@ quietly absent from it.
 integration tests, 0 failures, exit 0. Frontend `tsc -b --force` and
 `vite build` both exit 0. `registry/static_check.py` **not executed** —
 python3 is not installed on this machine (hard rule 10).
+
+---
+
+## CR-072 — The business audit trail becomes readable (APPROVED, 2026-09-09)
+
+**Approval.** Directed by the product owner on 2026-09-08 when they selected
+the deferred backlog as work to take on. CR-070 investigated this, found it
+unsafe to build as scoped, and recorded exactly what it needed — "a `tenant_id`
+column on `activity_log`, written at all call sites, plus a backfill decision
+for existing rows". This is that CR.
+
+### The problem CR-070 stopped at
+
+`activity_log` is written by roughly ten services under CR-015, carries
+before/after values, and **no controller has ever read it back**. It could not
+safely gain one: V3 created the table with no `tenant_id`, no migration since
+added one, and `ActivityLogRepository.search(...)` filters by module, entity
+and user but not by tenant. A shop-wide viewer over that query would have
+served every tenant's business changes to any `AUDIT_VIEW` holder — the same
+class of defect as BUG-SEC-001.
+
+### What CR-070 got wrong, and it is good news
+
+CR-070 sized this as "ten call sites". **There is exactly one.** Every module
+calls `created` / `updated` / `deleted` / `action`, and all four funnel into a
+single `write(...)` in `ActivityLogServiceImpl`. The tenant is stamped there,
+once, from `SecurityUtils.currentTenantId()` — the same JWT-derived source
+every other tenant-scoped query uses, never a request parameter.
+
+### The backfill, which was the genuinely hard part
+
+Existing rows cannot all be attributed. V55 backfills from `user_id` through
+`app_user.tenant_id`, which covers every row written by a signed-in user.
+Rows written by a scheduled job or an import have a null `user_id` and stay
+**null**.
+
+**Null is the safe value, by construction.** The query filters
+`tenant_id = :tenantId`, and `NULL = anything` is never true in SQL, so an
+unattributable row is invisible to every tenant rather than visible to all of
+them. The column is therefore deliberately **nullable with no default** — a
+`NOT NULL` with a backfill guess would have had to invent an owner for rows
+whose owner is genuinely unknown, and inventing an owner in an audit table is
+worse than admitting the row is orphaned.
+
+### Read-only, and no delete
+
+There is no endpoint to edit or remove a row and none should be added. An
+audit trail an operator can prune is not an audit trail. It reuses `AUDIT_VIEW`
+rather than inventing a permission code: the security log viewer already
+answers "who changed what" with it, and splitting the two would mean granting
+two permissions to answer one question.
+
+### BUG-BE-002, found in the one method this CR had to change
+
+`write(...)` carries `@Transactional(propagation = REQUIRES_NEW)` with a
+comment explaining that a logging failure must never roll back the user's real
+work. **The annotation was inert.** It sits on a `protected` method invoked as
+`this.write(...)` from `created`/`updated`/`deleted`/`action` in the same
+class, so Spring's proxy is bypassed — this project uses proxy-based AOP, with
+no AspectJ weaving anywhere — and the log write silently joined the caller's
+transaction instead of getting one of its own.
+
+The `catch (DataAccessException)` below it did not save this: by the time a
+constraint violation is caught, the surrounding transaction is already marked
+rollback-only, so the "never breaks the user's action" guarantee failed in
+exactly the case it was written for. Fixed by moving the write into its own
+`ActivityLogWriter` bean, so the call crosses a proxy boundary and the
+propagation takes effect. See `BUG_REGISTRY.md`.
+

@@ -13,6 +13,7 @@ import { UserManagementPage } from '@/modules/auth/pages/UserManagementPage';
 import { RoleManagementPage } from '@/modules/auth/pages/RoleManagementPage';
 import { PermissionViewPage } from '@/modules/auth/pages/PermissionViewPage';
 import { SecurityAuditLogPage } from '@/modules/auth/pages/SecurityAuditLogPage';
+import { ActivityLogPage } from '@/modules/activity/pages/ActivityLogPage';
 import { SUPPLIER_ROUTES } from '@/modules/supplier/constants';
 import { SupplierListPage } from '@/modules/supplier/pages/SupplierListPage';
 import { SupplierDetailPage } from '@/modules/supplier/pages/SupplierDetailPage';
@@ -183,6 +184,10 @@ export function AppRoutes() {
 
           <Route element={<RequirePermission permission={PERMISSIONS.AUDIT_VIEW} />}>
             <Route path={AUTH_ROUTES.auditLog} element={<SecurityAuditLogPage />} />
+            {/* CR-072. Same permission as the security log: both answer "who
+                changed what", and needing two grants to answer one question
+                would be an odd thing to ask an owner for. */}
+            <Route path={AUTH_ROUTES.activityLog} element={<ActivityLogPage />} />
           </Route>
 
           <Route element={<RequirePermission permission={PERMISSIONS.SUPPLIER_VIEW} />}>

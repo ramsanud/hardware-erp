@@ -748,3 +748,38 @@ Unblocks CR-066's `out-of-stock-list` widget, which was recorded as needing
 **`GET /v1/activity-log` was NOT added** — see CR-070 in the change request
 registry. `activity_log` has no `tenant_id`, so a shop-wide viewer over the
 existing repository query would have read every tenant's business changes.
+
+---
+
+## CR-072 — the business audit trail becomes readable
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/v1/activity-log` | `AUDIT_VIEW` | This shop's business changes, newest first. Filters: `moduleCode`, `entityType`, `entityId`, `userId`, `fromDate`, `toDate`, plus paging. |
+| GET | `/v1/activity-log/modules` | `AUDIT_VIEW` | The distinct module codes this shop has history for, so the filter offers only values that return something. |
+
+`activity_log` had been written by roughly ten services since CR-015 and **no
+controller had ever read it back** — the before/after values that make the
+table worth keeping were reachable only through a database client. CR-070
+investigated adding this viewer and refused, because the table had no
+`tenant_id`; V55 adds it and this is the endpoint that was waiting.
+
+**The tenant comes from the JWT and nothing else.** No parameter of either
+endpoint can widen or redirect the scope. Rows with a null `tenant_id` —
+written with no signed-in user, by a scheduled job or an import — are returned
+to **nobody**, because the query filters `tenant_id = :tenantId` and NULL never
+equals anything in SQL. That is the designed behaviour, not a gap.
+
+`searchForTenant(...)` is a separate repository method from the pre-existing
+unscoped `search(...)` rather than an extra nullable parameter on it,
+specifically so no future caller can reach the shop-wide shape by passing
+null.
+
+**Read only, permanently.** There is no endpoint to edit or delete a row and
+none should be added: an audit trail an operator can prune is not an audit
+trail. It reuses `AUDIT_VIEW` rather than inventing a code — the security-log
+viewer already answers "who changed what" with it.
+
+Regression tests: `ActivityLogTenantScopeIT` (6, including a foreign-tenant row
+and a null-tenant row proven invisible, and a `STAFF` caller refused) and
+`ActivityLogWriterPropagationIT` (1, BUG-BE-002).
