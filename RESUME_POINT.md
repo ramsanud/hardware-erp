@@ -1,5 +1,35 @@
 # RESUME POINT
 
+**Updated:** 2026-09-09 (**CR-072 — the business audit trail becomes readable; BUG-BE-002**). One feature and one high-severity defect found inside it.
+
+**The ask was the deferred backlog, worked through one item at a time, tested, committed and pushed.** Four earlier passes in this session cleared the registry work; this is the last and largest item.
+
+**`activity_log` had been write-only since CR-015.** Roughly ten services write it, it carries before/after values, and no controller had ever read it back — so the one thing that makes the table worth keeping was reachable only through a database client. CR-070 tried to add the viewer and **correctly refused**: V3 created the table with no `tenant_id`, and a shop-wide query over it would have served every tenant's business changes to any `AUDIT_VIEW` holder. V55 adds the column; this CR is the endpoint that was waiting for it.
+
+**CR-070 sized the write path at ten call sites. There is one.** Every module reaches the table through `created`/`updated`/`deleted`/`action`, and all four funnel into a single `write(...)`, so the tenant is stamped once from `SecurityUtils.currentTenantId()`. That is worth knowing before anyone re-estimates a change to this table.
+
+**The column is nullable, and that is the decision to keep.** The backfill can attribute only rows carrying a `user_id`, resolved through `app_user.tenant_id`. Rows written by a scheduled job or an import have no user and no honest way to recover an owner, so they stay null — and **null is the safe value**, because every read filters `tenant_id = :tenantId` and `NULL` never equals anything in SQL. An unattributable row is therefore invisible to every tenant rather than visible to all of them. `NOT NULL` would have forced the migration to invent an owner for a row in an audit table.
+
+**`searchForTenant(...)` is a separate repository method** from the pre-existing unscoped `search(...)`, not an extra nullable parameter on it, specifically so no future caller can reach the shop-wide shape by passing null.
+
+**BUG-BE-002, found in the one method this CR had to change, and it is the more interesting half.** `write(...)` carried `@Transactional(REQUIRES_NEW)` with a comment promising a logging failure never rolls back the user's real work. **The annotation was inert** — it sat on a `protected` method self-invoked as `this.write(...)`, which never reaches the proxy (proxy-based AOP, no AspectJ anywhere). Its `catch` made the failure silent rather than survivable: with `IDENTITY` generation the INSERT fires at `save()`, so the violation *was* caught, but the surrounding transaction was already rollback-only and the invoice being described was lost at commit with nothing in the response to explain why.
+
+**The fix has a subtlety that cost a full test cycle.** Moving the write into its own `ActivityLogWriter` bean is only half of it — **the handler had to move OUT of the transactional method, not travel with it.** Under `REQUIRES_NEW` the flush happens as the method returns and its transaction commits, inside the proxy, after any `try` in the method body has exited. The first attempt kept the catch inside the new bean and still failed. `ActivityLogWriter.write` therefore throws and `ActivityLogServiceImpl` catches outside the boundary, on `RuntimeException` rather than `DataAccessException` because a flush failure surfaces as `TransactionSystemException`/`UnexpectedRollbackException` at least as often.
+
+**Checked while there, and the comparison is the useful part.** `SecurityAuditServiceImpl` and `JobExecutionTracker` both have a private helper called from public methods and look like the same bug. They are correct, because the annotation sits on their **public entry points** — the proxy is already crossed by the time the helper runs. The thing to look for when reviewing any `REQUIRES_NEW` is not whether a self-call exists but **whether the annotation is on the method reached from outside the bean.**
+
+**Verified — executed, not claimed.** `mvn clean verify`: **474 unit + 224 integration, 0 failures, 0 errors, BUILD SUCCESS**. `tsc -b --force` and `vite build` exit 0. Frontend e2e **72/72**. `registry/static_check.py` **not executed** — `python3` is not installed here (hard rule 10).
+
+**The BUG-BE-002 test was verified against the defect, not merely written.** `ActivityLogWriterPropagationIT` was run against a deliberately restored pre-fix shape, failed there, then passed against the fix. A regression test nobody has seen fail is a description, not a test.
+
+**The responsive route sweep earned its keep immediately.** `/activity-log` was added to it and instantly failed at all five viewports: `moduleCodes()` can answer with a null body, and `modules.map()` then took the whole page down blank. Guarded with `Array.isArray` — the module filter is a convenience and must never be the reason the log cannot be read.
+
+**Also unblocked:** CR-066's `recent-activity` widget moves from `needs-endpoint` to `available` (and `out-of-stock-list` did the same under CR-070 earlier in this session).
+
+**⚠ At least one other session is writing to this tree.** `Sidebar.tsx` carries an 84-line restructuring from another session around the one line added here; it was committed because the alternative was shipping a page with no way to navigate to it. Uncommitted `notification/` work (email attachments, `NotificationAttachment`, `ContactAdminDialog`, `apiClient.ts`, `backend/pom.xml`) belongs to that session and was deliberately left alone. **Check `git status` and split before committing.**
+
+---
+
 **Updated:** 2026-09-09 (**BUG-FE-035 — a busy toolbar crushed the page title**). `SCOPE: FRONTEND ONLY` — the API response was correct; the header column was 69px wide.
 
 **Reported from a screenshot** of `/invoices/53`: the invoice number rendered as `I...` and `Bug Fix Test · 9123456700 · 2026-09-01` came down the page one word per line. Measured rather than guessed at: the title column was **69px** at 1440px and **0px** at 768px, where the toolbar also ran off the page.
