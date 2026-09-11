@@ -1,6 +1,20 @@
 # RESUME POINT
 
-**Updated:** 2026-09-09 (**API sweep — BUG-BE-003 and BUG-BE-004 found and fixed**). `SCOPE: BACKEND ONLY` for both. No frontend file, no migration, no DTO shape changed.
+**Updated:** 2026-09-12 (**CR-075 — a first-visit tour, and everything since CR-072 merged to main**).
+
+## Start here
+
+**Nothing is pending on the feature branch.** `main` carries the merge of `feature/cr-061-062-mobile-app-ui-and-auth-refactor`, verified on the exact merge candidate (`b5a45e3`) in a detached worktree: **510 unit + 231 integration tests, `mvn clean verify` exit 0**; `tsc -b --force` 0, `vite build` 0, frontend suite **111/111**. Nothing has been pushed.
+
+**CR-075 — the application explains itself.** A dialog walkthrough, offered once per user, skippable at every step, replayable from the `?` in the top bar or "How this works" in the profile menu. Steps are **filtered by permission, never by role code** — the same predicate that hides a rail entry hides its step, so an owner sees 11 steps and a storekeeper holding only `PRODUCT_VIEW`/`INVENTORY_VIEW` sees 4. Client-side, scoped per user id (CR-068 precedent). The thing to know before adding any future first-run interruption: **a modal that greets new users greets every Playwright test** — `newPage` now seeds the tour as seen and takes `firstVisit: true` to opt in. The products spec was the first casualty.
+
+**The Platform Admin Console is complete** — 16 pages — and deliberately does not get the tour: different layout, different audience.
+
+**Previous entry follows.**
+
+---
+
+**Updated (previous):** 2026-09-09 (**API sweep — BUG-BE-003 and BUG-BE-004 found and fixed**). `SCOPE: BACKEND ONLY` for both. No frontend file, no migration, no DTO shape changed.
 
 **The ask was "test all api and find the backend bugs and fix it".** The committed suite was already green — 474 unit + 224 integration, `mvn clean verify` exit 0 on a clean worktree at `e991542` — so it could not be the instrument: a passing suite cannot find a bug it does not test for. The API was therefore driven directly: the app started on the dev profile, and **all 292 operations in the OpenAPI document** enumerated and swept (262 GET calls, each id-bearing path probed with 1 / 999999 / 0 / -1).
 

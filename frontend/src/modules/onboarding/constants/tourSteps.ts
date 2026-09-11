@@ -1,5 +1,5 @@
 import {
-  Boxes, ClipboardList, Coins, FileText, HardHat, History, LayoutDashboard,
+  Boxes, Coins, FileText, HardHat, History, LayoutDashboard,
   LifeBuoy, Search, Settings, Truck, Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -139,5 +139,3 @@ export const TOUR_VERSION = '1';
 
 /** localStorage key base; the real key is scoped per user id by themeScope. */
 export const TOUR_STORAGE_KEY = 'hardware-erp-tour';
-
-export const TOUR_ICON = ClipboardList;
