@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { Play, X } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -22,7 +23,7 @@ export function WelcomeTour({ tour }: { tour: ReturnType<typeof useOnboardingTou
   const navigate = useNavigate();
   const { user } = useAuth();
   const { brandName } = useAppChrome();
-  const { open, steps, step, index, isFirst, isLast, next, back, close } = tour;
+  const { open, paused, steps, step, index, isFirst, isLast, next, back, close, pause, resume } = tour;
 
   // A user whose permissions match no step at all would otherwise get an empty
   // shell. Nothing to say is a reason to say nothing.
@@ -35,11 +36,47 @@ export function WelcomeTour({ tour }: { tour: ReturnType<typeof useOnboardingTou
   const areas = steps.map((item) => item.area).filter((area): area is string => Boolean(area));
   const isWelcome = step.id === 'welcome';
 
+  /**
+   * "Open dashboard" is an invitation to go and look, not to leave. The tour
+   * steps aside (pause, not close - nothing is marked seen) and a resume
+   * control follows you to the destination, so the one button that says
+   * "go and see" is no longer also the one that ends the tour.
+   */
   const goToAction = () => {
     if (!step.action) return;
-    close();
+    pause();
     navigate(step.action.to);
   };
+
+  if (paused && !open) {
+    return (
+      <div
+        role="status"
+        data-tour-paused
+        className="fixed inset-x-0 bottom-20 z-40 flex justify-center px-4 lg:bottom-6"
+      >
+        {/*
+          bottom-20 clears the phone tab bar; lg:bottom-6 sits in the corner
+          gutter on desktop. Centred rather than bottom-right, where the AI
+          chat widget already lives, so the two never stack.
+        */}
+        <div className="pointer-events-auto flex items-center gap-1 rounded-full border bg-background/95 py-1 pl-1 pr-1 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <Button type="button" size="sm" className="rounded-full" onClick={resume}>
+            <Play className="h-3.5 w-3.5" />
+            Continue tour
+            <span className="ml-1 text-xs font-normal opacity-80">{index + 1} of {steps.length}</span>
+          </Button>
+          <Button
+            type="button" variant="ghost" size="icon" className="h-8 w-8 rounded-full"
+            onClick={close}
+            aria-label="End tour"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) close(); }}>

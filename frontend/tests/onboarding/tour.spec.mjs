@@ -127,6 +127,52 @@ export default async function run() {
 
     await page.context().close();
 
+    // ---- "Open dashboard" pauses the tour; it does not end it --------------
+    // The reported defect: the one button that said "go and look" was also
+    // the one that made sure you could never come back to where you were.
+    const pausing = await newPage(browser, {
+      viewport: { width: 1280, height: 800 },
+      api: signedInApi(),
+      firstVisit: true,
+    });
+    await pausing.goto(BASE + '/products', { waitUntil: 'networkidle', timeout: 20000 });
+    await pausing.waitForTimeout(400);
+    await pausing.getByRole('button', { name: 'Next' }).click(); // -> step 2, "Your dashboard"
+    await pausing.waitForTimeout(150);
+    await pausing.getByRole('button', { name: 'Open dashboard' }).click();
+    const wentAway = await tourGone(pausing);
+    await pausing.waitForTimeout(300);
+    const pill = () => pausing.evaluate(() => document.querySelector('[data-tour-paused]')?.innerText ?? null);
+    s.check('the step action navigates to the page it describes',
+      wentAway && pausing.url().endsWith('/dashboard'), pausing.url());
+    let pillText = await pill();
+    s.check('a resume control appears, carrying the step you were on',
+      Boolean(pillText && /2 of \d+/.test(pillText)), pillText ?? 'no pill');
+
+    await pausing.reload({ waitUntil: 'networkidle', timeout: 20000 });
+    await pausing.waitForTimeout(400);
+    pillText = await pill();
+    s.check('the paused tour survives a reload instead of restarting or vanishing',
+      Boolean(pillText && /2 of \d+/.test(pillText)) && (await tourState(pausing)) === null,
+      pillText ?? 'no pill');
+
+    await pausing.getByRole('button', { name: /Continue tour/ }).click();
+    await pausing.waitForTimeout(250);
+    state = await tourState(pausing);
+    s.check('Continue reopens the tour at the same step', state?.step === 2, `step ${state?.step}`);
+
+    // End it from the pill - and it must then stay ended, like Skip.
+    await pausing.getByRole('button', { name: 'Open dashboard' }).click();
+    await tourGone(pausing);
+    await pausing.waitForTimeout(200);
+    await pausing.getByRole('button', { name: 'End tour' }).click();
+    await pausing.waitForTimeout(200);
+    await pausing.goto(BASE + '/customers', { waitUntil: 'networkidle', timeout: 20000 });
+    await pausing.waitForTimeout(400);
+    s.check('End tour from the pill is final',
+      (await pill()) === null && (await tourState(pausing)) === null, 'no pill, no dialog');
+    await pausing.context().close();
+
     // ---- A returning user is never interrupted ----------------------------
     const returning = await newPage(browser, {
       viewport: { width: 1280, height: 800 },

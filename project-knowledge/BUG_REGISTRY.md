@@ -94,6 +94,7 @@ generating new code; never reintroduce a listed bug.
 | BUG-FE-034 | Frontend | Low | Fixed 2026-09-08 |
 | BUG-FE-035 | Frontend | Medium | Fixed 2026-09-09 |
 | BUG-FE-036 | Frontend | Medium | Fixed 2026-09-09 |
+| BUG-FE-037 | Frontend | Medium | Fixed 2026-09-12 |
 | BUG-BE-003 | Backend / Inventory | High | Fixed 2026-09-09 |
 | BUG-BE-004 | Backend / Common | Medium | Fixed 2026-09-09 |
 
@@ -3623,3 +3624,37 @@ fix**, confirmed on a clean worktree at the previous commit.
 > `mvn -o clean test-compile` before trusting an integration-test result here.
 > Also `javap` is not on PATH in Git Bash, so it cannot be used to check what
 > actually compiled.
+
+---
+
+## BUG-FE-037 — a tour step's "Open …" button ended the tour instead of pausing it (FIXED, 2026-09-12)
+
+| | |
+|---|---|
+| **Severity** | Medium — the one control that invited a first-time user to go and look at a screen was also the one that made sure they could never return to where they were in the tour |
+| **Layer** | FRONTEND ONLY |
+| **Found** | User, running the CR-075 tour live: "if I click Open dashboard it navigates correctly but after navigating how to come back to the tour" |
+| **Symptom** | Step 2 → *Open dashboard* → dashboard renders, tour gone, seen-flag written. The only way back was `?`, which restarts from step 1 |
+
+**Root cause.** `goToAction` called `close()`, and `close()` is the Skip/Finish
+path: it writes the seen flag. Navigating away and dismissing were the same
+operation, so a step's action button was semantically a Skip button that
+also changed the URL.
+
+**Fix.** A third tour state. `open` is the dialog; **`paused`** is the tour
+stepped aside with a way back; only Skip/Finish/X/Escape/*End tour* write the
+seen flag. The action now calls `pause()` and navigates, and a floating
+*Continue tour · 2 of 12* pill follows the user until they resume or end it.
+The paused index lives in `sessionStorage` (scoped per user like everything
+else in the tour), so a reload on the destination page comes back to the pill
+rather than to nothing — a pause is something you did in this tab in the last
+few minutes, not a preference to carry to next week.
+
+Placed bottom-centre, not bottom-right where the AI chat widget lives, and
+`bottom-20` on a phone to clear the tab bar.
+
+**Regression test.** `frontend/tests/onboarding/tour.spec.mjs`: action
+navigates to the described route; the pill carries the step; the pill
+survives a reload without the dialog restarting; *Continue* reopens at the
+same step; *End tour* from the pill is final across navigation. Suite
+**152/152**.
