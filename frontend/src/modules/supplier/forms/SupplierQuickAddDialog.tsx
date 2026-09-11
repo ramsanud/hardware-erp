@@ -12,6 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/shared/components/ui/select';
 import { FormField } from '@/shared/components/FormField';
+import { AddressMapPicker } from '@/shared/components/AddressMapPicker';
 import { INDIAN_STATES } from '@/shared/data/indianStates';
 import { useToast } from '@/modules/auth/hooks/useToast';
 import { supplierService } from '../services/supplierService';
@@ -200,7 +201,23 @@ export function SupplierQuickAddDialog({
 
               <FormField id="qa-addressLine1" label="Address (optional)"
                          error={errors.addressLine1?.message}>
-                <Input id="qa-addressLine1" {...register('addressLine1')} />
+                <div className="flex gap-2">
+                  <Input id="qa-addressLine1" {...register('addressLine1')} />
+                  <AddressMapPicker
+                    className="h-10 shrink-0"
+                    current={{ addressLine1: watch('addressLine1'), city: watch('city'), pincode: watch('pincode') }}
+                    onPick={(picked) => {
+                      // This form has a single address line, so the locality
+                      // rides along on it rather than being dropped.
+                      const line = [picked.addressLine1, picked.addressLine2].filter(Boolean).join(', ');
+                      const opts = { shouldDirty: true, shouldValidate: true };
+                      if (line) setValue('addressLine1', line.slice(0, 255), opts);
+                      if (picked.city) setValue('city', picked.city, opts);
+                      if (picked.pincode) setValue('pincode', picked.pincode, opts);
+                      if (picked.stateCode) setValue('stateCode', picked.stateCode, opts);
+                    }}
+                  />
+                </div>
               </FormField>
 
               <div className="grid gap-4 sm:grid-cols-2">

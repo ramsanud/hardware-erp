@@ -250,8 +250,8 @@ extension, never as a greenfield build.
 |---|---|
 | Backend | 725 Java files, 66 controllers, 54 Flyway migrations, 93 test classes |
 | Frontend | 325 TS/TSX files, 24 modules, 69 pages |
-| Built end-to-end | Auth/Users/Roles, Tenant & Settings, Supplier, Customer, Category, Brand, Product, Inventory, Purchase, Quotation, Invoice, Payment, Expense, Project, Labour, Coupon, Dashboard |
-| Frontend tests | `frontend/tests/` — Playwright, six suites (auth, product grid, responsive, page header, sidebar, onboarding), **111 assertions**, run with `node tests/run.mjs` against the built `dist/`. `newPage` seeds the CR-075 tour as already seen; pass `firstVisit: true` to test first-run behaviour |
+| Built end-to-end | Auth/Users/Roles, Tenant & Settings, Supplier, Customer, Category, Brand, Product, Inventory, Purchase, Quotation, Invoice, Payment, Expense, Project, Labour, Coupon, Dashboard, Address map picker (CR-076, Leaflet + OSM, no key) |
+| Frontend tests | `frontend/tests/` — Playwright, seven suites (auth, product grid, responsive, page header, sidebar, onboarding, address map), **133 assertions**, run with `node tests/run.mjs` against the built `dist/`. `newPage` seeds the CR-075 tour as already seen; pass `firstVisit: true` to test first-run behaviour |
 | Backend-only | Notification (email live via SMTP or SendGrid, SMS live via Twilio, WhatsApp live per tenant - CR-074), AI chat, Legal/user-consent (entities only, no controller) |
 | Not present | Any PWA surface, any offline/IndexedDB layer (CR-043 was never built) |
 

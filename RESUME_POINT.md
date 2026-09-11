@@ -1,5 +1,25 @@
 # RESUME POINT
 
+**Updated:** 2026-09-12 (**CR-076 — choose an address on a map**). `SCOPE: FRONTEND ONLY` — no entity, no migration, no endpoint, no DTO.
+
+## Start here
+
+**CR-076 is built, verified and NOT yet committed.** "Pick on map" sits beside the address fields on the Customer form, the Supplier wizard, the Supplier quick-add, Shop settings and the Project site address. Leaflet on OpenStreetMap tiles, Nominatim for the address — **no API key**, and both can be pointed at a self-hosted instance (`VITE_GEOCODER_URL`, `VITE_MAP_TILE_URL`). Tap, drag the pin, search a landmark or use GPS; the address is previewed, confirmed, then written into the five existing fields — the GST state code derived from the ISO code, blanks left as they were, nothing pre-selected on edit. Leaflet is a lazily loaded chunk. Full design and decisions in CR-076.
+
+**Verified — executed:** `tsc -b --force` exit 0, `vite build` exit 0, frontend suite **133/133** (22 new in `frontend/tests/customers/address-map.spec.mjs`, desktop and 390×844 touch, geocoder and tiles stubbed at the network edge). Also driven live against the public Nominatim/OSM on both viewports. `registry/static_check.py` **not executed** — python3 is not installed here.
+
+**Two things found on the way, both fixed in the same change:** `vercel.json` sent `Permissions-Policy: geolocation=()`, which would have silently killed "My location" in production — now `(self)`. And Nominatim names Indian cities by their civic body ("Chennai Corporation") and localities by ward/zone ("Zone 10 Kodambakkam"); both are cleaned before they reach a field.
+
+**The trap, recorded as lesson 19 in `PROJECT_SKILLS.md`:** a ref inside a Radix dialog is still `null` when an effect keyed on `open` runs, because the Portal mounts from a layout effect. The map dialog rendered with no map until the container went into state via a callback ref.
+
+**Proposed, not built — needs its own CR:** storing coordinates (`latitude`/`longitude` on customer, supplier, tenant) so the customer page can offer "Open in Maps" for delivery staff and re-opening a record puts the pin exactly where it was rather than geocoding the typed text. Three tables, a migration, DTOs and mappers — a CR-sized build, so it was not slipped in.
+
+**Working tree at hand-off:** the other session's in-flight login-page work (`AuthLayout.tsx`, `LoginForm.tsx`, `LoginPage.tsx`) is modified and is not part of CR-076. Stage the CR-076 paths explicitly; never the whole tree.
+
+**Previous entry follows.**
+
+---
+
 **Updated:** 2026-09-12 (**CR-075 — a first-visit tour, and everything since CR-072 merged to main**).
 
 ## Start here

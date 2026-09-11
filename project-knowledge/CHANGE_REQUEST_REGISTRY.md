@@ -4531,3 +4531,81 @@ first-run interruption has to make the same accommodation.
 
 `registry/static_check.py` **not executed** — python3 is not installed on this
 machine (hard rule 10).
+
+## CR-076 — Choose an address on a map (APPLIED 2026-09-12)
+
+**Raised by:** User ("in address selection field add map to choose also").
+**Type:** new frontend capability. `SCOPE: FRONTEND ONLY` — no entity, no
+migration, no endpoint; the five address columns already on `customer`,
+`supplier` and `tenant` are all it writes.
+
+### Why
+
+Every address in the application was typed by hand into five fields, and a
+salesperson at the counter usually knows the place — the landmark, the street
+— better than its pincode or the spelling the map uses. On a phone, at a
+customer's site, typing an address is the slowest thing on the form. The map
+turns "where is it" into "tap it".
+
+### Shape
+
+A **"Pick on map"** button beside the address fields opens a dialog (a bottom
+sheet on phones, like every dialog since CR-061) with a Leaflet map on
+OpenStreetMap tiles. Tap the spot, drag the pin, search a landmark, or use the
+phone's GPS; the resolved address is **previewed and confirmed** before it is
+written into the fields, which stay editable afterwards. A search runs only on
+an explicit submit, never per keystroke.
+
+| Piece | Decision |
+|---|---|
+| Map provider | **Leaflet + OpenStreetMap, no API key.** A Google Maps key means billing set-up per deployment and a secret in the frontend bundle; OSM needs neither. Both the geocoder (`VITE_GEOCODER_URL`) and the tiles (`VITE_MAP_TILE_URL`) can be pointed at a self-hosted instance for an installation without internet access or one that outgrows Nominatim's one-request-per-second policy |
+| Where it appears | Customer form, Supplier wizard (address step), Supplier quick-add (inside the purchase flow), Shop settings, Project site address. One shared component — `shared/components/AddressMapPicker.tsx` — so a sixth caller cannot drift |
+| What it writes | `addressLine1` (house number, building, street), `addressLine2` (locality), `city`, `stateCode`, `pincode`. **The GST state code is derived from the ISO 3166-2 code** the geocoder returns (`IN-TN` → `33`), with a name match as fallback — the same "never make the user know Tamil Nadu is 33" rule as CR-023 |
+| Blanks | A field the geocoder cannot resolve is **left as it was**, not cleared. An empty pincode from the map means "unknown here", not "this place has none" |
+| Nothing pre-selected | Editing an existing record centres the map near the typed address but places no pin, so an accidental tap cannot replace a precise typed address with a city-centre guess |
+| Indian map data | Civic-body names are stripped from the city ("Chennai Corporation" → "Chennai"; "… Municipal Corporation", "Nagar Nigam", "Mahanagar Palika" likewise) and ward/zone labels from the locality ("Zone 10 Kodambakkam" → "Kodambakkam", "Ward 132" dropped). Neither belongs on an invoice |
+| Bundle | Leaflet (~46 kB gzipped) is a **lazily loaded chunk** fetched the first time the map is opened, not on every page load |
+| Single-line callers | Project's `siteAddress` and the supplier quick-add's single address line receive the parts joined, so the locality is not lost |
+| Deployment | `vercel.json` sent `Permissions-Policy: geolocation=()`, which would have made "My location" fail silently in production. Now `geolocation=(self)`. The backend's identical header is unaffected — it applies to API responses, not the document |
+
+### What this deliberately is not
+
+**No coordinates are stored.** That would be a new column on three tables, a
+DTO change and a migration — and the value of storing them (an "Open in Maps"
+link on the customer page for delivery staff, distance from the shop, a map of
+all customers) is a feature of its own. Proposed as a follow-up CR, not built
+here. Until then, re-opening a record centres the map by geocoding the typed
+address, which is right to the street rather than the door.
+
+**No autocomplete-as-you-type.** Nominatim's usage policy forbids it, and the
+search box says so by needing Enter or the Search button.
+
+**Not on the Register page** — it collects no address.
+
+### Verified
+
+`tsc -b --force` exit 0, `vite build` exit 0, frontend suite **133/133**
+(was 111/111) — 22 new assertions in
+`frontend/tests/customers/address-map.spec.mjs`, on desktop and on a 390×844
+touch viewport: the dialog opens with a live Leaflet map; nothing is
+pre-selected; a tap makes exactly one reverse-geocode call; a pin appears; the
+preview shows city, state and pincode; "Use this address" fills all five
+fields including the derived GST state; the civic-body suffix and ward/zone
+labels are gone; no page errors. The geocoder and tile server are stubbed at
+the network edge, so the spec runs offline and deterministically.
+
+Also exercised live against the public Nominatim and OSM tile servers on both
+viewports (search "Ashok Nagar, Chennai", choose a result, apply) — which is
+how the "Chennai Corporation" city name was found and fixed before this was
+recorded.
+
+**One defect cost a cycle and is worth keeping:** Radix's `Portal` renders
+nothing on its first pass and mounts from a layout effect, so a `useEffect`
+keyed on the dialog's `open` prop saw a **null** container ref and never
+created the map — the dialog rendered, the map did not. A callback ref held in
+state (`const [container, setContainer] = useState<HTMLDivElement | null>`)
+re-runs the effect when the element actually exists. Anything that needs a DOM
+node inside a Radix dialog on open has to do the same.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this
+machine (hard rule 10).

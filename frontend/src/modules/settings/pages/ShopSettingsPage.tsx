@@ -17,6 +17,8 @@ import { Checkbox } from '@/shared/components/ui/checkbox';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { ErrorState } from '@/shared/components/ErrorState';
 import { FormField } from '@/shared/components/FormField';
+import { AddressMapPicker } from '@/shared/components/AddressMapPicker';
+import { ADDRESS_FIELD_KEYS } from '@/shared/lib/geocoding';
 import { ImageUpload } from '@/shared/components/ImageUpload';
 import { SignaturePad } from '@/shared/components/SignaturePad';
 import { UnsavedChangesDialog } from '@/shared/components/UnsavedChangesDialog';
@@ -681,6 +683,15 @@ export function ShopSettingsPage() {
             <CardTitle className="text-base">Shop address</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
+            <div className="flex items-center justify-between gap-2 sm:col-span-2">
+              <p className="text-sm text-muted-foreground">Or find it on the map and let it fill the fields.</p>
+              <AddressMapPicker
+                current={{ addressLine1: values.addressLine1, city: values.city, pincode: values.pincode }}
+                onPick={(picked) => ADDRESS_FIELD_KEYS.forEach((key) => {
+                  if (picked[key]) setValue(key, picked[key], { shouldDirty: true, shouldValidate: true });
+                })}
+              />
+            </div>
             <FormField id="addressLine1" label="Address line 1" error={errors.addressLine1?.message} className="sm:col-span-2">
               <Input id="addressLine1" {...register('addressLine1')} />
             </FormField>

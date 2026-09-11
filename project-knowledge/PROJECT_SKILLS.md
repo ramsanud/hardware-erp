@@ -416,3 +416,16 @@ Lessons learned. Read before every module; append after every module.
     "verified on the merge result itself, in a clean worktree" claim in
     CLAUDE.md honestly. Never "fix" a test that fails this way — there is
     nothing to fix, and the edit will be wrong.
+
+19. **A DOM node inside a Radix dialog does not exist when an effect keyed
+    on `open` runs.** Radix's `Portal` renders nothing on its first pass and
+    mounts its children from a layout effect, so `useEffect(() => { if
+    (!ref.current) return; ... }, [open])` sees `null`, returns, and never
+    runs again — the dialog appears, the thing that needed the node does
+    not. CR-076's map dialog shipped its first test run exactly like that:
+    dialog open, no Leaflet map, a 30-second Playwright timeout. Hold the
+    node in state with a callback ref (`const [el, setEl] = useState<
+    HTMLDivElement | null>(null); <div ref={setEl} />`) and key the effect
+    on `el`; it then runs when the element is really there and cleans up
+    when it goes. Applies to anything that measures or mounts into a dialog
+    — maps, canvases, charts, signature pads.

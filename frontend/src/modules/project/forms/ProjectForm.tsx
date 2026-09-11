@@ -10,6 +10,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/shared/components/ui/select';
 import { FormField } from '@/shared/components/FormField';
+import { AddressMapPicker } from '@/shared/components/AddressMapPicker';
+import { toSingleLine } from '@/shared/lib/geocoding';
 import { UnsavedChangesDialog } from '@/shared/components/UnsavedChangesDialog';
 import { ApiError } from '@/shared/types/api';
 import { workTypeService } from '../services/workTypeService';
@@ -144,7 +146,14 @@ export function ProjectForm({ project, onSubmit, onCancel }: ProjectFormProps) {
         </FormField>
 
         <FormField id="siteAddress" label="Site address (optional)" error={errors.siteAddress?.message} className="sm:col-span-2">
-          <Input id="siteAddress" {...register('siteAddress')} />
+          <div className="flex gap-2">
+            <Input id="siteAddress" {...register('siteAddress')} />
+            <AddressMapPicker
+              className="h-10 shrink-0"
+              current={{ addressLine1: watch('siteAddress') }}
+              onPick={(picked) => setValue('siteAddress', toSingleLine(picked).slice(0, 500), { shouldDirty: true, shouldValidate: true })}
+            />
+          </div>
         </FormField>
 
         <FormField id="description" label="Description (optional)" error={errors.description?.message} className="sm:col-span-2">
