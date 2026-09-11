@@ -69,6 +69,17 @@ export default async function run() {
       Boolean(state && state.text.includes(OWNER.fullName.split(' ')[0])),
       state ? 'greeting present' : 'no dialog');
 
+    // The welcome step is the "easy to identify" step: role, shop, and the
+    // areas this person can reach, as chips.
+    s.check('the welcome names the role',
+      Boolean(state && state.text.includes(OWNER.roleName)), state ? 'role present' : 'no dialog');
+    const chips = await page.evaluate(() =>
+      [...document.querySelectorAll('[role="dialog"] ul[aria-label="Areas you can work with"] li')]
+        .map((li) => li.innerText.trim()));
+    s.check('the welcome lists the areas an owner can work with',
+      chips.length >= 6 && chips.includes('Sales') && chips.includes('People and permissions'),
+      chips.join(', ') || 'no chips');
+
     // The owner fixture holds nearly every permission, so it should see the
     // whole tour - the upper bound that proves filtering is not over-eager.
     s.check('an owner sees the full walkthrough',
@@ -171,6 +182,99 @@ export default async function run() {
       !/disappears quietly/i.test(joined), joined || 'none');
 
     await limited.context().close();
+
+    // ---- The welcome chips are the role, not the catalogue ----------------
+    const limitedAgain = await newPage(browser, {
+      viewport: { width: 1280, height: 800 },
+      api: signedInApi({ user: storekeeper }),
+      firstVisit: true,
+    });
+    await limitedAgain.goto(BASE + '/dashboard', { waitUntil: 'networkidle', timeout: 20000 });
+    await limitedAgain.waitForTimeout(400);
+    const skChips = await limitedAgain.evaluate(() =>
+      [...document.querySelectorAll('[role="dialog"] ul[aria-label="Areas you can work with"] li')]
+        .map((li) => li.innerText.trim()));
+    s.check("a storekeeper's welcome lists only stock",
+      skChips.length === 1 && skChips[0] === 'Products and stock', skChips.join(', ') || 'no chips');
+    await limitedAgain.context().close();
+
+    // ---- Per-page tips: first visit to each screen ------------------------
+    const tipsPage = await newPage(browser, {
+      viewport: { width: 1280, height: 800 },
+      api: signedInApi(),
+      firstVisit: true,
+    });
+    await tipsPage.goto(BASE + '/invoices', { waitUntil: 'networkidle', timeout: 20000 });
+    await tipsPage.waitForTimeout(300);
+    // Get the tour out of the way first - it is a separate thing.
+    await tipsPage.getByRole('button', { name: 'Skip tour' }).click();
+    await tourGone(tipsPage);
+
+    const tipOn = (id) => tipsPage.evaluate((sel) => Boolean(document.querySelector(sel)), `[data-page-tip="${id}"]`);
+    s.check('the first visit to Invoices shows its tip', await tipOn('invoices'), 'tip present');
+
+    await tipsPage.getByRole('button', { name: 'Got it' }).click();
+    await tipsPage.waitForTimeout(150);
+    s.check('Got it hides the tip', !(await tipOn('invoices')), 'tip gone');
+
+    await tipsPage.goto(BASE + '/products', { waitUntil: 'networkidle', timeout: 20000 });
+    await tipsPage.waitForTimeout(300);
+    s.check('a different screen still gets its own tip', await tipOn('products'), 'tip present');
+
+    await tipsPage.goto(BASE + '/invoices', { waitUntil: 'networkidle', timeout: 20000 });
+    await tipsPage.waitForTimeout(300);
+    s.check('a dismissed tip stays dismissed', !(await tipOn('invoices')), 'still gone');
+
+    await tipsPage.goto(BASE + '/products', { waitUntil: 'networkidle', timeout: 20000 });
+    await tipsPage.waitForTimeout(300);
+    await tipsPage.getByRole('button', { name: 'Turn off tips' }).click();
+    await tipsPage.waitForTimeout(150);
+    await tipsPage.goto(BASE + '/customers', { waitUntil: 'networkidle', timeout: 20000 });
+    await tipsPage.waitForTimeout(300);
+    s.check('Turn off tips silences every screen', !(await tipOn('customers')), 'no tip');
+
+    // Asking for the tour again is the signal that tips are wanted back.
+    await tipsPage.getByRole('button', { name: 'How this application works' }).click();
+    await tipsPage.waitForTimeout(200);
+    await tipsPage.getByRole('button', { name: 'Skip tour' }).click();
+    await tourGone(tipsPage);
+    await tipsPage.goto(BASE + '/suppliers', { waitUntil: 'networkidle', timeout: 20000 });
+    await tipsPage.waitForTimeout(300);
+    s.check('replaying the tour brings tips back', await tipOn('suppliers'), 'tip present');
+
+    // Detail routes get the tip of their area, not nothing.
+    await tipsPage.goto(BASE + '/labour/attendance', { waitUntil: 'networkidle', timeout: 20000 });
+    await tipsPage.waitForTimeout(300);
+    s.check("a nested route gets its own tip, not its parent's",
+      await tipOn('labour-attendance'), 'attendance tip');
+    await tipsPage.context().close();
+
+    // ---- On a phone the tour is a bottom sheet, and still escapable --------
+    const phone = await newPage(browser, {
+      viewport: { width: 390, height: 844 },
+      mobile: true,
+      api: signedInApi(),
+      firstVisit: true,
+    });
+    await phone.goto(BASE + '/dashboard', { waitUntil: 'networkidle', timeout: 20000 });
+    await phone.waitForTimeout(400);
+    const phoneState = await tourState(phone);
+    s.check('a phone user is offered the tour', phoneState !== null && phoneState.step === 1,
+      phoneState ? `step ${phoneState.step}` : 'no dialog');
+    const sheet = await phone.evaluate(() => {
+      const d = document.querySelector('[role="dialog"]');
+      if (!d) return null;
+      const r = d.getBoundingClientRect();
+      return { width: Math.round(r.width), right: Math.round(r.right), bottom: Math.round(r.bottom), vw: window.innerWidth, vh: window.innerHeight };
+    });
+    s.check('the tour fits the phone width',
+      Boolean(sheet && sheet.right <= sheet.vw + 1 && sheet.width >= sheet.vw * 0.9),
+      sheet ? `${sheet.width}px wide in ${sheet.vw}px` : 'no dialog');
+    const skipVisible = await phone.getByRole('button', { name: 'Skip tour' }).isVisible();
+    s.check('Skip is visible on a phone without scrolling', skipVisible, 'visible');
+    await phone.getByRole('button', { name: 'Skip tour' }).click();
+    s.check('Skip works on a phone', await tourGone(phone), 'dialog detached');
+    await phone.context().close();
   });
 
   return s;

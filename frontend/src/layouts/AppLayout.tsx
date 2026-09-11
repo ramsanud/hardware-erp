@@ -20,6 +20,8 @@ import { AiChatWidget } from '@/modules/ai/components/AiChatWidget';
 import { ContactAdminDialog } from '@/modules/notification/components/ContactAdminDialog';
 import { WelcomeTour } from '@/modules/onboarding/components/WelcomeTour';
 import { useOnboardingTour } from '@/modules/onboarding/hooks/useOnboardingTour';
+import { PageTip } from '@/modules/onboarding/components/PageTip';
+import { usePageTips } from '@/modules/onboarding/hooks/usePageTips';
 import { AppChromeProvider, useAppChrome } from './AppChromeProvider';
 import { MobileMoreMenu } from './MobileMoreMenu';
 import { MobileTabBar } from './MobileTabBar';
@@ -37,6 +39,7 @@ function AppLayoutInner() {
   const { user, logout, logoutAll } = useAuth();
   // CR-075: offers itself once per user, then only when asked for.
   const tour = useOnboardingTour();
+  const pageTips = usePageTips();
   const { avatarVersion, brandName } = useAppChrome();
   const avatarSrc = useAuthenticatedImage(avatarService.url, avatarVersion);
   const navigate = useNavigate();
@@ -139,11 +142,13 @@ function AppLayoutInner() {
 
             {/* CR-075. Beside the theme toggle rather than inside the profile
                 menu, because the person most likely to need it is the one who
-                has not worked out where the menus are yet. Hidden below sm so
-                the phone bar keeps its budget (BUG-FE-035); the profile menu
-                carries the same action at every width. */}
+                has not worked out where the menus are yet. Shown at EVERY
+                width: the tour copy says "the ? button brings it back", and a
+                phone user must be able to find the thing the text promises.
+                The bar has the budget - search, ?, theme, avatar is four icons
+                at 390px (BUG-FE-035 was about eight text buttons). */}
             <Button
-              variant="ghost" size="icon" className="hidden sm:inline-flex"
+              variant="ghost" size="icon"
               onClick={tour.restart}
               aria-label="How this application works"
             >
@@ -210,6 +215,9 @@ function AppLayoutInner() {
         */}
         <main className="app-main flex-1 px-3 pt-4 sm:px-5 sm:pt-5 lg:px-8">
           <div className="mx-auto w-full max-w-7xl space-y-4 sm:space-y-5">
+            {/* CR-075: a one-time tip for the first visit to each screen. In
+                the flow, above the page, so it never covers what it explains. */}
+            <PageTip tips={pageTips} />
             <Outlet />
           </div>
         </main>

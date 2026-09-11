@@ -1,6 +1,6 @@
 import {
   Boxes, Coins, FileText, HardHat, History, LayoutDashboard,
-  LifeBuoy, Search, Settings, Truck, Users,
+  LifeBuoy, Search, Settings, Sparkles, Truck, Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { AUTH_ROUTES, PERMISSIONS } from '@/modules/auth/constants';
@@ -35,6 +35,12 @@ export interface TourStep {
    * signed in sees it.
    */
   permissions?: string[];
+  /**
+   * Short noun for the welcome summary ("you can work with: Sales, Stock,
+   * ..."). Only steps that are gated by a permission carry one - the summary
+   * lists what THIS role can reach, and dashboard/search/help are everyone's.
+   */
+  area?: string;
 }
 
 /**
@@ -44,6 +50,14 @@ export interface TourStep {
  * of a first-visit tour.
  */
 export const TOUR_STEPS: TourStep[] = [
+  {
+    // Body is composed at render time from the signed-in user and the steps
+    // that survived the permission filter - see WelcomeTour.
+    id: 'welcome',
+    title: 'Welcome',
+    body: '',
+    icon: Sparkles,
+  },
   {
     id: 'dashboard',
     title: 'Your dashboard',
@@ -59,6 +73,7 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'sales',
+    area: 'Sales',
     title: 'Quotation, invoice, payment',
     body: 'Sales run in that order. Quote a price, turn the quotation into an invoice when the customer agrees, then record the money as a payment. Each step carries the last one forward, so nothing is typed twice.',
     icon: FileText,
@@ -67,6 +82,7 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'customers',
+    area: 'Customers',
     title: 'Customers and what they owe',
     body: 'Every customer keeps their own history and outstanding balance. Open one to see every invoice and payment against their name before you give credit.',
     icon: Users,
@@ -75,6 +91,7 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'inventory',
+    area: 'Products and stock',
     title: 'Products and stock',
     body: 'Products hold the price and tax; stock holds how many are on the shelf. Selling reduces stock automatically, so the count stays right without anyone updating it by hand.',
     icon: Boxes,
@@ -83,6 +100,7 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'purchase',
+    area: 'Purchases and suppliers',
     title: 'Suppliers and purchases',
     body: 'Record what you buy against the supplier it came from. A purchase adds to stock the same way a sale removes from it, and the supplier page shows what you still owe them.',
     icon: Truck,
@@ -91,6 +109,7 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'projects',
+    area: 'Projects and labour',
     title: 'Projects and labour',
     body: 'For work done at a site rather than sold over the counter: track the materials issued to a project and the workers who attended, so the job can be costed honestly.',
     icon: HardHat,
@@ -99,6 +118,7 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'expenses',
+    area: 'Expenses and reports',
     title: 'Expenses and reports',
     body: 'Rent, wages, transport and the rest go here. Together with sales and purchases they are what the reports read, so the profit figure is only as good as what gets entered.',
     icon: Coins,
@@ -107,6 +127,7 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'audit',
+    area: 'Audit trail',
     title: 'Nothing disappears quietly',
     body: 'The activity log records every business change with its before and after values, and the security log records sign-ins and permission changes. Records are cancelled, never deleted, so history stays intact.',
     icon: History,
@@ -115,6 +136,7 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     id: 'people',
+    area: 'People and permissions',
     title: 'People and permissions',
     body: 'You create the accounts for your staff and decide what each role may see. Someone who cannot open a screen will not find it in their menu either - the menu is built from the same permissions.',
     icon: Settings,

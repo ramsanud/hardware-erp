@@ -4609,3 +4609,42 @@ node inside a Radix dialog on open has to do the same.
 
 `registry/static_check.py` **not executed** — python3 is not installed on this
 machine (hard rule 10).
+
+### Completed on 2026-09-12 — the second half
+
+The first cut shipped the walkthrough. Reviewed against the actual ask —
+"they need to easily identify how to use the application" — it was half of
+one: it explained the business, not the screen in front of you, and it never
+said in one place what *this* person could do. Three additions:
+
+| Addition | What it does |
+|---|---|
+| **Welcome step** | Step 1 now names the shop, the role, and lists **the areas this person can reach** as chips — derived from the same permission filter, so an owner sees eight and a storekeeper sees one. This is the "easy to identify" moment; the rest of the tour elaborates it |
+| **Per-page first-visit tips** | A banner above the page the first time each screen is opened — 26 screens, keyed by route prefix, longest match first so `/labour/attendance` gets its own rather than a generic one. Copy says what the screen is *for* and the one thing most people come to do. **Two dismissals, and the difference is the design:** *Got it* hides this tip and the next screen still gets its own; *Turn off tips* hides them all. Someone closing four in a row is saying something |
+| **Replay restores tips** | Pressing `?` again turns tips back on. Asking "how does this work?" is the one unambiguous signal they are wanted |
+
+A banner and not a dialog for the tips, deliberately: a tip must never block
+the screen it is describing. It sits in the flow and pushes the page down by
+its own height. No permission field either — a tip shows only on a page you
+have already reached, and the route guard has done the gating by then.
+
+**Three defects found by looking, not by testing.** Screenshots at 1280 and
+390 were taken and read before this was called done:
+
+1. The welcome sentence read *"signed in to as Owner"* when the shop had no
+   name — a dangling preposition for any tenant that has not set one yet.
+   Both halves are now optional.
+2. The copy promised *"the ? button brings it back"* while that button was
+   hidden below `sm` — a phone user would look for something that was not
+   there. It is now shown at every width; the bar has the budget (four icons
+   at 390px; BUG-FE-035 was about eight text buttons).
+3. Focus landed on **Skip**, so Enter — the key people press to mean
+   "continue" — would have dismissed the whole tour. It now starts on Next.
+
+**Verified:** `tsc` 0, `vite build` 0, suite **147/147** (30 onboarding
+assertions, was 16), run twice against a build served from its own directory
+so the other session's rebuilds could not touch it. New assertions cover the
+role chips for both fixtures, every tip transition (shown → Got it → next
+screen still shown → dismissed stays dismissed → Turn off silences all →
+replay restores), nested-route matching, and the phone: the tour fits 390px,
+Skip is visible without scrolling, and works.

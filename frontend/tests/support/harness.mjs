@@ -73,7 +73,10 @@ export async function newPage(browser, { viewport, mobile = false, api = () => n
   if (!firstVisit) {
     await context.addInitScript(() => {
       try {
-        for (const scope of ['guest', '1']) localStorage.setItem(`hardware-erp-tour:${scope}`, '1');
+        for (const scope of ['guest', '1']) {
+          localStorage.setItem(`hardware-erp-tour:${scope}`, '1');
+          localStorage.setItem(`hardware-erp-page-tips-off:${scope}`, '1');
+        }
       } catch {
         // Storage disabled - the tour opening is then the least of it.
       }

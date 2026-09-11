@@ -4,6 +4,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/shared/components/ui/dialog';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
+import { useAppChrome } from '@/layouts/AppChromeProvider';
 import { cn } from '@/shared/lib/utils';
 import type { useOnboardingTour } from '../hooks/useOnboardingTour';
 
@@ -20,6 +21,7 @@ import type { useOnboardingTour } from '../hooks/useOnboardingTour';
 export function WelcomeTour({ tour }: { tour: ReturnType<typeof useOnboardingTour> }) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { brandName } = useAppChrome();
   const { open, steps, step, index, isFirst, isLast, next, back, close } = tour;
 
   // A user whose permissions match no step at all would otherwise get an empty
@@ -28,6 +30,10 @@ export function WelcomeTour({ tour }: { tour: ReturnType<typeof useOnboardingTou
 
   const StepIcon = step.icon;
   const firstName = user?.fullName?.trim().split(/\s+/)[0];
+  // The areas this person can actually reach - the permission filter has
+  // already run, so listing the surviving steps IS the role description.
+  const areas = steps.map((item) => item.area).filter((area): area is string => Boolean(area));
+  const isWelcome = step.id === 'welcome';
 
   const goToAction = () => {
     if (!step.action) return;
@@ -44,11 +50,6 @@ export function WelcomeTour({ tour }: { tour: ReturnType<typeof useOnboardingTou
       */}
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          {isFirst && firstName ? (
-            <p className="text-sm text-muted-foreground">
-              Welcome, {firstName}. Here is what you can do here.
-            </p>
-          ) : null}
           <div className="flex items-start gap-3 pt-1">
             <span
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
@@ -57,13 +58,42 @@ export function WelcomeTour({ tour }: { tour: ReturnType<typeof useOnboardingTou
               <StepIcon className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1 text-left">
-              <DialogTitle className="text-left">{step.title}</DialogTitle>
-              <DialogDescription className="pt-1.5 text-left leading-relaxed">
-                {step.body}
-              </DialogDescription>
+              <DialogTitle className="text-left">
+                {isWelcome ? `Welcome${firstName ? `, ${firstName}` : ''}` : step.title}
+              </DialogTitle>
+              {isWelcome ? (
+                <DialogDescription className="pt-1.5 text-left leading-relaxed" data-tour-welcome>
+                  {/* Either half can be missing - a shop with no name set yet,
+                      or a user whose role label has not loaded - and the
+                      sentence has to survive both without a dangling "to as". */}
+                  You are signed in
+                  {brandName ? <> to <span className="font-medium text-foreground">{brandName}</span></> : null}
+                  {user?.roleName ? <> as <span className="font-medium text-foreground">{user.roleName}</span></> : null}.
+                  {areas.length > 0
+                    ? ` This short tour shows the ${areas.length} areas you can work with. Skip it any time - the ? button brings it back.`
+                    : ' This short tour shows you around. Skip it any time - the ? button brings it back.'}
+                </DialogDescription>
+              ) : (
+                <DialogDescription className="pt-1.5 text-left leading-relaxed">
+                  {step.body}
+                </DialogDescription>
+              )}
             </div>
           </div>
         </DialogHeader>
+
+        {isWelcome && areas.length > 0 ? (
+          <ul className="flex flex-wrap gap-1.5" aria-label="Areas you can work with">
+            {areas.map((area) => (
+              <li
+                key={area}
+                className="rounded-full border border-primary/30 bg-primary/5 px-2.5 py-0.5 text-xs font-medium text-foreground"
+              >
+                {area}
+              </li>
+            ))}
+          </ul>
+        ) : null}
 
         {step.action ? (
           <Button type="button" variant="outline" className="w-full" onClick={goToAction}>
@@ -104,7 +134,10 @@ export function WelcomeTour({ tour }: { tour: ReturnType<typeof useOnboardingTou
             {!isFirst ? (
               <Button type="button" variant="outline" onClick={back}>Back</Button>
             ) : null}
-            <Button type="button" onClick={isLast ? close : next}>
+            {/* Focus starts on the way FORWARD. Radix would otherwise put it
+                on Skip as the first focusable, so Enter - the key people press
+                to mean "continue" - would have dismissed the whole tour. */}
+            <Button type="button" autoFocus onClick={isLast ? close : next}>
               {isLast ? 'Finish' : 'Next'}
             </Button>
           </div>

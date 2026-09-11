@@ -3,6 +3,7 @@ import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { readScoped, writeScoped } from '@/theme/themeScope';
 import { TOUR_STEPS, TOUR_STORAGE_KEY, TOUR_VERSION } from '../constants/tourSteps';
 import type { TourStep } from '../constants/tourSteps';
+import { turnPageTipsBackOn } from './usePageTips';
 
 /**
  * CR-075. Whether the tour is showing, what it is showing, and remembering
@@ -59,8 +60,13 @@ export function useOnboardingTour() {
     setOpen(false);
   }, [markSeen]);
 
-  /** Reopening deliberately does NOT clear the flag; finishing it again re-records it. */
+  /**
+   * Reopening deliberately does NOT clear the seen flag - finishing again
+   * re-records it. It DOES bring the per-page tips back: asking "how does
+   * this work?" is the one unambiguous signal that they are wanted.
+   */
   const restart = useCallback(() => {
+    turnPageTipsBackOn();
     setIndex(0);
     setOpen(true);
   }, []);
