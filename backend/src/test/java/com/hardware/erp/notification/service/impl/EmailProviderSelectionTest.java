@@ -42,8 +42,8 @@ class EmailProviderSelectionTest {
                     () -> org.mockito.Mockito.mock(org.springframework.mail.javamail.JavaMailSender.class));
 
     @Configuration(proxyBeanMethods = false)
-    @EnableConfigurationProperties({ SendGridProperties.class, TwilioProperties.class })
-    @Import({ EmailNotificationProvider.class, SendGridEmailProvider.class })
+    @EnableConfigurationProperties({ SendGridProperties.class, ResendProperties.class, TwilioProperties.class })
+    @Import({ EmailNotificationProvider.class, SendGridEmailProvider.class, ResendEmailProvider.class })
     static class EmailProvidersUnderTest {
     }
 
@@ -85,12 +85,30 @@ class EmailProviderSelectionTest {
     }
 
     @Test
+    @DisplayName("provider=resend swaps the transport too, and neither SMTP nor SendGrid is constructed")
+    void resendReplacesBothOtherProviders() {
+        contextRunner.withPropertyValues(
+                "app.notifications.email.provider=resend",
+                "app.notifications.email.resend.api-base-url=https://api.resend.com",
+                "app.notifications.email.resend.api-key=re_test",
+                "app.notifications.email.resend.from-email=billing@sarahardware.in").run(context -> {
+            assertThat(context).hasSingleBean(EmailTransport.class);
+            assertThat(context).getBean(EmailTransport.class).isInstanceOf(ResendEmailProvider.class);
+            assertThat(context).doesNotHaveBean(EmailNotificationProvider.class);
+            assertThat(context).doesNotHaveBean(SendGridEmailProvider.class);
+        });
+    }
+
+    @Test
     @DisplayName("whichever provider is active, exactly one bean claims the EMAIL channel")
     void exactlyOneProviderClaimsTheEmailChannel() {
         assertOneEmailChannelProvider();
         assertOneEmailChannelProvider("app.notifications.email.provider=sendgrid",
                 "app.notifications.email.sendgrid.api-key=SG.test",
                 "app.notifications.email.sendgrid.from-email=billing@sarahardware.in");
+        assertOneEmailChannelProvider("app.notifications.email.provider=resend",
+                "app.notifications.email.resend.api-key=re_test",
+                "app.notifications.email.resend.from-email=billing@sarahardware.in");
     }
 
     private void assertOneEmailChannelProvider(String... properties) {
@@ -136,14 +154,32 @@ class EmailProviderSelectionTest {
                 "app.notifications.sms.twilio.api-base-url=https://api.twilio.com/2010-04-01",
                 "app.notifications.sms.twilio.account-sid=ACtest",
                 "app.notifications.sms.twilio.auth-token=token",
-                "app.notifications.sms.twilio.messaging-service-sid=MGtest").run(context -> {
+                "app.notifications.sms.twilio.messaging-service-sid=MGtest",
+                "app.notifications.sms.twilio.enabled=true").run(context -> {
             TwilioProperties properties = context.getBean(TwilioProperties.class);
             assertThat(properties.accountSid()).isEqualTo("ACtest");
             assertThat(properties.messagingServiceSid()).isEqualTo("MGtest");
+            assertThat(properties.enabled()).isTrue();
             assertThat(properties.isConfigured()).isTrue();
             // Constructed the way Spring constructs it - the two-arg constructor
             // is the one @Autowired marks.
             assertThat(new SmsNotificationProvider(properties, new ObjectMapper()).isConfigured()).isTrue();
+        });
+    }
+
+    /** CR-077: the switch is the default, and it is off. Credentials alone must not start sending paid SMS. */
+    @Test
+    @DisplayName("Twilio credentials without SMS_ENABLED=true bind but stay unconfigured - SMS is opt-in")
+    void twilioCredentialsAloneDoNotEnableSms() {
+        contextRunner.withPropertyValues(
+                "app.notifications.sms.twilio.account-sid=ACtest",
+                "app.notifications.sms.twilio.auth-token=token",
+                "app.notifications.sms.twilio.messaging-service-sid=MGtest").run(context -> {
+            TwilioProperties properties = context.getBean(TwilioProperties.class);
+            assertThat(properties.enabled()).isFalse();
+            assertThat(properties.accountSid()).isEqualTo("ACtest");
+            assertThat(properties.isConfigured()).isFalse();
+            assertThat(new SmsNotificationProvider(properties, new ObjectMapper()).isConfigured()).isFalse();
         });
     }
 

@@ -97,8 +97,10 @@ Then fill in every variable marked `sync: false` under
 | `APP_BOOTSTRAP_PASSWORD` | a strong password | Change it immediately after first sign-in. |
 | `APP_BOOTSTRAP_NAME` | e.g. `Shop Owner` | |
 | `MAIL_USER` / `MAIL_PASSWORD` | optional | Gmail **app password**, not the account password. Leave blank and password-reset links are logged instead of emailed — fine for a demo. |
-| `EMAIL_PROVIDER` | optional, `smtp` | Set to `sendgrid` to send every email through Twilio SendGrid instead of the `MAIL_*` account above. It moves **all** email — notifications, password-reset links, invoice PDFs and the Settings test-email button. |
+| `EMAIL_PROVIDER` | optional, `smtp` | Set to `resend` or `sendgrid` to send every email through that HTTP API instead of the `MAIL_*` account above. It moves **all** email — notifications, password-reset links, sign-in codes, invoice PDFs and the Settings test-email button. **Resend is the recommended choice**: 3,000 emails a month free, which covers a shop's sign-in codes and invoices (CR-077). |
+| `RESEND_API_KEY` / `RESEND_FROM_EMAIL` | required when `EMAIL_PROVIDER=resend` | The from address must be on a domain verified at Resend, or it answers 403. `onboarding@resend.dev` works without a domain but only delivers to the account owner. |
 | `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL` | required when `EMAIL_PROVIDER=sendgrid` | The from address must be a sender SendGrid has verified, or it answers 403 however valid the key is. |
+| `SMS_ENABLED` | optional, `false` | SMS is a paid channel (no free tier, plus DLT registration in India), so it is off by default and stays off even with `TWILIO_*` set. Set `true` to opt in (CR-077). |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | optional | Leave blank and every SMS is logged instead of sent, which is the supported default. |
 | `TWILIO_MESSAGING_SERVICE_SID` | optional | Preferred over `TWILIO_FROM_NUMBER`. For an Indian deployment this is the field that carries a **DLT-registered sender id** — without that registration Twilio still returns a message SID and the operator drops the message downstream. |
 | `TWILIO_FROM_NUMBER` | optional | A purchased Twilio number in E.164. Fine for testing and non-Indian numbers. |

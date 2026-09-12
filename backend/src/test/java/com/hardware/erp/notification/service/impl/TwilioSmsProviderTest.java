@@ -51,7 +51,7 @@ class TwilioSmsProviderTest {
     }
 
     private TwilioProperties configured() {
-        return new TwilioProperties("https://api.twilio.com/2010-04-01", ACCOUNT_SID, "auth-token-value",
+        return new TwilioProperties(true, "https://api.twilio.com/2010-04-01", ACCOUNT_SID, "auth-token-value",
                 "+15550001111", null);
     }
 
@@ -59,7 +59,7 @@ class TwilioSmsProviderTest {
     @DisplayName("with no credentials the message is logged, not sent - a deployment without Twilio keeps working")
     void unconfiguredLogsInsteadOfSending() throws Exception {
         SmsNotificationProvider provider = providerWith(
-                new TwilioProperties("https://api.twilio.com/2010-04-01", "", "", "", ""));
+                new TwilioProperties(true, "https://api.twilio.com/2010-04-01", "", "", "", ""));
 
         NotificationSendResult result = provider.send(
                 1L, NotificationChannel.SMS, "9876543210", null, "Your invoice INV-1 is ready.");
@@ -71,12 +71,26 @@ class TwilioSmsProviderTest {
     }
 
     @Test
+    @DisplayName("CR-077: with the switch off, full credentials still log instead of sending - SMS is opt-in because it is paid")
+    void disabledLogsEvenWithCredentials() throws Exception {
+        TwilioProperties off = new TwilioProperties(false, "https://api.twilio.com/2010-04-01", ACCOUNT_SID,
+                "auth-token-value", "+15550001111", null);
+        assertThat(off.isConfigured()).isFalse();
+
+        NotificationSendResult result = providerWith(off).send(
+                1L, NotificationChannel.SMS, "9876543210", null, "Your invoice INV-1 is ready.");
+
+        assertThat(result.status()).isEqualTo(NotificationStatus.LOGGED_ONLY);
+        verify(httpClient, never()).send(any(), any());
+    }
+
+    @Test
     @DisplayName("an account SID and token with no sender at all is still unconfigured")
     void credentialsWithoutASenderAreNotConfigured() {
-        assertThat(new TwilioProperties("url", ACCOUNT_SID, "token", "", "").isConfigured()).isFalse();
-        assertThat(new TwilioProperties("url", ACCOUNT_SID, "token", "+15550001111", null).isConfigured()).isTrue();
-        assertThat(new TwilioProperties("url", ACCOUNT_SID, "token", null, "MG123").isConfigured()).isTrue();
-        assertThat(new TwilioProperties("url", "", "token", "+15550001111", null).isConfigured()).isFalse();
+        assertThat(new TwilioProperties(true, "url", ACCOUNT_SID, "token", "", "").isConfigured()).isFalse();
+        assertThat(new TwilioProperties(true, "url", ACCOUNT_SID, "token", "+15550001111", null).isConfigured()).isTrue();
+        assertThat(new TwilioProperties(true, "url", ACCOUNT_SID, "token", null, "MG123").isConfigured()).isTrue();
+        assertThat(new TwilioProperties(true, "url", "", "token", "+15550001111", null).isConfigured()).isFalse();
     }
 
     @Test
@@ -136,7 +150,7 @@ class TwilioSmsProviderTest {
     @Test
     @DisplayName("a Messaging Service SID wins over a plain From - it is what carries the DLT sender id")
     void messagingServiceTakesPrecedenceOverFromNumber() {
-        SmsNotificationProvider provider = providerWith(new TwilioProperties(
+        SmsNotificationProvider provider = providerWith(new TwilioProperties(true, 
                 "https://api.twilio.com/2010-04-01", ACCOUNT_SID, "token", "+15550001111", "MG999"));
 
         String form = provider.formBody("9876543210", "Balance due");

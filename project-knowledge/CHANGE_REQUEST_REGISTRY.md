@@ -83,6 +83,7 @@ Nothing is implemented from conversation memory.
 | CR-071 | 2026-09-09 | Claude | Documentation only. Rebuild `FEATURE_REGISTRY.md` and `MODULE_DEPENDENCY_MAP.md` against the real source tree; both had drifted far enough to mislead — they named MySQL as the database and listed shipped modules as "planned". Records the `product` ↔ `invoice` package cycle rather than hiding it. No code change. | **APPLIED, 2026-09-09** |
 | CR-074 | 2026-09-09 | User | SMS goes real over Twilio; email can move to SendGrid with `EMAIL_PROVIDER=sendgrid`. Credentials are app-wide, not per tenant (unlike CR-056 WhatsApp). Collapses the three divergent direct-`JavaMailSender` paths — password reset, invoice PDF, Settings test button — onto one `EmailTransport`, so a SendGrid deployment cannot silently drop password-reset mail. | **APPLIED, 2026-09-09** |
 | CR-075 | 2026-09-09 | User | A first-visit guided tour that explains the application, built from the permissions the signed-in person actually holds, so an owner, accountant, storekeeper and auditor each get their own walkthrough. Skippable at every step and replayable from the header. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-09** |
+| CR-077 | 2026-09-12 | User | Email over **Resend** (`EMAIL_PROVIDER=resend`, free tier), and SMS made **opt-in** with `SMS_ENABLED=false` as the default even when `TWILIO_*` is set. First of three auth-stack CRs (077 Resend + SMS off, 078 Email OTP, 079 Passkeys) chosen because SMS has no free tier. | **APPLIED 2026-09-12** |
 ---
 
 
@@ -4648,3 +4649,92 @@ role chips for both fixtures, every tip transition (shown → Got it → next
 screen still shown → dismissed stays dismissed → Turn off silences all →
 replay restores), nested-route matching, and the phone: the tour fits 390px,
 Skip is visible without scrolling, and works.
+
+---
+
+## CR-077 — Email over Resend, and SMS becomes opt-in (APPLIED 2026-09-12)
+
+**Raised by:** User — an auth-stack decision table: Password + BCrypt, Email
+verification and Email OTP over **Resend**, TOTP, Passkey/WebAuthn, JWT access
+token, refresh token in a Secure HttpOnly cookie — with the instruction
+*"comment the SMS functionality … SMS is not in free tier so we not use that"*.
+**Type:** SPECIFICATION CHANGE, backend + configuration. No `.tsx` file, no
+migration, no endpoint. `SCOPE: BACKEND ONLY`.
+
+Split into three CRs because they are three different sizes: **CR-077** (this,
+half a day), **CR-078** Email OTP (one table, one service, four flows) and
+**CR-079** Passkeys (WebAuthn, two to three days). The user chose all three,
+in that order, on 2026-09-12.
+
+### What the table already had
+
+Four of the seven rows were already built and needed nothing: BCrypt strength
+12 (`AuthServiceImpl`), TOTP with backup codes (`/v1/auth/mfa/*`,
+`security/totp/`, CR-054/CR-060), the 15-minute HS256 access token held in
+memory, and the opaque rotating refresh token in a Secure HttpOnly cookie
+(CR-065). This CR is the email transport those flows will ride on, and the
+SMS switch.
+
+### Resend — a third `EmailTransport`, not a rewrite
+
+`ResendEmailProvider` + `ResendProperties`, on the exact shape of the SendGrid
+pair from CR-074: `@ConditionalOnProperty(app.notifications.email.provider =
+resend)`, `implements NotificationProvider, EmailTransport`, `java.net.http`
+with a package-private `HttpClient` seam for tests, LOGGED_ONLY when
+unconfigured, the provider's own error message carried through on a
+rejection. Because every email path already goes through `EmailTransport`
+(the whole point of CR-074), password reset, invoice PDFs, the Settings test
+button and the coming OTP mail all switch with one env var.
+
+Where Resend differs from SendGrid, and the tests pin it:
+
+| | SendGrid v3 | Resend |
+|---|---|---|
+| Endpoint | `POST /v3/mail/send` | `POST /emails` |
+| Sender | `{"email","name"}` object | one RFC 5322 string, `Name <addr>` — a blank name must yield the bare address, not `null <addr>` |
+| Body | nested `personalizations[].to[].email`, `content[]` | flat `to[]`, `text` |
+| Success | 202, empty body, id in `X-Message-Id` | 200, `{"id": …}` in the body |
+| Attachment type key | `type` | `content_type` |
+| Error body | `{"errors":[{"message"}]}` | `{"statusCode","name","message"}` |
+
+Why Resend and not the SMTP account that was already there: Gmail's app
+passwords were rejected during CR-038 and that is why Email OTP was deferred
+then; an HTTP API with a free tier of 3,000 emails a month and an id per
+message is what makes an OTP flow shippable and an "it never arrived" report
+answerable.
+
+### SMS — off by default, by configuration, not by comment
+
+The user's words were "comment the SMS functionality". It was not commented
+out: `SmsNotificationProvider` has eleven passing tests and two callers, and
+dead source that no longer compiles against its tests is how a channel comes
+back broken the day someone does want it. Instead `TwilioProperties` gained
+`enabled` (bound from `SMS_ENABLED`, default `false`), and `isConfigured()` —
+already the single definition of "can SMS send" — now requires it. Every
+caller that asked `isConfigured()` got the switch for free; nothing else
+changed. With the switch off the provider returns LOGGED_ONLY at **debug**
+level rather than info, because with SMS deliberately off it fires on every
+invoice and payment and is not news.
+
+The default is off **even with credentials present** — a deployment that
+inherited a `TWILIO_*` set from an `.env` template must not start paying per
+message by accident. `EmailProviderSelectionTest` pins both directions:
+credentials alone bind but stay unconfigured; credentials plus
+`SMS_ENABLED=true` configure.
+
+### Files
+
+Backend: `ResendEmailProvider`, `ResendProperties` (new);
+`TwilioProperties`, `SmsNotificationProvider`, `application.yml`.
+Tests: `ResendEmailProviderTest` (11, new), `TwilioSmsProviderTest` (+1),
+`EmailProviderSelectionTest` (+2, one Twilio binding test amended to set the
+switch). Configuration: `.env.example`, `.env.cloud.example`,
+`.env.selfhosted.example`, `docker-compose.selfhosted.yml`,
+`docs/DEPLOYMENT.md`.
+
+### Verified
+
+`mvn -o clean test-compile` exit 0; the five notification test classes: 49
+tests, 0 failures. Full `mvn clean verify` is run once per CR before its
+commit — see the commit body. `registry/static_check.py` **not executed**:
+python3 is not installed on this machine (hard rule 10).

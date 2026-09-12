@@ -198,7 +198,7 @@ class NotificationServiceImplTest {
     void unconfiguredSmsProviderLogsInsteadOfSending() {
         // Blank credentials are the shipped default - see application.yml.
         SmsNotificationProvider provider = new SmsNotificationProvider(
-                new TwilioProperties("https://api.twilio.com/2010-04-01", "", "", "", ""), new ObjectMapper());
+                new TwilioProperties(true, "https://api.twilio.com/2010-04-01", "", "", "", ""), new ObjectMapper());
 
         assertThat(provider.supportedChannels()).containsExactly(NotificationChannel.SMS);
         assertThat(provider.isConfigured()).isFalse();
