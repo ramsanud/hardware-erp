@@ -2,6 +2,24 @@
 
 **Updated:** 2026-09-12 (**CR-076 — choose an address on a map**). `SCOPE: FRONTEND ONLY` — no entity, no migration, no endpoint, no DTO.
 
+
+## CR-081 — the sign-in page is now the approved design (2026-09-12)
+
+**Built to a canvas the owner approved as a render, not to a brief.** 50/50
+hero over a shop interior, a new post-and-lintel H mark (favicon and sidebar
+fallback too), one `AuthCard` shell on all six auth screens. Every colour is
+a token. **The default colour theme is now `emerald`** — the sign-in page
+renders before a per-user theme exists, so a fresh visitor was going to see
+blue under a green mark. Blur is 6px; a photo dropped at
+`src/assets/auth-hero.{jpg,png,webp}` replaces the drawn scene with no code
+change. Suite 192/192 on an isolated build. The design canvas
+("Hardware ERP Sign In") matches what shipped; a copy lives in
+`Documents/Hardware ERP sign-in design/`.
+
+**If the login ever looks wrong again, read the CR-081 registry entry before
+touching it.** This panel has now been reshaped five times; the one that
+stuck was judged on a render before it was code.
+
 ## Start here
 
 **CR-076 is built, verified and NOT yet committed.** "Pick on map" sits beside the address fields on the Customer form, the Supplier wizard, the Supplier quick-add, Shop settings and the Project site address. Leaflet on OpenStreetMap tiles, Nominatim for the address — **no API key**, and both can be pointed at a self-hosted instance (`VITE_GEOCODER_URL`, `VITE_MAP_TILE_URL`). Tap, drag the pin, search a landmark or use GPS; the address is previewed, confirmed, then written into the five existing fields — the GST state code derived from the ISO code, blanks left as they were, nothing pre-selected on edit. Leaflet is a lazily loaded chunk. Full design and decisions in CR-076.
