@@ -84,6 +84,14 @@ public class SmsNotificationProvider implements NotificationProvider {
 
     @Override
     public NotificationSendResult send(Long tenantId, NotificationChannel channel, String toAddress, String subject, String body) {
+        if (!properties.enabled()) {
+            // CR-077: the paid channel is off unless a deployment opts in. Debug,
+            // not info - with SMS deliberately off this fires on every invoice
+            // and payment and is not news.
+            log.debug("SMS is disabled (SMS_ENABLED=false) - logged instead of sent. To: {} - Message: {}",
+                    toAddress, body);
+            return NotificationSendResult.loggedOnly();
+        }
         if (!properties.isConfigured()) {
             log.info("Twilio is not configured - SMS logged instead of sent. Set TWILIO_ACCOUNT_SID, "
                     + "TWILIO_AUTH_TOKEN and TWILIO_MESSAGING_SERVICE_SID (or TWILIO_FROM_NUMBER) to enable "

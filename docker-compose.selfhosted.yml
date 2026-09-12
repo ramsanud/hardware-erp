@@ -118,11 +118,15 @@ services:
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
 
       # Also optional, and off the same way when unset (CR-074): SMS is
-      # logged rather than sent, and email stays on the SMTP settings above
-      # until EMAIL_PROVIDER says otherwise.
+      # logged rather than sent (and is off regardless until SMS_ENABLED=true,
+      # CR-077 - it is a paid channel), and email stays on the SMTP settings
+      # above until EMAIL_PROVIDER says otherwise (smtp, sendgrid or resend).
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
       SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
+      SMS_ENABLED: ${SMS_ENABLED:-false}
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
