@@ -205,14 +205,43 @@ app:
   mail:
     log-links-when-unconfigured: false
 
-  # SMS/WhatsApp notifications (CR-027, WhatsApp made real under Task 05,
-  # made tenant-scoped under CR-056 - see TenantWhatsAppConnection).
-  # SMS: no real provider account exists yet, so SmsNotificationProvider
-  # always logs instead of sending.
+  # Notification channels (CR-027; WhatsApp made real under Task 05 and
+  # tenant-scoped under CR-056; SMS and email made real under CR-074).
+  #
+  # Every channel degrades the same way: blank credentials mean the message
+  # is logged with LOGGED_ONLY rather than sent, so a deployment that has
+  # configured none of this still runs.
   notifications:
+    # Email (CR-074). "smtp" is the default and keeps the long-standing
+    # spring.mail.* behaviour; "sendgrid" switches the whole application -
+    # notifications, password-reset links, invoice PDFs and the Settings
+    # test-email button - onto Twilio SendGrid's v3 API. Exactly one
+    # provider bean is constructed either way (@ConditionalOnProperty), the
+    # same pattern app.ai.provider uses: two beans claiming the EMAIL
+    # channel would collide silently in NotificationServiceImpl.
+    email:
+      provider: ${EMAIL_PROVIDER:smtp}
+      sendgrid:
+        api-base-url: ${SENDGRID_API_BASE_URL:https://api.sendgrid.com/v3}
+        api-key: ${SENDGRID_API_KEY:}
+        # Must be a sender SendGrid has verified, or it answers 403 no
+        # matter how valid the key is. Deliberately not defaulted to
+        # MAIL_USER - borrowing an unrelated SMTP address would produce
+        # exactly that 403 with no obvious cause.
+        from-email: ${SENDGRID_FROM_EMAIL:}
+        from-name: ${SENDGRID_FROM_NAME:Hardware ERP}
+    # SMS over Twilio Programmable Messaging (CR-074). App-wide, unlike
+    # WhatsApp below: an SMS goes out from one sender the platform owns,
+    # where a WhatsApp message must come from the shop's own verified
+    # number. Prefer the Messaging Service SID for an Indian deployment -
+    # it is what carries the DLT-registered sender id TRAI requires.
     sms:
-      provider: ${SMS_PROVIDER:}
-      # api-key: ${SMS_API_KEY:}
+      twilio:
+        api-base-url: ${TWILIO_API_BASE_URL:https://api.twilio.com/2010-04-01}
+        account-sid: ${TWILIO_ACCOUNT_SID:}
+        auth-token: ${TWILIO_AUTH_TOKEN:}
+        from-number: ${TWILIO_FROM_NUMBER:}
+        messaging-service-sid: ${TWILIO_MESSAGING_SERVICE_SID:}
     # WhatsApp (CR-056): app-wide config only - every tenant's own access
     # token/phone number id live in tenant_whatsapp_connection, connected
     # from Settings > WhatsApp Business, never here. app-secret/

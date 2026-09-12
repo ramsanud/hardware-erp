@@ -37,7 +37,7 @@ originally locked module order was *completed*, not abandoned. Treat any
 
 | Module | State |
 |---|---|
-| **Notification** | email live; SMS and WhatsApp stubbed |
+| **Notification** | email live (SMTP, or SendGrid via EMAIL_PROVIDER); SMS live over Twilio; WhatsApp live per tenant. Every channel logs instead of sending when its credentials are blank (CR-074) |
 | **AI chat** | read-only tools over existing modules |
 | **Analytics** | aggregation endpoints over invoice data |
 | **Export** | PDF / Excel / CSV rendering; owns no entity |

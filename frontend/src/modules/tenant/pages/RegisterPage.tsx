@@ -9,9 +9,7 @@ import {
 import { enterAdvances } from '@/shared/hooks/useEnterAdvances';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
-import {
-  Card, CardContent, CardHeader, CardTitle, CardDescription,
-} from '@/shared/components/ui/card';
+import { AuthCard } from '@/modules/auth/components/AuthCard';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/shared/components/ui/select';
@@ -198,15 +196,11 @@ export function RegisterPage() {
   });
 
   return (
-    <Card
-      className="mx-auto w-full max-w-xl rounded-3xl shadow-2xl
-                 animate-in fade-in slide-in-from-bottom-3 duration-500 sm:p-2"
+    <AuthCard
+      title="Create your account"
+      description="Register a new hardware shop - one shop, one owner login."
+      className="max-w-xl"
     >
-      <CardHeader>
-        <CardTitle className="text-2xl font-bold tracking-tight">Create your account</CardTitle>
-        <CardDescription>Register a new hardware shop - one shop, one owner login.</CardDescription>
-      </CardHeader>
-      <CardContent>
         <div onKeyDown={enterAdvances(() => { void goNext(); })}>
           {/*
             CR-069. Completed steps go to --success rather than --primary so
@@ -377,8 +371,7 @@ export function RegisterPage() {
             Sign in
           </Link>
         </div>
-      </CardContent>
-    </Card>
+    </AuthCard>
   );
 }
 

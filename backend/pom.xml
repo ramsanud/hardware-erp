@@ -18,6 +18,17 @@
     <description>Hardware Shop ERP - single shop monolith</description>
 
     <properties>
+        <!--
+            Pinned, not inherited. Without these Maven uses the platform default
+            charset: CP1252 on the Windows machines this is developed on, UTF-8
+            on the Linux CI runner. Every source file is ASCII today, so nothing
+            is broken - but this product is used in Tamil Nadu and prints rupee
+            amounts, so the first non-ASCII literal in a source file, a resource
+            bundle or a Flyway migration would compile to different bytes in the
+            two places and fail only in CI. Cheaper to pin than to diagnose.
+        -->
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>21</java.version>
         <jjwt.version>0.12.6</jjwt.version>
         <springdoc.version>2.7.0</springdoc.version>

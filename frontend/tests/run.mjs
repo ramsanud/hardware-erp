@@ -14,6 +14,10 @@ const SPECS = [
   ['auth', './auth/auth-flows.spec.mjs'],
   ['products', './products/product-grid.spec.mjs'],
   ['navigation', './navigation/responsive.spec.mjs'],
+  ['page-header', './navigation/page-header.spec.mjs'],
+  ['sidebar', './navigation/sidebar.spec.mjs'],
+  ['onboarding', './onboarding/tour.spec.mjs'],
+  ['address-map', './customers/address-map.spec.mjs'],
 ];
 
 const external = Boolean(process.env.E2E_BASE_URL);

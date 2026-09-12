@@ -259,12 +259,34 @@
     background: hsl(var(--sidebar-hover));
     color: hsl(var(--sidebar-foreground));
   }
-  .sidebar-link[data-active='true'] {
+  /*
+   * BUG-FE-036: keyed on aria-current, NOT a data-active attribute.
+   *
+   * These rules previously read `.sidebar-link[data-active='true']`, while
+   * the component set data-active on a span INSIDE the anchor that carries
+   * .sidebar-link. An attribute selector on a class needs both halves on one
+   * element, so none of this ever rendered: the active item drew with a
+   * transparent background, muted text and no accent bar, on every route,
+   * since the day it was written.
+   *
+   * aria-current is what NavLink already sets on the active anchor itself,
+   * so the highlight and the screen-reader signal are now the same fact.
+   * They cannot drift apart again, and there is no attribute left to forget
+   * to pass down.
+   */
+  .sidebar-link[aria-current='page'] {
     background: hsl(var(--sidebar-active-bg));
     color: hsl(var(--sidebar-active));
-    font-weight: 500;
+    font-weight: 600;
   }
-  .sidebar-link[data-active='true']::before {
+  .sidebar-link[aria-current='page'] svg {
+    color: hsl(var(--sidebar-active));
+  }
+  /*
+   * The accent pill. Sits in the nav's own px-2 gutter, so it reads as a
+   * marker against the rail edge rather than a border on the row.
+   */
+  .sidebar-link[aria-current='page']::before {
     content: '';
     position: absolute;
     left: -0.5rem;
@@ -272,11 +294,11 @@
     height: 1.25rem;
     width: 3px;
     transform: translateY(-50%);
-    border-radius: 9999px;
+    border-radius: 0 9999px 9999px 0;
     background: hsl(var(--sidebar-active));
   }
   .sidebar-section {
-    @apply px-3 pb-1.5 pt-5 text-[11px] font-medium uppercase tracking-wider;
+    @apply px-3 pb-1.5 pt-5 text-[10px] font-bold uppercase tracking-wider;
     color: hsl(var(--sidebar-section));
   }
   /*

@@ -11,6 +11,8 @@ import {
 } from '@/shared/components/ui/select';
 import { DialogFooter } from '@/shared/components/ui/dialog';
 import { FormField } from '@/shared/components/FormField';
+import { AddressMapPicker } from '@/shared/components/AddressMapPicker';
+import { ADDRESS_FIELD_KEYS } from '@/shared/lib/geocoding';
 import { ApiError } from '@/shared/types/api';
 import { INDIAN_STATES } from '@/shared/data/indianStates';
 import { customerSchema, type CustomerValues } from '../validation/schemas';
@@ -130,6 +132,15 @@ export function CustomerForm({ customer, onSubmit, onCancel, onDirtyChange }: Cu
             )}
           />
         </FormField>
+        <div className="flex items-center justify-between gap-2 sm:col-span-2">
+          <p className="text-sm text-muted-foreground">Or find it on the map and let it fill the fields.</p>
+          <AddressMapPicker
+            current={{ addressLine1: values.addressLine1, city: values.city, pincode: values.pincode }}
+            onPick={(picked) => ADDRESS_FIELD_KEYS.forEach((key) => {
+              if (picked[key]) setValue(key, picked[key], { shouldDirty: true, shouldValidate: true });
+            })}
+          />
+        </div>
         <FormField id="addressLine1" label="Address line 1" error={errors.addressLine1?.message} className="sm:col-span-2">
           <Input id="addressLine1" {...register('addressLine1')} />
         </FormField>

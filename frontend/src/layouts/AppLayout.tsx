@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import {
-  LifeBuoy, LogOut, MonitorSmartphone, PanelLeftClose, PanelLeftOpen, Search, UserCircle, X,
+  HelpCircle, LifeBuoy, LogOut, MonitorSmartphone, PanelLeftClose, PanelLeftOpen, Search, UserCircle, X,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -18,6 +18,10 @@ import { useAuthenticatedImage } from '@/shared/hooks/useAuthenticatedImage';
 import { cn, initials } from '@/shared/lib/utils';
 import { AiChatWidget } from '@/modules/ai/components/AiChatWidget';
 import { ContactAdminDialog } from '@/modules/notification/components/ContactAdminDialog';
+import { WelcomeTour } from '@/modules/onboarding/components/WelcomeTour';
+import { useOnboardingTour } from '@/modules/onboarding/hooks/useOnboardingTour';
+import { PageTip } from '@/modules/onboarding/components/PageTip';
+import { usePageTips } from '@/modules/onboarding/hooks/usePageTips';
 import { AppChromeProvider, useAppChrome } from './AppChromeProvider';
 import { MobileMoreMenu } from './MobileMoreMenu';
 import { MobileTabBar } from './MobileTabBar';
@@ -33,6 +37,9 @@ export function AppLayout() {
 
 function AppLayoutInner() {
   const { user, logout, logoutAll } = useAuth();
+  // CR-075: offers itself once per user, then only when asked for.
+  const tour = useOnboardingTour();
+  const pageTips = usePageTips();
   const { avatarVersion, brandName } = useAppChrome();
   const avatarSrc = useAuthenticatedImage(avatarService.url, avatarVersion);
   const navigate = useNavigate();
@@ -65,14 +72,16 @@ function AppLayoutInner() {
           below that (CR-061). */}
       <aside
         className={cn(
-          'hidden shrink-0 transition-[width] duration-200 lg:block',
+          'hidden shrink-0 border-r border-sidebar-border bg-sidebar transition-[width] duration-200 lg:block',
           collapsed ? 'w-[68px]' : 'w-64',
         )}
-        style={{ background: 'hsl(var(--sidebar))' }}
       >
         <div className="sticky top-0 flex h-dvh flex-col">
-          <SidebarBrand collapsed={collapsed} />
-          <div className="flex-1 overflow-y-auto">
+          <SidebarBrand collapsed={collapsed} onToggleCollapsed={() => setCollapsed(true)} />
+          {/* overflow-x-hidden, not just -y-auto: while the rail animates to
+              68px the labels are briefly wider than the track, and without
+              this the sidebar itself scrolls sideways mid-transition. */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden">
             <SidebarNav collapsed={collapsed} />
           </div>
           <SidebarFooter collapsed={collapsed} />
@@ -131,6 +140,21 @@ function AppLayoutInner() {
               <Search className="h-5 w-5" />
             </Button>
 
+            {/* CR-075. Beside the theme toggle rather than inside the profile
+                menu, because the person most likely to need it is the one who
+                has not worked out where the menus are yet. Shown at EVERY
+                width: the tour copy says "the ? button brings it back", and a
+                phone user must be able to find the thing the text promises.
+                The bar has the budget - search, ?, theme, avatar is four icons
+                at 390px (BUG-FE-035 was about eight text buttons). */}
+            <Button
+              variant="ghost" size="icon"
+              onClick={tour.restart}
+              aria-label="How this application works"
+            >
+              <HelpCircle className="h-5 w-5" />
+            </Button>
+
             <ModeToggle />
 
             <DropdownMenu>
@@ -161,6 +185,10 @@ function AppLayoutInner() {
                   <UserCircle className="h-4 w-4" />
                   My profile
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={tour.restart}>
+                  <HelpCircle className="h-4 w-4" />
+                  How this works
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setContactAdminOpen(true)}>
                   <LifeBuoy className="h-4 w-4" />
                   Contact admin
@@ -187,6 +215,9 @@ function AppLayoutInner() {
         */}
         <main className="app-main flex-1 px-3 pt-4 sm:px-5 sm:pt-5 lg:px-8">
           <div className="mx-auto w-full max-w-7xl space-y-4 sm:space-y-5">
+            {/* CR-075: a one-time tip for the first visit to each screen. In
+                the flow, above the page, so it never covers what it explains. */}
+            <PageTip tips={pageTips} />
             <Outlet />
           </div>
         </main>
@@ -205,6 +236,7 @@ function AppLayoutInner() {
       />
 
       <ContactAdminDialog open={contactAdminOpen} onOpenChange={setContactAdminOpen} />
+      <WelcomeTour tour={tour} />
 
       <AiChatWidget />
     </div>

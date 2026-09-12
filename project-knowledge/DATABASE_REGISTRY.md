@@ -1148,3 +1148,45 @@ shop trading), `activity_log` and `security_audit_log`.
 lazily (`orElseGet(() -> createStockRow(...))`), so the next movement recreates
 the row at zero — and a zero balance with no movements behind it would claim a
 history the ledger no longer has.
+
+---
+
+## V55 — `activity_log.tenant_id` (CR-072, 2026-09-09)
+
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| `tenant_id` | `BIGINT` | **YES** | The shop this change belongs to. No FK — see below. |
+
+Indexes added: `idx_activity_tenant_created (tenant_id, created_at DESC)` and
+`idx_activity_tenant_module (tenant_id, module_code, created_at DESC)`. Tenant
+leads both, because every read is scoped to one shop before any other
+predicate applies.
+
+### Why it is nullable, which is the decision that matters
+
+V3 created `activity_log` without a tenant and nothing since added one, so the
+backfill can only attribute rows that carry a `user_id` — V55 resolves those
+through `app_user.tenant_id`. Rows written by a scheduled job or an import have
+no user and **no honest way to recover an owner after the fact**, so they stay
+null.
+
+**Null is the safe value here, by construction.** Every read filters
+`tenant_id = :tenantId`, and `NULL = anything` is never true in SQL, so an
+unattributable row is invisible to every tenant rather than visible to all of
+them. A `NOT NULL` column would have forced the migration to guess an owner,
+and inventing an owner for a row in an audit table is worse than admitting the
+row is orphaned.
+
+### No foreign key to `tenant`, deliberately
+
+`activity_log` is history: it must outlive the row it describes, and a tenant
+removed from the platform must not take its own audit trail with it on
+cascade. `security_audit_log` and `refresh_token` are modelled the same way —
+V14 carries the original note.
+
+### Write path
+
+Stamped in exactly one place, `ActivityLogServiceImpl.write(...)`, from
+`SecurityUtils.currentTenantId()` — the JWT, never a request parameter. CR-070
+had estimated ten call sites; there is one, because every module reaches the
+table through `created`/`updated`/`deleted`/`action`, which all funnel there.

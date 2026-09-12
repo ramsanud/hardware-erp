@@ -92,6 +92,11 @@ generating new code; never reintroduce a listed bug.
 | BUG-FE-032 | Frontend | Medium | Fixed 2026-09-07 |
 | BUG-FE-033 | Frontend | High | Fixed 2026-09-08 |
 | BUG-FE-034 | Frontend | Low | Fixed 2026-09-08 |
+| BUG-FE-035 | Frontend | Medium | Fixed 2026-09-09 |
+| BUG-FE-036 | Frontend | Medium | Fixed 2026-09-09 |
+| BUG-FE-037 | Frontend | Medium | Fixed 2026-09-12 |
+| BUG-BE-003 | Backend / Inventory | High | Fixed 2026-09-09 |
+| BUG-BE-004 | Backend / Common | Medium | Fixed 2026-09-09 |
 
 **This index is complete and covers every entry in this file (verified
 2026-09-08).** It previously stopped at `BUG-ENV-003`, omitting 33 later
@@ -3243,3 +3248,413 @@ pages clean at 390, 768 and 1440.
 page, so this one edit covers all of them; no other component pairs `shrink-0`
 with a wrapping toolbar. Invoice detail (six actions) was the next widest and
 is also clean.
+
+> **This sweep was wrong on both counts — see BUG-FE-035.** The edit did *not*
+> cover every page: `flex-wrap` on `PageHeader`'s container wraps its
+> *children*, and all 21 callers pass a single nested `<div className="flex
+> items-center gap-2">`, so there was only ever one child to wrap. Only
+> Quotation detail and Project detail were actually fixed, because those two
+> had `flex-wrap` added to the caller's own div by hand. Invoice detail was
+> never clean either — by 2026-09-09 it carried eight actions at 1039px and
+> overflowed a 768px viewport exactly as Quotation detail had.
+
+---
+
+## BUG-FE-035 — a busy toolbar crushed the page title to 69px (FIXED, 2026-09-09)
+
+| | |
+|---|---|
+| **Severity** | Medium — the invoice number, customer, mobile and date were all unreadable on the page that identifies the document |
+| **Layer** | FRONTEND ONLY |
+| **Found** | User screenshot of `/invoices/53` at desktop width |
+| **Symptom** | `INV-000027` rendered as **`I...`** in a **69px** column, with `Bug Fix Test · 9123456700 · 2026-09-01` wrapping one word per line down a 100px-tall strip. At 768px the column reached **0px** and the toolbar ran off the page |
+
+**Root cause — BUG-FE-034's fix never applied to 19 of the 21 pages.**
+`PageHeader` puts `flex-wrap` on its actions container, but that wraps the
+container's *children*, and every caller passes its buttons already wrapped in
+one div of its own:
+
+```tsx
+actions={
+  <div className="flex items-center gap-2">   {/* ← one child, cannot wrap */}
+    <Button>Preview</Button> … eight of them
+  </div>
+}
+```
+
+So the header row held a single flex item whose min-content width was the whole
+toolbar — measured at **1039px**. Nothing could shrink it, both children were
+free to shrink, and the title (with `min-w-0` and a content-sized basis) was
+the one that lost: 69px at 1440px, 0px at 768px.
+
+BUG-FE-034 had reported "this one edit covers all of them". It did not — it
+worked only for Quotation detail and Project detail, whose caller divs were
+hand-patched with `flex-wrap` at the same time. That is why the same defect
+resurfaced on Invoice detail a day later, in both of its forms.
+
+**Fix.** Two parts, same root cause, same commit:
+
+1. `frontend/src/shared/components/PageHeader.tsx` — `sm:flex-wrap` on the
+   header row so an oversized toolbar drops onto its own row instead of taking
+   the title's space, and `sm:flex-1 sm:basis-64` on the title column to give
+   it a 16rem floor. Without the basis the title is still the smaller item and
+   still loses the space race.
+2. The 19 caller pages missing `flex-wrap` on their own actions div, so the
+   toolbar itself wraps rather than overflowing at narrow widths — matching
+   what BUG-FE-034 did by hand for the other two.
+
+**Verified — measured, not eyeballed.** `/invoices/53` title column
+69px → **1120px** at 1440, 0px → **728px** at 768; description 100px → **20px**;
+`document.scrollWidth > clientWidth` **true → false** at 768. All 14 list pages
+re-measured at 1440 and 768: title and actions still share one row, no
+truncation, no overflow. Frontend suite **72/72** (was 60/60).
+
+**Regression test.** `frontend/tests/navigation/page-header.spec.mjs` — the
+responsive sweep next door covers list routes only, because a detail route
+needs an id, and that gap is precisely where this lived. Asserts measured
+geometry, not class names, at 1440 and 768. Confirmed to fail against the old
+markup (3 of 12 assertions) and pass against the new.
+
+**One fixture bug found and fixed on the way.** `tests/support/fixtures.mjs`
+gave the stub OWNER neither `INVOICE_CANCEL` nor `PAYMENT_MANAGE`, so the
+stubbed invoice toolbar rendered two buttons short — 763px against the real
+1039px. The suite could not have caught this defect at full severity while its
+own fixture disagreed with the DTO. With both permissions added the stub now
+measures 1039px, matching the live page exactly.
+
+---
+
+## BUG-BE-002 — `@Transactional(REQUIRES_NEW)` on the activity-log write was inert
+
+| | |
+|---|---|
+| **Severity** | HIGH |
+| **Layer** | BACKEND |
+| **Found** | 2026-09-09, while adding `tenant_id` under CR-072 — the one method that had to change |
+| **Status** | FIXED |
+| **Regression test** | `ActivityLogWriterPropagationIT` |
+
+### Root cause
+
+`ActivityLogServiceImpl.write(...)` was a `protected` method annotated
+`@Transactional(propagation = REQUIRES_NEW)`, called as `this.write(...)` from
+`created`, `updated`, `deleted` and `action` in the same class.
+
+That is self-invocation. The call never leaves the object, so it never passes
+through the transactional proxy, and this project uses proxy-based AOP with no
+AspectJ weaving anywhere. **The annotation did nothing.** The history write
+joined the caller's transaction — the exact opposite of what its own comment
+claimed: *"REQUIRES_NEW so a logging failure never rolls back the user's actual
+work"*.
+
+### Why the catch below it did not save the situation
+
+`write` wrapped `activityLogRepository.save(...)` in
+`catch (DataAccessException)`. With the entity using `GenerationType.IDENTITY`,
+`save()` issues the INSERT immediately, so a constraint violation *was* raised
+there and *was* swallowed — but by then the surrounding transaction is marked
+rollback-only. The user's real work, the invoice or stock movement being
+described, was then lost at commit with nothing in the response explaining
+why. **Swallowing the exception made it silent, not survivable.**
+
+### The fix, and the part that was not obvious
+
+The write moved into its own `ActivityLogWriter` bean, so the call crosses a
+proxy boundary and `REQUIRES_NEW` finally applies.
+
+**The handler had to move out of the transactional method, not travel with
+it.** The first attempt kept the try/catch inside the new bean and still
+failed: under `REQUIRES_NEW` the flush happens as the method returns and its
+transaction commits — inside the proxy, after any `try` written in the method
+body has exited — so the catch never saw it, and a catch that did swallow it
+would leave the proxy committing a transaction already marked rollback-only.
+`ActivityLogWriter.write` therefore throws, and `ActivityLogServiceImpl`
+catches outside the boundary. It catches `RuntimeException`, not
+`DataAccessException`: a flush failure surfaces through the proxy as
+`TransactionSystemException` or `UnexpectedRollbackException` at least as often.
+
+**The regression test was verified against the defect, not merely written.**
+`ActivityLogWriterPropagationIT` was run against a deliberately restored
+pre-fix shape and failed there (1 failure), then passed against the fix. It
+drives a real over-long `moduleCode` through `ActivityLogService` — the path
+every module actually uses — inside an outer transaction that also does real
+work, and asserts the real work survives.
+
+### Where else this pattern could bite
+
+Every `REQUIRES_NEW` site in the codebase was checked, and the other two are
+correct — for a reason worth stating, because they look superficially like
+this bug and are not.
+
+`SecurityAuditServiceImpl` and `JobExecutionTracker` both have a private
+helper (`write`, `finish`) called from public methods in the same class. The
+difference is **where the annotation sits**: on their PUBLIC entry points, the
+ones external callers invoke. The proxy has therefore already been crossed by
+the time the private helper runs, so the helper executes inside the new
+transaction and the propagation holds.
+
+`ActivityLogServiceImpl` had it the other way round — the annotation was on
+the inner, self-invoked method, and the public entry points carried none. That
+inversion is the whole defect, and it is the thing to look for when reviewing
+any future `REQUIRES_NEW`: not whether a self-call exists, but whether the
+annotation is on the method that is reached from outside the bean.
+
+
+---
+
+## BUG-FE-036 — the sidebar active state had never once rendered (FIXED, 2026-09-09)
+
+| | |
+|---|---|
+| **Severity** | Medium — the rail gave no indication of which page you were on, on every route, for the life of the styling |
+| **Layer** | FRONTEND ONLY |
+| **Found** | While collapsing the rail for CR-061's desktop chrome — noticed that navigating changed the page but never the rail |
+| **Symptom** | Every item in the sidebar drew identically: transparent background, muted text, no accent bar. The active row was indistinguishable from the seven inactive ones above it |
+
+**Root cause — a CSS selector that could never match.** `index.css` styled the
+active row as:
+
+```css
+.sidebar-link[data-active='true'] { … }
+```
+
+An attribute selector on a class requires **both halves on one element**.
+`Sidebar.tsx` put the class on the `NavLink` anchor and, via the render-prop
+form, `data-active` on a `<span>` *inside* that anchor:
+
+```tsx
+<NavLink className="sidebar-link">
+  {({ isActive }) => <span data-active={isActive}>…</span>}   {/* ← different element */}
+</NavLink>
+```
+
+So the rule matched nothing, on every route, since the day it was written —
+including the `::before` accent bar and the comment above it explaining why a
+coloured edge is "legible even out of the corner of your eye". Nothing was
+ever legible, because nothing was ever painted.
+
+**Why nothing caught it.** A selector that matches nothing is not a
+typecheck error, not a build error, and not a render error — the page still
+renders, it just renders wrong. `tsc` sees valid TSX, the build inlines valid
+CSS, and a test asserting the link exists passes. The defect is observable
+only in **computed style**, which no existing suite looked at.
+
+**Fix.** Key the styling off `aria-current='page'`, which `NavLink` already
+sets on the anchor itself:
+
+1. `frontend/src/index.css` — `.sidebar-link[aria-current='page']` for the
+   background, weight and accent pill, plus the icon colour. The highlight and
+   the screen-reader signal are now the same fact and cannot drift apart;
+   there is no attribute left to forget to pass down.
+2. `frontend/src/layouts/Sidebar.tsx` — the render-prop and its inner span
+   removed, so the anchor is a plain child element again.
+3. `frontend/src/layouts/AppLayout.tsx` — `overflow-x-hidden` on the nav
+   scroller, found while testing the collapse: mid-animation the labels are
+   briefly wider than the 68px track and the rail scrolled sideways. Same
+   commit, adjacent defect in the same component.
+
+**Verified — computed style, not class names.** At `/products`, `/invoices`
+and `/suppliers`: exactly one anchor carries `aria-current="page"`, it is the
+matching route, its background is no longer `rgba(0, 0, 0, 0)`, its
+font-weight is 600, and the `::before` pill has real content and a non-`auto`
+width. Collapsed and expanded: rail at 68px/256px, no sideways scroll, the
+separator border intact.
+
+**Regression test.** `frontend/tests/navigation/sidebar.spec.mjs`, registered
+in `tests/run.mjs`. It reads `getComputedStyle` — including the `::before`
+pseudo-element — because that is the only level at which this class of defect
+exists. Confirmed to fail against the old markup and pass against the new.
+
+**The lesson, and it is not "check your selectors".** This shipped because
+every gate the project had inspects *source*, and the defect lived in the
+relationship *between* two sources that individually looked right. Whenever
+styling is keyed to an attribute a component sets, assert the rendered result
+— the attribute and the rule agreeing is the thing worth testing, and it is
+cheap to test once a computed-style harness exists.
+
+**Re-verified 2026-09-09, and the first run found the fix only half-applied.**
+When this entry was first written the `Sidebar.tsx` half was committed
+(`8501899`) but `index.css` still carried `.sidebar-link[data-active='true']`,
+so the rules keyed off an attribute the component no longer set anywhere —
+the same defect as before, one step worse, because the inner span carrying
+`data-active` was now gone too. The suite said so plainly: **14/23, with all
+nine style assertions failing** (`background rgba(0, 0, 0, 0)`,
+`font-weight 400`, `pill content none`) while the two `aria-current`
+assertions passed, which is exactly the signature of markup fixed and styling
+not. Re-keyed the three rules to `aria-current='page'`, rebuilt, and the spec
+is **23/23**; full frontend suite **95/95**.
+
+The claim above — "confirmed to fail against the old markup and pass against
+the new" — is true only as of this re-run. It was written against a tree where
+half the fix was absent, which is the precise failure mode BUG-FE-035 recorded
+about BUG-FE-034: **a registry entry asserting a verification that was never
+executed.** Two entries in two days is a pattern, not a coincidence. Hard rule
+10 applies to registry entries exactly as it applies to builds — an entry that
+says "verified" must name the run that verified it.
+
+> **Concurrent-session hazard, worth recording once.** This tree is written by
+> more than one session at a time (see `RESUME_POINT.md`). `index.css` was
+> reverted underneath a read during this pass, and a first splice interleaved
+> with a simultaneous write and dropped `.sidebar-link` entirely. The recovery
+> that worked: `git checkout HEAD --` the single file, then re-apply in **one**
+> command that computes its own line numbers. Never splice a file across two
+> tool calls here.
+
+
+---
+
+## BUG-BE-003 — reading the stock of a product with no stock row returned 500 (FIXED, 2026-09-09)
+
+| | |
+|---|---|
+| **Severity** | High — the Inventory detail view was unreachable for a newly created product, which is every product until its first stock movement |
+| **Layer** | BACKEND ONLY |
+| **Found** | Sweeping every GET in the OpenAPI document against a running dev instance (2026-09-09), not from a user report |
+| **Symptom** | `GET /v1/stock/{productId}` and `GET /v1/stock/{productId}/movements` answered `500 INTERNAL_ERROR`. On the dev database this was **10,004 of 10,018 products**; the 14 that worked were the seeded ones |
+
+**Root cause — a read that tried to write.** `StockServiceImpl` keeps one Stock
+row per (tenant, product) and, by design, creates it "lazily on first access"
+so that Inventory stays a module Product need not know about. That lazy
+creation was reached from the read path:
+
+```java
+@Transactional(readOnly = true)
+public StockResponse get(Long productId) {
+    return stockMapper.toResponse(requireStock(productId, ...));  // requireStock -> save()
+}
+```
+
+PostgreSQL refuses an INSERT inside a read-only transaction outright
+(`SQLState 25006, cannot execute INSERT in a read-only transaction`), so the
+lazy branch could never succeed — it could only throw. The endpoint worked for
+exactly those products whose row already existed.
+
+**Why the whole suite was green over it.** The dev/test seed inserts opening
+stock for every product it creates, with the comment *"Real opening stock for
+every product above, so a sale can be made immediately - not a Stock row
+created lazily at zero on first API call."* Every product any test could reach
+therefore already had a row, and no test ever entered the lazy branch through a
+read. The seed comment is not incidental to this bug; it is the reason it
+survived to be found by an external sweep.
+
+**Fix.** Reads no longer write. `readStock(...)` returns an **unsaved**
+zero-quantity Stock when the row is absent; `StockMapper` reads only the
+product and the quantity, so a transient instance maps to exactly the response
+a freshly-created row would have produced. The write path (`applyMovement`)
+still creates the row for real — the only place that legitimately can. A
+product the tenant does not own still 404s, from the same `findByIdAndTenantId`
+as before.
+
+**Rejected: dropping `readOnly`.** It would also have turned the 500 into a
+200, while leaving a GET that writes a row to the database on every view. The
+regression test asserts the absence of the write for that reason, not just the
+status code.
+
+**Regression tests — verified against the defect, not merely written.**
+`StockReadWithoutRowIT` (4 cases: zero read, empty movements, no row persisted,
+unknown product still 404) — **3 of 4 fail against the pre-fix code**, the
+fourth being the 404 guard that must pass in both directions. Plus two cases in
+`StockServiceImplTest` asserting a read never calls `save()`, which **both fail
+pre-fix**. Both were run against a clean worktree at the previous commit to
+confirm the failure, then against the fix.
+
+The IT creates its own product rather than hunting for one without stock —
+that is both the real-world path (add a product, open it, 500) and the only way
+to reach the branch given what the seed guarantees.
+
+---
+
+## BUG-BE-004 — an unknown `?sort=` field returned 500 on nine list endpoints (FIXED, 2026-09-09)
+
+| | |
+|---|---|
+| **Severity** | Medium — a typo, a stale bookmark or a renamed frontend column produced a server error instead of a client error; no data at risk |
+| **Layer** | BACKEND ONLY |
+| **Found** | Same OpenAPI sweep, probing `?sort=nosuchfield,asc` across every list endpoint |
+| **Symptom** | `500 INTERNAL_ERROR` on `/v1/customers`, `/v1/invoices`, `/v1/purchases`, `/v1/quotations`, `/v1/payments`, `/v1/expenses`, `/v1/stock`, `/v1/projects`, `/v1/coupons` |
+
+**Root cause — an unmapped exception.** These endpoints bind a Spring
+`Pageable` directly, so the client's sort property is appended to the JPQL
+order-by:
+
+```
+order by c.customerName asc, c.nosuchfield asc
+```
+
+Hibernate then throws `UnknownPathException` when the query is built, wrapped
+in `InvalidDataAccessApiUsageException`. Nothing handled it, so it fell to
+`handleUnexpected(Exception.class)` and was reported as a server fault.
+
+**Why four list endpoints were immune, and it is not luck.** Products,
+suppliers, categories and brands do not accept a `Pageable` at all — they take
+`sortBy`/`sortDir` and map them through an explicit `SORTABLE` whitelist,
+falling back to a default for anything unrecognised, and clamp page size while
+they are at it. Those are the modules most tests exercise, which is why the
+defect was invisible from the inside.
+
+**Fix — one handler, not nine controllers.** `GlobalExceptionHandler` now maps
+`PropertyReferenceException` (Spring Data's own, thrown on derived queries) and
+`InvalidDataAccessApiUsageException` **caused by** `UnknownPathException` to
+`400 INVALID_SORT_FIELD`. The fault was one unmapped exception; converting nine
+modules to the whitelist pattern is a refactor and would need its own CR.
+
+Two details that are deliberate:
+
+- **The cause chain is walked, not read one level down.** Hibernate nests
+  `UnknownPathException` at varying depths, and checking only `getCause()`
+  caught none of the real cases — the first attempt at this fix still returned
+  500 for exactly that reason.
+- **A non-sort `InvalidDataAccessApiUsageException` is still a 500.** That
+  exception also covers genuinely broken queries of our own, which must keep
+  surfacing as server errors. It is handled in place rather than rethrown,
+  because **Spring does not re-resolve an exception thrown out of an
+  `@ExceptionHandler`** — rethrowing would have escaped the `ErrorResponse`
+  contract and returned a container error page.
+
+**Regression test.** `InvalidSortFieldIT` — all nine endpoints must answer 400
+`INVALID_SORT_FIELD`; a valid sort and an absent sort must still return 200;
+and the two whitelist endpoints must keep *ignoring* an unknown sort rather
+than starting to reject it, so a later "consistency" pass cannot silently break
+working requests. **Fails against the pre-fix code (500), passes against the
+fix**, confirmed on a clean worktree at the previous commit.
+
+> **Build note for this machine.** Both fixes were briefly "not working" against
+> stale classes: Maven's incremental compilation did not pick up an edited
+> source, and `failsafe:integration-test` happily ran the previous build. Run
+> `mvn -o clean test-compile` before trusting an integration-test result here.
+> Also `javap` is not on PATH in Git Bash, so it cannot be used to check what
+> actually compiled.
+
+---
+
+## BUG-FE-037 — a tour step's "Open …" button ended the tour instead of pausing it (FIXED, 2026-09-12)
+
+| | |
+|---|---|
+| **Severity** | Medium — the one control that invited a first-time user to go and look at a screen was also the one that made sure they could never return to where they were in the tour |
+| **Layer** | FRONTEND ONLY |
+| **Found** | User, running the CR-075 tour live: "if I click Open dashboard it navigates correctly but after navigating how to come back to the tour" |
+| **Symptom** | Step 2 → *Open dashboard* → dashboard renders, tour gone, seen-flag written. The only way back was `?`, which restarts from step 1 |
+
+**Root cause.** `goToAction` called `close()`, and `close()` is the Skip/Finish
+path: it writes the seen flag. Navigating away and dismissing were the same
+operation, so a step's action button was semantically a Skip button that
+also changed the URL.
+
+**Fix.** A third tour state. `open` is the dialog; **`paused`** is the tour
+stepped aside with a way back; only Skip/Finish/X/Escape/*End tour* write the
+seen flag. The action now calls `pause()` and navigates, and a floating
+*Continue tour · 2 of 12* pill follows the user until they resume or end it.
+The paused index lives in `sessionStorage` (scoped per user like everything
+else in the tour), so a reload on the destination page comes back to the pill
+rather than to nothing — a pause is something you did in this tab in the last
+few minutes, not a preference to carry to next week.
+
+Placed bottom-centre, not bottom-right where the AI chat widget lives, and
+`bottom-20` on a phone to clear the tab bar.
+
+**Regression test.** `frontend/tests/onboarding/tour.spec.mjs`: action
+navigates to the described route; the pill carries the step; the pill
+survives a reload without the dialog restarting; *Continue* reopens at the
+same step; *End tour* from the pill is final across navigation. Suite
+**152/152**.

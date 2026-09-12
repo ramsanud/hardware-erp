@@ -5,11 +5,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft, MailCheck, User } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { ClearableInput } from '@/shared/components/ui/clearable-input';
-import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
-} from '@/shared/components/ui/card';
 import { Alert, AlertDescription } from '@/shared/components/ui/alert';
 import { FormField } from '@/shared/components/FormField';
+import { AuthCard } from '../components/AuthCard';
 import { AUTH_ROUTES } from '../constants';
 import { authService } from '../services/authService';
 import { forgotPasswordSchema, type ForgotPasswordValues } from '../validation/schemas';
@@ -39,25 +37,21 @@ export function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <Card className="mx-auto w-full max-w-md">
-        <CardHeader>
-          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-success/10">
+      <AuthCard
+        title="Check your email"
+        description={<>If an account exists for {getValues('identifier')}, a reset link has been sent. It expires in 30 minutes and can be used once.</>}
+      >
+        <div className="space-y-4">
+          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-success/10">
             <MailCheck className="h-5 w-5 text-success" aria-hidden />
           </div>
-          <CardTitle>Check your email</CardTitle>
-          <CardDescription>
-            If an account exists for {getValues('identifier')}, a reset link has been sent.
-            It expires in 30 minutes and can be used once.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
           <Alert>
             <AlertDescription className="text-sm">
               No email? The account may not have an email address on record. Ask the
               shop owner to reset your password instead.
             </AlertDescription>
           </Alert>
-          <Button variant="outline" className="w-full" asChild>
+          <Button variant="outline" className="h-12 w-full rounded-xl border-[1.5px] border-primary text-[15px] font-semibold text-primary hover:bg-primary/5 hover:text-primary" asChild>
             {/* replace, not push: this is the user walking back out of the
                 flow, so it must not leave /forgot-password sitting in the
                 history stack for the Back button to drop them into again. */}
@@ -66,34 +60,30 @@ export function ForgotPasswordPage() {
               Back to sign in
             </Link>
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </AuthCard>
     );
   }
 
   return (
-    <Card className="mx-auto w-full max-w-md">
-      <CardHeader>
-        <CardTitle>Reset your password</CardTitle>
-        <CardDescription>
-          Enter your mobile number or email and we will send a reset link.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <AuthCard
+      title="Reset your password"
+      description="Enter your mobile number or email and we will send a reset link."
+    >
         <form onSubmit={submit} className="space-y-4" noValidate>
           <FormField id="identifier" label="Mobile number or email"
                      error={errors.identifier?.message} required>
             <div className="relative">
-              <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <User className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-primary" aria-hidden />
               <ClearableInput id="identifier" autoFocus autoComplete="username"
-                     placeholder="9876543210" className="pl-9"
+                     placeholder="9876543210" className="h-12 rounded-xl pl-11 text-[15px]"
                      aria-invalid={Boolean(errors.identifier)}
                      aria-describedby={errors.identifier ? 'identifier-error' : undefined}
                      {...register('identifier')} />
             </div>
           </FormField>
 
-          <Button type="submit" className="w-full" loading={isSubmitting}>
+          <Button type="submit" size="lg" className="h-12 w-full rounded-xl text-[15px] font-semibold" loading={isSubmitting}>
             Send reset link
           </Button>
 
@@ -104,7 +94,6 @@ export function ForgotPasswordPage() {
             </Link>
           </Button>
         </form>
-      </CardContent>
-    </Card>
+    </AuthCard>
   );
 }

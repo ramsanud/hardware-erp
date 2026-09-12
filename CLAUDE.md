@@ -231,7 +231,7 @@ Renaming anything already generated requires a Change Request first. Run
 
 ```bash
 python3 registry/static_check.py          # structure, entity↔migration agreement
-cd backend  && mvn clean verify           # compile + 184 tests (needs Docker)
+cd backend  && mvn clean verify           # compile + 510 unit + 231 integration tests (needs Docker)
 cd frontend && npm run typecheck          # tsc -b --force
 cd frontend && npm run build              # production build
 docker compose up -d                      # PostgreSQL 16
@@ -241,7 +241,7 @@ docker compose up -d                      # PostgreSQL 16
 
 ## Current state (verified 2026-09-09)
 
-Twenty-plus backend modules and twenty-two frontend modules are built and
+Twenty-plus backend modules and twenty-four frontend modules are built and
 compiling. Migrations V1–V54 are applied. The locked module order below was
 **completed, not abandoned** — treat this project as in maintenance and
 extension, never as a greenfield build.
@@ -249,10 +249,10 @@ extension, never as a greenfield build.
 | Layer | Reality |
 |---|---|
 | Backend | 725 Java files, 66 controllers, 54 Flyway migrations, 93 test classes |
-| Frontend | 319 TS/TSX files, 22 modules, 69 pages |
-| Built end-to-end | Auth/Users/Roles, Tenant & Settings, Supplier, Customer, Category, Brand, Product, Inventory, Purchase, Quotation, Invoice, Payment, Expense, Project, Labour, Coupon, Dashboard |
-| Frontend tests | `frontend/tests/` — Playwright, three suites (auth, product grid, responsive), run with `node tests/run.mjs` against the built `dist/` |
-| Backend-only | Notification (email live, SMS/WhatsApp stubbed), AI chat, Legal/user-consent (entities only, no controller) |
+| Frontend | 325 TS/TSX files, 24 modules, 69 pages |
+| Built end-to-end | Auth/Users/Roles, Tenant & Settings, Supplier, Customer, Category, Brand, Product, Inventory, Purchase, Quotation, Invoice, Payment, Expense, Project, Labour, Coupon, Dashboard, Address map picker (CR-076, Leaflet + OSM, no key) |
+| Frontend tests | `frontend/tests/` — Playwright, seven suites (auth, product grid, responsive, page header, sidebar, onboarding, address map), **133 assertions**, run with `node tests/run.mjs` against the built `dist/`. `newPage` seeds the CR-075 tour as already seen; pass `firstVisit: true` to test first-run behaviour |
+| Backend-only | Notification (email live via SMTP or SendGrid, SMS live via Twilio, WhatsApp live per tenant - CR-074), AI chat, Legal/user-consent (entities only, no controller) |
 | Not present | Any PWA surface, any offline/IndexedDB layer (CR-043 was never built) |
 
 **BUG-ENV-001 is CLOSED.** `mvn clean compile` and `tsc -b --force` both pass
@@ -293,7 +293,7 @@ false picture.
 None outstanding. The document-number race previously listed here was fixed by
 **CR-041** (`document_sequence`, V29, `SELECT … FOR UPDATE`).
 
-The full suite is green as of 2026-09-09: **474 unit tests and 217
+The full suite is green as of 2026-09-12: **510 unit tests and 231
 Testcontainers integration tests**, `mvn clean verify`, exit 0 — verified on
 the merge result itself, in a clean worktree, not on a working tree carrying
 uncommitted fixes. That distinction is not pedantic: it is exactly what caught

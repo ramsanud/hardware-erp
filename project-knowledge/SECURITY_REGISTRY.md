@@ -134,7 +134,17 @@ is protected by `SameSite=Strict` + path scoping.
 ## Never logged, never returned, never audited
 
 passwords · password hashes · raw refresh tokens · raw reset tokens ·
-JWT secret · database password · mail password · full JWT strings
+JWT secret · database password · mail password · full JWT strings ·
+Twilio auth token · SendGrid API key · tenant WhatsApp access tokens
+
+CR-074 note: `SmsNotificationProvider` and `SendGridEmailProvider` log the
+recipient and the message body when a channel is unconfigured (so an operator
+can see what *would* have been sent) and echo the provider's own error text on
+a rejection. Neither ever logs the credential — the Twilio Basic header is
+built at the call site and never held in a logged variable, and both providers'
+"not configured" messages name the **environment variable to set**, never a
+value. Keep that split when adding a provider: the message is diagnostic, the
+credential is not.
 
 ## Multi-tenancy (CR-016, added to this registry 2026-08-23 — see MASTER_PROJECT_STATUS.md §1 for why this section was missing until now)
 

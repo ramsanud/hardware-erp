@@ -357,3 +357,75 @@ Lessons learned. Read before every module; append after every module.
     registers two throwaway shops per test instead and resets one of
     those. Same reasoning as `WhatsAppConnectionSecurityIT`'s upsert and
     `SupplierControllerIT`'s unique-per-test values, one step further.
+57. A second constructor added purely as a test seam breaks Spring
+    injection silently at *runtime*, not at compile time. Giving
+    `SmsNotificationProvider` a package-private
+    `(properties, mapper, httpClient)` constructor beside its public
+    `(properties, mapper)` one (CR-074) left two unannotated
+    constructors, so Spring stopped autowiring, fell back to a
+    no-arg constructor that does not exist, and the whole application
+    context failed to start. **Every unit test still passed** - they
+    call the constructors directly and never ask Spring for the bean.
+    Annotate the injectable constructor with `@Autowired` whenever a
+    class gains a second one. The class of lesson is broader: unit
+    tests cannot see wiring, so a change to a bean's construction is
+    only proven by a test that actually loads the context
+    (`PermissionCodeConsistencyTest`, `SecurityFilterRegistrationTest`),
+    which is one more reason `mvn clean verify` with Docker up is the
+    real gate and `mvn test` is not.
+58. Making one channel of a cross-cutting concern real exposes every
+    other caller that reached past the abstraction. CR-074 switched the
+    EMAIL notification provider to SendGrid and found three separate
+    places - password-reset mail, invoice PDF mail, and the Settings
+    "test email" diagnostic - each holding its own `JavaMailSender` and
+    its own `spring.mail.username` check. A deployment configured for
+    SendGrid alone would have sent invoices and **silently dropped every
+    password-reset link**, with the diagnostic button cheerfully testing
+    a path real mail no longer took. Before swapping the implementation
+    behind any provider interface, grep for direct users of the
+    underlying client (`JavaMailSender`, `HttpClient`, an SDK type) -
+    the ones that never went through the interface are exactly the ones
+    that will not move with it.
+
+18. **A failing test suite in this repo is not a failing test suite until
+    you have re-run it in a private worktree.** Multiple Claude sessions
+    work this checkout at once, and Maven's `target/` is shared mutable
+    state: one session's `mvn clean` deletes the class files another
+    session's suite is halfway through loading. On 2026-09-09 that cost
+    three full `mvn clean verify` runs and produced three different,
+    entirely fictional "bugs":
+
+    | Run | Symptom | Real cause |
+    |---|---|---|
+    | 1 | `DataResetIT`, `SupportTicketFlowIT` — *Unable to find a `@SpringBootConfiguration`* | `target/classes` emptied mid-run; these two are last alphabetically, so they ran after the wipe |
+    | 2 | `RateLimitIT` — *No qualifying bean of type `TotpService`* | same wipe, caught during a component scan |
+    | 3 | 101 of 108 integration tests | `ClassNotFoundException: RateLimitFilter$CachedBodyHttpServletRequest` — a nested class file that vanished underneath the JVM |
+
+    Every one of them passed on an isolated re-run, and the same commit
+    then gave **510 unit + 228 integration tests, exit 0** in a clean
+    worktree. The tell is the *shape* of the error: `ClassNotFoundException`,
+    "no qualifying bean" for an unconditional `@Service`, or a failed
+    `@SpringBootConfiguration` search are all **"a classpath scan found
+    nothing"** — a category that essentially never means the code changed
+    and almost always means the class files moved. A genuine regression
+    fails an assertion.
+
+    So: `git worktree add --detach <tmp> <commit>` and verify there. It
+    gets its own `target/`, it pins the exact commit rather than a tree
+    someone else is still typing into, and it is the only way to make the
+    "verified on the merge result itself, in a clean worktree" claim in
+    CLAUDE.md honestly. Never "fix" a test that fails this way — there is
+    nothing to fix, and the edit will be wrong.
+
+19. **A DOM node inside a Radix dialog does not exist when an effect keyed
+    on `open` runs.** Radix's `Portal` renders nothing on its first pass and
+    mounts its children from a layout effect, so `useEffect(() => { if
+    (!ref.current) return; ... }, [open])` sees `null`, returns, and never
+    runs again — the dialog appears, the thing that needed the node does
+    not. CR-076's map dialog shipped its first test run exactly like that:
+    dialog open, no Leaflet map, a 30-second Playwright timeout. Hold the
+    node in state with a callback ref (`const [el, setEl] = useState<
+    HTMLDivElement | null>(null); <div ref={setEl} />`) and key the effect
+    on `el`; it then runs when the element is really there and cleans up
+    when it goes. Applies to anything that measures or mounts into a dialog
+    — maps, canvases, charts, signature pads.

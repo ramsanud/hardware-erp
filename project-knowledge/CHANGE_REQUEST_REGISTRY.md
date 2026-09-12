@@ -79,7 +79,11 @@ Nothing is implemented from conversation memory.
 | CR-067 | 2026-09-08 | User | Shop data reset, behind a CAPTCHA and a typed confirmation | **APPLIED, 2026-09-09** |
 | CR-069 | 2026-09-08 | User | Premium auth screens, rebuilt on theme tokens | **APPLIED, 2026-09-09** |
 | CR-070 | 2026-09-09 | User | Stock list filters to what is actually out of stock | **APPLIED, 2026-09-09** |
+| CR-073 | 2026-09-09 | User | Contact admin accepts an optional screenshot. Same 2MB / PNG-JPEG-WebP rule as every other image upload, emailed to support as a MIME attachment and never stored. The JSON endpoint keeps working unchanged; a second mapping separated by `consumes` handles the multipart case. | **APPLIED, 2026-09-09** |
 | CR-071 | 2026-09-09 | Claude | Documentation only. Rebuild `FEATURE_REGISTRY.md` and `MODULE_DEPENDENCY_MAP.md` against the real source tree; both had drifted far enough to mislead — they named MySQL as the database and listed shipped modules as "planned". Records the `product` ↔ `invoice` package cycle rather than hiding it. No code change. | **APPLIED, 2026-09-09** |
+| CR-074 | 2026-09-09 | User | SMS goes real over Twilio; email can move to SendGrid with `EMAIL_PROVIDER=sendgrid`. Credentials are app-wide, not per tenant (unlike CR-056 WhatsApp). Collapses the three divergent direct-`JavaMailSender` paths — password reset, invoice PDF, Settings test button — onto one `EmailTransport`, so a SendGrid deployment cannot silently drop password-reset mail. | **APPLIED, 2026-09-09** |
+| CR-075 | 2026-09-09 | User | A first-visit guided tour that explains the application, built from the permissions the signed-in person actually holds, so an owner, accountant, storekeeper and auditor each get their own walkthrough. Skippable at every step and replayable from the header. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-09** |
+| CR-081 | 2026-09-12 | User | The approved sign-in design, implemented: a 50/50 split with a forest-green hero over a shop interior, a new post-and-lintel H brand mark (also the favicon and the sidebar fallback), and one `AuthCard` shell for all six auth screens. Default colour theme becomes Emerald so a first-time visitor sees the brand. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-12** |
 ---
 
 
@@ -4185,3 +4189,529 @@ quietly absent from it.
 integration tests, 0 failures, exit 0. Frontend `tsc -b --force` and
 `vite build` both exit 0. `registry/static_check.py` **not executed** —
 python3 is not installed on this machine (hard rule 10).
+
+---
+
+## CR-072 — The business audit trail becomes readable (APPROVED, 2026-09-09)
+
+**Approval.** Directed by the product owner on 2026-09-08 when they selected
+the deferred backlog as work to take on. CR-070 investigated this, found it
+unsafe to build as scoped, and recorded exactly what it needed — "a `tenant_id`
+column on `activity_log`, written at all call sites, plus a backfill decision
+for existing rows". This is that CR.
+
+### The problem CR-070 stopped at
+
+`activity_log` is written by roughly ten services under CR-015, carries
+before/after values, and **no controller has ever read it back**. It could not
+safely gain one: V3 created the table with no `tenant_id`, no migration since
+added one, and `ActivityLogRepository.search(...)` filters by module, entity
+and user but not by tenant. A shop-wide viewer over that query would have
+served every tenant's business changes to any `AUDIT_VIEW` holder — the same
+class of defect as BUG-SEC-001.
+
+### What CR-070 got wrong, and it is good news
+
+CR-070 sized this as "ten call sites". **There is exactly one.** Every module
+calls `created` / `updated` / `deleted` / `action`, and all four funnel into a
+single `write(...)` in `ActivityLogServiceImpl`. The tenant is stamped there,
+once, from `SecurityUtils.currentTenantId()` — the same JWT-derived source
+every other tenant-scoped query uses, never a request parameter.
+
+### The backfill, which was the genuinely hard part
+
+Existing rows cannot all be attributed. V55 backfills from `user_id` through
+`app_user.tenant_id`, which covers every row written by a signed-in user.
+Rows written by a scheduled job or an import have a null `user_id` and stay
+**null**.
+
+**Null is the safe value, by construction.** The query filters
+`tenant_id = :tenantId`, and `NULL = anything` is never true in SQL, so an
+unattributable row is invisible to every tenant rather than visible to all of
+them. The column is therefore deliberately **nullable with no default** — a
+`NOT NULL` with a backfill guess would have had to invent an owner for rows
+whose owner is genuinely unknown, and inventing an owner in an audit table is
+worse than admitting the row is orphaned.
+
+### Read-only, and no delete
+
+There is no endpoint to edit or remove a row and none should be added. An
+audit trail an operator can prune is not an audit trail. It reuses `AUDIT_VIEW`
+rather than inventing a permission code: the security log viewer already
+answers "who changed what" with it, and splitting the two would mean granting
+two permissions to answer one question.
+
+### BUG-BE-002, found in the one method this CR had to change
+
+`write(...)` carries `@Transactional(propagation = REQUIRES_NEW)` with a
+comment explaining that a logging failure must never roll back the user's real
+work. **The annotation was inert.** It sits on a `protected` method invoked as
+`this.write(...)` from `created`/`updated`/`deleted`/`action` in the same
+class, so Spring's proxy is bypassed — this project uses proxy-based AOP, with
+no AspectJ weaving anywhere — and the log write silently joined the caller's
+transaction instead of getting one of its own.
+
+The `catch (DataAccessException)` below it did not save this: by the time a
+constraint violation is caught, the surrounding transaction is already marked
+rollback-only, so the "never breaks the user's action" guarantee failed in
+exactly the case it was written for. Fixed by moving the write into its own
+`ActivityLogWriter` bean, so the call crosses a proxy boundary and the
+propagation takes effect. See `BUG_REGISTRY.md`.
+
+
+---
+
+## CR-073 — Contact admin accepts a screenshot (APPLIED 2026-09-09)
+
+**Raised by:** User. **Type:** new capability on an existing endpoint.
+
+### Why
+
+The dialog asked "What is going wrong?" and accepted only prose. The report
+that prompted this - "my invoice name was not show properly can you check and
+fix it" - is exactly the case where one screenshot replaces three rounds of
+questions, and the reporter already had it on screen.
+
+### Shape, and what was deliberately not built
+
+The screenshot is **emailed and never stored**. Persisting it would mean a
+table, a retention policy, a tenant-scoped download endpoint and a viewer, for
+a file only support ever opens - and support already has it, in the mailbox
+where the report landed. `notification_log.body` keeps the file name, type and
+size, so the record still says a screenshot was part of the report.
+
+| Piece | Decision |
+|---|---|
+| Endpoint | A **second mapping on the same path**, separated by `consumes`. The JSON form is a published contract with its own Postman entry; a reporter attaching nothing should not be made to send a multipart body |
+| Validation | The existing `ImageValidation.validate(file, PHOTO_TYPES)` - 2MB, PNG/JPEG/WebP. One shared validator, so this limit cannot drift from avatar, logo and expense-receipt uploads |
+| Provider interface | A **default method** carrying the attachment, not a sixth parameter on the existing `send`. SMS and WhatsApp have no notion of an email attachment; the default drops it and still delivers, so neither provider changed at all |
+| Field binding | `@Valid @ModelAttribute ContactAdminRequest`, so subject and message obey the same Bean Validation down both paths |
+
+### Verified
+
+`mvn -o clean compile` exit 0. Five new unit tests in `EmailAttachmentTest`
+covering: no attachment stays on the plain `SimpleMailMessage` path; an
+attachment becomes a real MIME multipart carrying the named part; an
+unconfigured mailbox still returns LOGGED_ONLY rather than failing; a
+non-email channel ignores the file and still sends; and `describe()` reports
+the file without exposing its bytes.
+
+Exercised against the running application, not only in tests: multipart with a
+PNG returns 200, the JSON path still returns 200 unchanged, a `text/plain`
+upload is refused with `UNSUPPORTED_FILE_TYPE` and a 3MB image with
+`FILE_TOO_LARGE`. Driven through the real dialog in a browser: a non-image is
+rejected client-side before any upload, a valid PNG shows a thumbnail with its
+name and size and a remove control, and Send posts `multipart/form-data` and
+closes the dialog.
+
+`registry/static_check.py` **not executed** - python3 is not installed on this
+machine (hard rule 10).
+
+## CR-074 — SMS over Twilio, email over SendGrid, and one way to send mail (APPLIED 2026-09-09)
+
+**Raised by:** User — "implement the email notification and sms notification
+trigger with twilio api". **Type:** real providers behind two existing channels.
+
+### Why
+
+The triggers were never the missing part. `notifyInvoiceCreated` and
+`notifyPaymentReceived` have fired on every invoice and payment since CR-027,
+and `notification_log` recorded each attempt. What they reached was a stub:
+`SmsNotificationProvider` logged the message it would have sent and returned
+`LOGGED_ONLY`, because no SMS account existed. Every customer-facing SMS this
+application has ever "sent" was a line in a log file.
+
+Email was already real over SMTP. It moves to SendGrid because the user asked
+for the Twilio stack for both halves, and because the v3 API returns a message
+id where SMTP returns nothing — `notification_log.provider_message_id` has been
+sitting null for every email ever sent, which is the column that makes an "it
+never arrived" report answerable.
+
+### App-wide credentials, not per tenant — and why that differs from CR-056
+
+WhatsApp is tenant-scoped (`tenant_whatsapp_connection`, encrypted token,
+Settings screen). SMS and email here are not, and the difference is real rather
+than an inconsistency: a WhatsApp Business message **must** come from the
+shop's own verified number, so the token has to be the tenant's. An SMS and a
+notification email go out from one sender the platform owns and pays for.
+Per-tenant Twilio accounts would mean a new table, an encrypted-token column, a
+service, a controller and a Settings screen — a build on the scale of CR-056.
+Offered to the user, who chose app-level config. If shops later need their own
+Twilio accounts, that is its own CR, not an extension of this one.
+
+### Shape
+
+| Piece | Decision |
+|---|---|
+| SMS | `SmsNotificationProvider` **kept as the single bean claiming `SMS`**, with Twilio as its backend. A second "Twilio" bean beside the stub would have collided silently in `NotificationServiceImpl`'s channel map — whichever Spring iterates last wins, no error |
+| Twilio call | `POST /Accounts/{sid}/Messages.json`, HTTP **Basic** auth (not Bearer, unlike Meta), form-encoded. `sid` from the response is stored as `provider_message_id` |
+| Email provider choice | `app.notifications.email.provider` = `smtp` (default) or `sendgrid`, each provider `@ConditionalOnProperty` — the same pattern `app.ai.provider` already uses, so exactly one EMAIL bean exists |
+| SendGrid call | `POST /v3/mail/send`, Bearer key, JSON. 202 Accepted with an empty body; the id arrives in the `X-Message-Id` header |
+| Unconfigured | Unchanged in spirit: blank credentials mean log-and-`LOGGED_ONLY`, never an error. A deployment that configures neither keeps working exactly as before |
+| Number format | 10 stored digits become `+919876543210`. Deliberately **not** shared with `WhatsAppBusinessProvider`'s helper — Meta wants E.164 *without* the `+`, Twilio *with* it |
+
+### The defect this surfaced, fixed in the same commit
+
+Switching the email channel alone would have left three divergent email paths.
+`SmtpMailService` (password-reset links), `InvoiceEmailServiceImpl` (the
+invoice PDF) and `MailDiagnosticServiceImpl` (the Settings "test email" button)
+each reached for `JavaMailSender` and `spring.mail.username` directly. A
+deployment configured with a SendGrid key and no `MAIL_USER` would have looked
+healthy, sent invoice notifications, and **silently dropped every
+password-reset link** — invisible until a locked-out owner reported it. The
+mail diagnostic would have compounded it by testing a path real mail no longer
+takes.
+
+All three now send through one `EmailTransport`, implemented by whichever
+provider is active. `SmtpMailService` was renamed `PasswordResetMailService`:
+what it does is send the password-reset mail, and SMTP is no longer necessarily
+how. The diagnostic's "not configured" text is now the provider's own, so a
+SendGrid deployment is told to set `SENDGRID_API_KEY`, not `MAIL_USER`.
+
+### Stated limitation, not hidden
+
+India's TRAI DLT regime requires every commercial SMS sender id and template to
+be registered with a real telecom operator before a message reaches an Indian
+handset. **Twilio will accept these calls and return a message SID regardless**;
+the operator then drops the message downstream. No code here can satisfy that
+registration. `TWILIO_MESSAGING_SERVICE_SID` is the field that carries a
+DLT-registered sender id and is the one to configure for a live Indian
+deployment; `TWILIO_FROM_NUMBER` is for testing and non-Indian numbers. This is
+the same class of honest limit already recorded for WhatsApp templates under
+CR-056.
+
+### Deliberately not built
+
+- **A "Test SMS" button.** Email has `POST /v1/settings/mail/test` and WhatsApp
+  has its own test send; SMS has neither, so a wrong Twilio credential stays
+  invisible until a customer does not get a message. Worth its own CR — it
+  needs an endpoint, a permission and a Settings control.
+- **Per-tenant Twilio/SendGrid accounts.** See above.
+- **Delivery-status webhooks.** Twilio and SendGrid both post delivery events,
+  and `DELIVERED`/`READ` already exist on `NotificationStatus` for exactly this
+  — but only Meta's webhook is built (CR-056). Both would need a signed public
+  endpoint each.
+
+### Verified
+
+`mvn -o clean verify`, exit 0, with Docker running: **499 unit tests and 224
+Testcontainers integration tests, 0 failures, 0 errors.**
+
+20 of those unit tests are new — `TwilioSmsProviderTest` (10) and
+`SendGridEmailProviderTest` (10) — covering, for each provider: unconfigured
+logs rather than sends and never calls the API at all; a real accepted send
+returns SENT carrying the provider's own message id; the request's URL, method,
+auth scheme (Twilio Basic, SendGrid Bearer) and content type; the exact wire
+payload (Twilio's form fields and Messaging-Service precedence, SendGrid's v3
+nesting and base64 attachment); a provider rejection throwing with the
+provider's own error text rather than a generic failure; and each still
+claiming exactly one channel.
+
+One defect was caught during this work by the existing Spring context tests and
+not by any unit test: giving `SmsNotificationProvider` a second, package-private
+constructor as a test seam left two unannotated constructors, so Spring fell
+back to a default constructor that does not exist and the whole application
+context failed to start. Unit tests passed throughout — they call the
+constructors directly. `@Autowired` on the injectable constructor of both new
+providers fixes it. Worth recording because the test seam is the thing that
+caused it, and the next provider added this way will hit the same trap.
+
+
+### Email verified end to end, against a real mail server
+
+`EmailProviderSelectionTest` (7 tests, `ApplicationContextRunner`, no Docker)
+closes the one gap the provider unit tests could not: they construct each
+provider directly, so they would keep passing if **both** EMAIL beans were
+active or **neither** was. It asserts that the default and `provider=smtp`
+both yield `EmailNotificationProvider`, that `provider=sendgrid` yields
+`SendGridEmailProvider` **and removes the SMTP bean entirely**, that exactly
+one `NotificationProvider` claims EMAIL either way, and that both new
+property prefixes actually bind — a typo in a `@ConfigurationProperties`
+prefix leaves every field null, which reads as unconfigured and silently
+logs instead of sending.
+
+`LiveMailSmokeTest` sends a **real** message through the whole chain
+(`MailDiagnosticServiceImpl` → `EmailTransport` → `EmailNotificationProvider`
+→ `JavaMailSender` → SMTP), including the MIME-multipart attachment path the
+invoice PDF and support screenshot use. It is opt-in — skipped unless
+`MAIL_LIVE_TEST=true` — because a test that mails a real mailbox on every
+`mvn verify` would spam it and fail for network reasons unrelated to the code.
+It sends to `MAIL_USER`, so the configured account mails itself and no third
+party is ever reached.
+
+**What running it found, and it is not a code defect.** The chain works: the
+connection opened, STARTTLS negotiated, and Gmail answered. What Gmail
+answered was `535-5.7.8 Username and Password not accepted` — the
+`MAIL_PASSWORD` in this machine's `.env` is dead (an app password is revoked
+the moment 2-Step Verification is turned off on the account). The value
+reached Gmail intact: the file is LF, and the value is 16 unquoted letters
+with no whitespace or trailing CR, exactly an app password's shape.
+
+This is the **worst runtime state a channel can be in, and the reason the
+diagnostic endpoint exists**: `MAIL_USER` is non-blank, so `isConfigured()`
+is true, so the application does *not* fall back to LOGGED_ONLY — it attempts
+a real send that fails, writes `FAILED` to `notification_log`, and moves on.
+Invoice emails and password-reset links are silently failing in this
+environment right now, and were before CR-074 too. `POST
+/v1/settings/mail/test` surfaces it in one click, returning Gmail's own
+sentence rather than a boolean — which is precisely what this run
+demonstrated.
+
+The SendGrid half could not be exercised live: no `SENDGRID_API_KEY` exists in
+this environment. Its request shape, payload nesting, base64 attachment,
+header-borne message id and error handling are covered by the 10 unit tests,
+and its bean selection by the context test above — but **no real SendGrid
+delivery has been proven**, and this entry does not claim otherwise.
+
+Suite after these additions: `mvn -o clean verify` exit 0 — **508 unit tests
+run (0 failures, 2 skipped: the opt-in live pair) and 224 integration tests**.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this
+machine (hard rule 10).
+
+
+---
+
+## CR-075 — A first-visit tour that explains the application (APPLIED 2026-09-09)
+
+**Raised by:** User. **Type:** new frontend capability. `SCOPE: FRONTEND ONLY`.
+
+### Why
+
+The application had no answer to "what is this and where do I start?".
+Every screen assumed you already knew the shop's workflow. The ask named the
+people who do not: an owner opening it for the first time, an accountant who
+only ever touches expenses, a storekeeper counting stock, an auditor who wants
+to know what is recorded. **A first visitor needed a tip, and a way out of it.**
+
+### Shape
+
+A dialog-based walkthrough, offered once per user, skippable at every step and
+replayable from a `?` button in the top bar.
+
+| Piece | Decision |
+|---|---|
+| Who sees which step | **Filtered by permission, never by role code.** Roles here are rows in a table the owner edits (CR-008), so `roleCode === 'ACCOUNTANT'` would describe screens a custom role cannot open. The same predicate already hides the rail entry and the route, so the tour can never point at a page the server would refuse |
+| A dialog, not spotlight bubbles | Coach marks anchored to rail entries break when the rail is collapsed, when the entry is permission-hidden, or on a phone where the rail is an off-screen drawer — all normal states here (CR-061). A dialog says the same thing at every width |
+| Storage | Client-side, scoped per user id via `themeScope` — the precedent CR-068 set for presentation state with no business consequence. The honest cost: a new device offers the tour again, which for a welcome is closer to right than wrong. "It must follow me between devices" is a new CR and a real table, exactly as CR-068 says |
+| Skip | Always visible, never behind a menu, and **every** exit route (Skip, Finish, X, Escape, overlay) records it as seen. A welcome that reappears after being dismissed is worse than none |
+| Re-entry | `?` in the top bar (`sm` and up) plus "How this works" in the profile menu, so it is reachable at every width without crowding the phone bar (BUG-FE-035) |
+| Version | `TOUR_VERSION` re-shows the tour to everyone when the content genuinely changes; a typo fix must not interrupt the whole shop |
+
+Steps are ordered as the working day runs — sell, who to, what you buy, what
+you owe — rather than in the order the modules were built, so reading straight
+through conveys the shape of the business.
+
+### What this deliberately is not
+
+**Not a Platform Admin feature.** The console has its own layout and its own
+audience — internal staff, not shop users — and a tour of counter workflows
+would be wrong there. It is unaffected.
+
+**Not backend work.** No entity, no migration, no endpoint, no permission.
+
+### Verified
+
+`tsc -b --force` exit 0, `vite build` exit 0, frontend suite **111/111**
+(was 95/95) — 16 new assertions in `frontend/tests/onboarding/tour.spec.mjs`
+covering: a first visit is offered the tour unprompted and greeted by name; an
+owner sees all 11 steps; Next/Back move; Back is absent on step 1; Skip closes
+it; it stays gone across a navigation **and a full reload**; the `?` button
+reopens it at step 1; Escape dismisses it; a returning user is never
+interrupted; and a storekeeper holding only `PRODUCT_VIEW`/`INVENTORY_VIEW`
+gets **4** steps that include stock and omit both the people/permissions and
+audit-trail steps.
+
+**One harness change was required, and it is the interesting part.** Every
+Playwright context starts with empty `localStorage`, so the new tour opened
+over every page the existing suites measure and its overlay swallowed their
+clicks — the products spec failed first. `newPage` now seeds the tour as seen
+by default and takes `firstVisit: true` to opt in. **A modal that greets new
+users is, to a test suite, a modal that greets every test**; any future
+first-run interruption has to make the same accommodation.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this
+machine (hard rule 10).
+
+## CR-076 — Choose an address on a map (APPLIED 2026-09-12)
+
+**Raised by:** User ("in address selection field add map to choose also").
+**Type:** new frontend capability. `SCOPE: FRONTEND ONLY` — no entity, no
+migration, no endpoint; the five address columns already on `customer`,
+`supplier` and `tenant` are all it writes.
+
+### Why
+
+Every address in the application was typed by hand into five fields, and a
+salesperson at the counter usually knows the place — the landmark, the street
+— better than its pincode or the spelling the map uses. On a phone, at a
+customer's site, typing an address is the slowest thing on the form. The map
+turns "where is it" into "tap it".
+
+### Shape
+
+A **"Pick on map"** button beside the address fields opens a dialog (a bottom
+sheet on phones, like every dialog since CR-061) with a Leaflet map on
+OpenStreetMap tiles. Tap the spot, drag the pin, search a landmark, or use the
+phone's GPS; the resolved address is **previewed and confirmed** before it is
+written into the fields, which stay editable afterwards. A search runs only on
+an explicit submit, never per keystroke.
+
+| Piece | Decision |
+|---|---|
+| Map provider | **Leaflet + OpenStreetMap, no API key.** A Google Maps key means billing set-up per deployment and a secret in the frontend bundle; OSM needs neither. Both the geocoder (`VITE_GEOCODER_URL`) and the tiles (`VITE_MAP_TILE_URL`) can be pointed at a self-hosted instance for an installation without internet access or one that outgrows Nominatim's one-request-per-second policy |
+| Where it appears | Customer form, Supplier wizard (address step), Supplier quick-add (inside the purchase flow), Shop settings, Project site address. One shared component — `shared/components/AddressMapPicker.tsx` — so a sixth caller cannot drift |
+| What it writes | `addressLine1` (house number, building, street), `addressLine2` (locality), `city`, `stateCode`, `pincode`. **The GST state code is derived from the ISO 3166-2 code** the geocoder returns (`IN-TN` → `33`), with a name match as fallback — the same "never make the user know Tamil Nadu is 33" rule as CR-023 |
+| Blanks | A field the geocoder cannot resolve is **left as it was**, not cleared. An empty pincode from the map means "unknown here", not "this place has none" |
+| Nothing pre-selected | Editing an existing record centres the map near the typed address but places no pin, so an accidental tap cannot replace a precise typed address with a city-centre guess |
+| Indian map data | Civic-body names are stripped from the city ("Chennai Corporation" → "Chennai"; "… Municipal Corporation", "Nagar Nigam", "Mahanagar Palika" likewise) and ward/zone labels from the locality ("Zone 10 Kodambakkam" → "Kodambakkam", "Ward 132" dropped). Neither belongs on an invoice |
+| Bundle | Leaflet (~46 kB gzipped) is a **lazily loaded chunk** fetched the first time the map is opened, not on every page load |
+| Single-line callers | Project's `siteAddress` and the supplier quick-add's single address line receive the parts joined, so the locality is not lost |
+| Deployment | `vercel.json` sent `Permissions-Policy: geolocation=()`, which would have made "My location" fail silently in production. Now `geolocation=(self)`. The backend's identical header is unaffected — it applies to API responses, not the document |
+
+### What this deliberately is not
+
+**No coordinates are stored.** That would be a new column on three tables, a
+DTO change and a migration — and the value of storing them (an "Open in Maps"
+link on the customer page for delivery staff, distance from the shop, a map of
+all customers) is a feature of its own. Proposed as a follow-up CR, not built
+here. Until then, re-opening a record centres the map by geocoding the typed
+address, which is right to the street rather than the door.
+
+**No autocomplete-as-you-type.** Nominatim's usage policy forbids it, and the
+search box says so by needing Enter or the Search button.
+
+**Not on the Register page** — it collects no address.
+
+### Verified
+
+`tsc -b --force` exit 0, `vite build` exit 0, frontend suite **133/133**
+(was 111/111) — 22 new assertions in
+`frontend/tests/customers/address-map.spec.mjs`, on desktop and on a 390×844
+touch viewport: the dialog opens with a live Leaflet map; nothing is
+pre-selected; a tap makes exactly one reverse-geocode call; a pin appears; the
+preview shows city, state and pincode; "Use this address" fills all five
+fields including the derived GST state; the civic-body suffix and ward/zone
+labels are gone; no page errors. The geocoder and tile server are stubbed at
+the network edge, so the spec runs offline and deterministically.
+
+Also exercised live against the public Nominatim and OSM tile servers on both
+viewports (search "Ashok Nagar, Chennai", choose a result, apply) — which is
+how the "Chennai Corporation" city name was found and fixed before this was
+recorded.
+
+**One defect cost a cycle and is worth keeping:** Radix's `Portal` renders
+nothing on its first pass and mounts from a layout effect, so a `useEffect`
+keyed on the dialog's `open` prop saw a **null** container ref and never
+created the map — the dialog rendered, the map did not. A callback ref held in
+state (`const [container, setContainer] = useState<HTMLDivElement | null>`)
+re-runs the effect when the element actually exists. Anything that needs a DOM
+node inside a Radix dialog on open has to do the same.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this
+machine (hard rule 10).
+
+### Completed on 2026-09-12 — the second half
+
+The first cut shipped the walkthrough. Reviewed against the actual ask —
+"they need to easily identify how to use the application" — it was half of
+one: it explained the business, not the screen in front of you, and it never
+said in one place what *this* person could do. Three additions:
+
+| Addition | What it does |
+|---|---|
+| **Welcome step** | Step 1 now names the shop, the role, and lists **the areas this person can reach** as chips — derived from the same permission filter, so an owner sees eight and a storekeeper sees one. This is the "easy to identify" moment; the rest of the tour elaborates it |
+| **Per-page first-visit tips** | A banner above the page the first time each screen is opened — 26 screens, keyed by route prefix, longest match first so `/labour/attendance` gets its own rather than a generic one. Copy says what the screen is *for* and the one thing most people come to do. **Two dismissals, and the difference is the design:** *Got it* hides this tip and the next screen still gets its own; *Turn off tips* hides them all. Someone closing four in a row is saying something |
+| **Replay restores tips** | Pressing `?` again turns tips back on. Asking "how does this work?" is the one unambiguous signal they are wanted |
+
+A banner and not a dialog for the tips, deliberately: a tip must never block
+the screen it is describing. It sits in the flow and pushes the page down by
+its own height. No permission field either — a tip shows only on a page you
+have already reached, and the route guard has done the gating by then.
+
+**Three defects found by looking, not by testing.** Screenshots at 1280 and
+390 were taken and read before this was called done:
+
+1. The welcome sentence read *"signed in to as Owner"* when the shop had no
+   name — a dangling preposition for any tenant that has not set one yet.
+   Both halves are now optional.
+2. The copy promised *"the ? button brings it back"* while that button was
+   hidden below `sm` — a phone user would look for something that was not
+   there. It is now shown at every width; the bar has the budget (four icons
+   at 390px; BUG-FE-035 was about eight text buttons).
+3. Focus landed on **Skip**, so Enter — the key people press to mean
+   "continue" — would have dismissed the whole tour. It now starts on Next.
+
+**Verified:** `tsc` 0, `vite build` 0, suite **147/147** (30 onboarding
+assertions, was 16), run twice against a build served from its own directory
+so the other session's rebuilds could not touch it. New assertions cover the
+role chips for both fixtures, every tip transition (shown → Got it → next
+screen still shown → dismissed stays dismissed → Turn off silences all →
+replay restores), nested-route matching, and the phone: the tour fits 390px,
+Skip is visible without scrolling, and works.
+
+---
+
+## CR-081 — The approved sign-in design, implemented (APPLIED 2026-09-12)
+
+**Raised by:** User. **Type:** frontend redesign. `SCOPE: FRONTEND ONLY`.
+
+### Why this one is different
+
+This is the **fifth** shape of the auth panel, and the first built to a design
+the owner approved *as a render* before it was code. CR-062 cut a billboard
+down to a strip ("too absurd"); CR-069 brought glass tiles back ("very low
+quality"); an uncommitted editorial pass from another session removed the card
+entirely. All three were written from a brief and judged on the result. This
+time the brief became a design canvas first (`Hardware ERP Sign In`,
+2026-09-12), the owner signed off on it, and the code reproduces that canvas.
+The user's instruction was "exact UI from that image, do not change anything".
+
+### Shape
+
+| Piece | Decision |
+|---|---|
+| Layout | 50/50 at `lg`. Left: `--sidebar` hero over a softly blurred shop interior with a token-driven overlay, brand lockup, eyebrow, headline with the accent phrase in `--sidebar-active`, one paragraph, a 2×2 grid of capabilities with glowing icon tiles, a cursive slogan bottom-left. Right: `bg-muted/30` with two ambient `--primary` blobs, theme toggle top-right, the card centred |
+| Below `lg` | A ~110px `--sidebar` band (mark, name, eyebrow, toggle) then the card, top-aligned. CR-061's ban on `--sidebar` for mobile chrome is about a slab a third of the screen tall; this band is the approved phone artboard |
+| Brand mark | `BrandMark.tsx` — a **post-and-lintel H**: two posts carrying a beam that overhangs them. The overhang is what makes it a mark rather than a letter and it survives at 16px. Used on the hero, the card, the sidebar's no-logo fallback, and the favicon. The wrench is gone from all four |
+| Card | `AuthCard.tsx` — one shell for **all six** auth screens (sign in, verify, enrol, register, forgot, reset): mark + name + tagline, centred heading, page content, lock + "Your data is secure and encrypted". Pages keep their own width. Every `Card` import under AuthLayout is replaced |
+| Controls | 48px, 12px radius, primary-tinted leading icons, arrow on the primary action, `Start over` as a real outlined button — as drawn |
+| Background | `AuthHeroBackdrop.tsx` — the drawn interior (two shelving bays in perspective, stocked; pegboard of tools; warm lamps) at **6px blur**, not the 14px the canvas first used: the owner's verdict on that was "looks blur". Drop a photo at `src/assets/auth-hero.{jpg,png,webp}` and `import.meta.glob` picks it up with no code change; the build never fails on its absence |
+| Slogan face | A **system cursive stack**, not Caveat from Google Fonts. A self-hosted shop has no business fetching a webfont to sign in |
+
+### Every colour is a token — and one default changed
+
+The canvas was drawn in the Emerald theme's resolved values (forest `#0f1f1a`
+= `--sidebar`, emerald `#16794b` = `--primary`, bright `#49df99` =
+`--sidebar-active`) and the code maps each back. On Emerald the page is the
+canvas; on the other ten themes it is the same design in that shop's colours.
+
+**The default colour theme is now `emerald`, was `royal-blue`.** The first
+render in a fresh browser was blue — the sign-in page shows before any
+per-user theme exists, so a first-time visitor would have seen a blue page
+under a green favicon and a green brand mark. The brand is Emerald; the
+default is what the brand looks like. Every other theme stays selectable; only
+the never-chose-one case changes. `findColorTheme` now falls back to the
+default rather than to index 0, so an unknown stored id also lands on Emerald.
+
+### Verified
+
+`tsc -b --force` 0, `vite build` 0. Screenshots at 1440 and 390 of both the
+sign-in and verification screens compared against the canvas before this was
+called done — that comparison is what caught the blue default, a dead dark
+band where the scene's floor sat below the panel (fixed by cropping the
+viewBox), and a card floating mid-screen on the phone (now top-aligned as
+drawn). Frontend suite **192/192** against a build served from its own
+directory. One regression of my own found and fixed on the way: nudging the
+password eye-toggle 4px inward made it overlap the clear button — the
+existing `clear and eye do not overlap` assertion caught it.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this
+machine (hard rule 10).
+
+### Left alone, on purpose
+
+The other session's uncommitted editorial pass over `AuthLayout`, `LoginPage`
+and `LoginForm` was superseded by this and overwritten. Its diff was read in
+full before that; the copy it carried is this brief's copy, so nothing of
+substance was lost.

@@ -4,14 +4,12 @@ import com.hardware.erp.invoice.dto.InvoiceResponse;
 import com.hardware.erp.invoice.service.InvoiceEmailService;
 import com.hardware.erp.invoice.service.InvoiceService;
 import com.hardware.erp.notification.entity.NotificationStatus;
+import com.hardware.erp.notification.service.EmailTransport;
+import com.hardware.erp.notification.service.NotificationAttachment;
 import com.hardware.erp.security.SecurityUtils;
 import com.hardware.erp.tenant.repository.TenantRepository;
-import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 /**
@@ -19,6 +17,11 @@ import org.springframework.stereotype.Service;
  * the owner clicked "Email" and is waiting to see whether it actually sent,
  * the same reasoning NotificationService.contactAdmin() already documents
  * for its own synchronous send.
+ *
+ * Sends through {@link EmailTransport} since CR-074 rather than reaching for
+ * JavaMailSender itself, so that switching this deployment's email provider
+ * to SendGrid moves invoice mail with it instead of leaving this one path
+ * quietly bound to an SMTP account that may no longer be configured.
  */
 @Slf4j
 @Service
@@ -27,10 +30,7 @@ public class InvoiceEmailServiceImpl implements InvoiceEmailService {
 
     private final InvoiceService invoiceService;
     private final TenantRepository tenantRepository;
-    private final JavaMailSender mailSender;
-
-    @Value("${spring.mail.username:}")
-    private String fromAddress;
+    private final EmailTransport emailTransport;
 
     @Override
     public NotificationStatus emailInvoicePdf(Long invoiceId, String toEmail) {
@@ -46,18 +46,13 @@ public class InvoiceEmailServiceImpl implements InvoiceEmailService {
                 .map(com.hardware.erp.tenant.entity.Tenant::getName)
                 .orElse("");
 
-        if (fromAddress == null || fromAddress.isBlank()) {
-            log.info("Mail not configured - would have emailed invoice {} to {}", invoice.invoiceNumber(), toEmail);
-            return NotificationStatus.LOGGED_ONLY;
-        }
-
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true);
-            helper.setFrom(fromAddress);
-            helper.setTo(toEmail);
-            helper.setSubject("Tax Invoice " + invoice.invoiceNumber() + " from " + shopName);
-            helper.setText("""
+            // LOGGED_ONLY when no mail account is configured comes back from the
+            // transport itself now, rather than being decided here - one
+            // definition of "unconfigured", whichever provider is active.
+            return emailTransport.sendEmail(toEmail,
+                    "Tax Invoice " + invoice.invoiceNumber() + " from " + shopName,
+                    """
                     Hello %s,
 
                     Please find attached your tax invoice %s for %s, dated %s.
@@ -65,11 +60,9 @@ public class InvoiceEmailServiceImpl implements InvoiceEmailService {
                     Thank you for your business.
                     %s
                     """.formatted(invoice.customerName(), invoice.invoiceNumber(),
-                    invoice.totalDisplay(), invoice.invoiceDate(), shopName));
-            helper.addAttachment(invoice.invoiceNumber() + ".pdf",
-                    new org.springframework.core.io.ByteArrayResource(pdf));
-            mailSender.send(message);
-            return NotificationStatus.SENT;
+                            invoice.totalDisplay(), invoice.invoiceDate(), shopName),
+                    new NotificationAttachment(invoice.invoiceNumber() + ".pdf", "application/pdf", pdf))
+                    .status();
         } catch (Exception e) {
             log.error("Failed to email invoice {}", invoice.invoiceNumber(), e);
             return NotificationStatus.FAILED;

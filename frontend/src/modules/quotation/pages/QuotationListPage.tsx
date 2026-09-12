@@ -105,7 +105,7 @@ export function QuotationListPage() {
         title="Quotations"
         description="Price quotes for customers - independent of whether they buy."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="quotation" />
             <PermissionGate permission={PERMISSIONS.QUOTATION_MANAGE}>
               <Button onClick={() => navigate(QUOTATION_ROUTES.create)}>

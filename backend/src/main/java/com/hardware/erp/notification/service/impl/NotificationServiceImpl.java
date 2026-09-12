@@ -13,6 +13,8 @@ import com.hardware.erp.notification.entity.NotificationLog;
 import com.hardware.erp.notification.entity.NotificationStatus;
 import com.hardware.erp.notification.repository.NotificationLogRepository;
 import com.hardware.erp.notification.service.NotificationProvider;
+import com.hardware.erp.common.image.ImageValidation;
+import com.hardware.erp.notification.service.NotificationAttachment;
 import com.hardware.erp.notification.service.NotificationSendResult;
 import com.hardware.erp.notification.service.NotificationService;
 import com.hardware.erp.common.exception.BusinessException;
@@ -28,7 +30,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.EnumMap;
@@ -98,14 +103,35 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    public NotificationStatus contactAdmin(String subject, String message) {
+    public NotificationStatus contactAdmin(String subject, String message, MultipartFile screenshot) {
         Long tenantId = SecurityUtils.requireCurrentTenantId();
         AppUserDetails caller = SecurityUtils.requireCurrentUser();
         Tenant tenant = tenantRepository.findById(tenantId).orElse(null);
         String shopName = tenant != null ? tenant.getName() : ("tenant " + tenantId);
 
+        // CR-073. Same 2MB / png-jpeg-webp rule the avatar, logo and expense
+        // receipt uploads already enforce - one shared validator, so a limit
+        // can never drift between the features that share it.
+        NotificationAttachment attachment = null;
+        if (screenshot != null && !screenshot.isEmpty()) {
+            ImageValidation.validate(screenshot, ImageValidation.PHOTO_TYPES);
+            try {
+                attachment = new NotificationAttachment(
+                        StringUtils.getFilename(screenshot.getOriginalFilename()) == null
+                                ? "screenshot" : StringUtils.getFilename(screenshot.getOriginalFilename()),
+                        screenshot.getContentType(), screenshot.getBytes());
+            } catch (IOException ex) {
+                throw new BusinessException("Could not read the attached image. Please try again.");
+            }
+        }
+
         String body = "Shop: %s\nReported by: %s (%s)\n\n%s".formatted(
                 shopName, caller.getFullName(), caller.getMobileNo(), message);
+        if (attachment != null) {
+            // The bytes are not persisted, so the log line is the only lasting
+            // record that a screenshot was part of this report.
+            body += "\n\nAttached screenshot: " + attachment.describe();
+        }
         String fullSubject = "[Support] " + shopName + " - " + subject;
 
         if (adminEmail == null || adminEmail.isBlank()) {
@@ -122,7 +148,7 @@ public class NotificationServiceImpl implements NotificationService {
         NotificationProvider provider = providersByChannel.get(NotificationChannel.EMAIL);
         NotificationStatus status;
         try {
-            status = provider.send(tenantId, NotificationChannel.EMAIL, adminEmail, fullSubject, body).status();
+            status = provider.send(tenantId, NotificationChannel.EMAIL, adminEmail, fullSubject, body, attachment).status();
         } catch (Exception ex) {
             log.error("Failed to email support request to admin", ex);
             status = NotificationStatus.FAILED;

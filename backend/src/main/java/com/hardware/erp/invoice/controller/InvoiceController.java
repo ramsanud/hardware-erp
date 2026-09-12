@@ -88,7 +88,7 @@ public class InvoiceController {
                 .body(pdf);
     }
 
-    /** CR-036 - real SMTP send with the actual PDF attached; LOGGED_ONLY (not an error) when no SMTP account is configured in this environment, same fallback SmtpMailService already uses. */
+    /** CR-036 - real SMTP send with the actual PDF attached; LOGGED_ONLY (not an error) when no SMTP account is configured in this environment, same fallback every other email path in this application uses. */
     @PostMapping("/{id}/share/email")
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).INVOICE_VIEW)")
     public ApiResponse<NotificationStatus> emailInvoice(

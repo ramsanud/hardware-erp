@@ -115,4 +115,46 @@ class StockServiceImplTest {
         assertThat(movement.getBalanceAfter()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(stock.getQuantityOnHand()).isEqualByComparingTo(BigDecimal.ZERO);
     }
+
+    /**
+     * BUG-BE-003. get() and movements() are read-only transactions, and the
+     * lazy "create the row on first access" save() was reachable from both -
+     * which PostgreSQL rejects outright, so the endpoint 500'd for every
+     * product that had no stock row yet.
+     *
+     * StockReadWithoutRowIT proves the endpoint answers; these two assert the
+     * rule that keeps it answering, and they are the ones that fail loudly if
+     * somebody ever "fixes" a future read by handing it a writable transaction.
+     */
+    @Test
+    @DisplayName("BUG-BE-003: get() on a product with no stock row reports zero without saving one")
+    void readingStockNeverWrites() {
+        when(stockRepository.findByTenantIdAndProductId(1L, 42L)).thenReturn(Optional.empty());
+        when(productRepository.findByIdAndTenantId(42L, 1L)).thenReturn(Optional.of(product));
+        when(stockMapper.toResponse(any(Stock.class))).thenAnswer(i -> {
+            Stock passed = i.getArgument(0);
+            assertThat(passed.getId()).as("the mapped row must be transient, never persisted").isNull();
+            assertThat(passed.getQuantityOnHand()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(passed.getProduct()).isSameAs(product);
+            return null;
+        });
+
+        stockService.get(42L);
+
+        org.mockito.Mockito.verify(stockRepository, org.mockito.Mockito.never()).save(any(Stock.class));
+    }
+
+    @Test
+    @DisplayName("BUG-BE-003: movements() on a product with no stock row does not create one either")
+    void readingMovementsNeverWrites() {
+        when(stockRepository.findByTenantIdAndProductId(1L, 42L)).thenReturn(Optional.empty());
+        when(productRepository.findByIdAndTenantId(42L, 1L)).thenReturn(Optional.of(product));
+        when(movementRepository.findByProduct(org.mockito.ArgumentMatchers.eq(1L),
+                org.mockito.ArgumentMatchers.eq(42L), any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        stockService.movements(42L, org.springframework.data.domain.Pageable.unpaged());
+
+        org.mockito.Mockito.verify(stockRepository, org.mockito.Mockito.never()).save(any(Stock.class));
+    }
 }

@@ -115,7 +115,7 @@ export function WorkerDetailPage() {
         title={worker.name}
         description={`${worker.roleTitle ?? 'No role set'} · ₹${worker.dailyRateDisplay}/day${worker.mobileNo ? ` · ${worker.mobileNo}` : ''}`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <WorkerStatusBadge status={worker.status} />
             <PermissionGate permission={PERMISSIONS.LABOUR_MANAGE}>
               <Button onClick={() => setRecording(true)}>

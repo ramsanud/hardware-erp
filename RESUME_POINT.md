@@ -1,5 +1,207 @@
 # RESUME POINT
 
+**Updated:** 2026-09-12 (**CR-076 — choose an address on a map**). `SCOPE: FRONTEND ONLY` — no entity, no migration, no endpoint, no DTO.
+
+
+## CR-081 — the sign-in page is now the approved design (2026-09-12)
+
+**Built to a canvas the owner approved as a render, not to a brief.** 50/50
+hero over a shop interior, a new post-and-lintel H mark (favicon and sidebar
+fallback too), one `AuthCard` shell on all six auth screens. Every colour is
+a token. **The default colour theme is now `emerald`** — the sign-in page
+renders before a per-user theme exists, so a fresh visitor was going to see
+blue under a green mark. Blur is 6px; a photo dropped at
+`src/assets/auth-hero.{jpg,png,webp}` replaces the drawn scene with no code
+change. Suite 192/192 on an isolated build. The design canvas
+("Hardware ERP Sign In") matches what shipped; a copy lives in
+`Documents/Hardware ERP sign-in design/`.
+
+**If the login ever looks wrong again, read the CR-081 registry entry before
+touching it.** This panel has now been reshaped five times; the one that
+stuck was judged on a render before it was code.
+
+## Start here
+
+**CR-076 is built, verified and NOT yet committed.** "Pick on map" sits beside the address fields on the Customer form, the Supplier wizard, the Supplier quick-add, Shop settings and the Project site address. Leaflet on OpenStreetMap tiles, Nominatim for the address — **no API key**, and both can be pointed at a self-hosted instance (`VITE_GEOCODER_URL`, `VITE_MAP_TILE_URL`). Tap, drag the pin, search a landmark or use GPS; the address is previewed, confirmed, then written into the five existing fields — the GST state code derived from the ISO code, blanks left as they were, nothing pre-selected on edit. Leaflet is a lazily loaded chunk. Full design and decisions in CR-076.
+
+**Verified — executed:** `tsc -b --force` exit 0, `vite build` exit 0, frontend suite **133/133** (22 new in `frontend/tests/customers/address-map.spec.mjs`, desktop and 390×844 touch, geocoder and tiles stubbed at the network edge). Also driven live against the public Nominatim/OSM on both viewports. `registry/static_check.py` **not executed** — python3 is not installed here.
+
+**Two things found on the way, both fixed in the same change:** `vercel.json` sent `Permissions-Policy: geolocation=()`, which would have silently killed "My location" in production — now `(self)`. And Nominatim names Indian cities by their civic body ("Chennai Corporation") and localities by ward/zone ("Zone 10 Kodambakkam"); both are cleaned before they reach a field.
+
+**The trap, recorded as lesson 19 in `PROJECT_SKILLS.md`:** a ref inside a Radix dialog is still `null` when an effect keyed on `open` runs, because the Portal mounts from a layout effect. The map dialog rendered with no map until the container went into state via a callback ref.
+
+**Proposed, not built — needs its own CR:** storing coordinates (`latitude`/`longitude` on customer, supplier, tenant) so the customer page can offer "Open in Maps" for delivery staff and re-opening a record puts the pin exactly where it was rather than geocoding the typed text. Three tables, a migration, DTOs and mappers — a CR-sized build, so it was not slipped in.
+
+**Working tree at hand-off:** the other session's in-flight login-page work (`AuthLayout.tsx`, `LoginForm.tsx`, `LoginPage.tsx`) is modified and is not part of CR-076. Stage the CR-076 paths explicitly; never the whole tree.
+
+**Previous entry follows.**
+
+---
+
+**Updated:** 2026-09-12 (**CR-075 — a first-visit tour, and everything since CR-072 merged to main**).
+
+## Start here
+
+**Nothing is pending on the feature branch.** `main` carries the merge of `feature/cr-061-062-mobile-app-ui-and-auth-refactor`, verified on the exact merge candidate (`b5a45e3`) in a detached worktree: **510 unit + 231 integration tests, `mvn clean verify` exit 0**; `tsc -b --force` 0, `vite build` 0, frontend suite **111/111**. Nothing has been pushed.
+
+**CR-075 — the application explains itself.** A dialog walkthrough, offered once per user, skippable at every step, replayable from the `?` in the top bar or "How this works" in the profile menu. Steps are **filtered by permission, never by role code** — the same predicate that hides a rail entry hides its step, so an owner sees 11 steps and a storekeeper holding only `PRODUCT_VIEW`/`INVENTORY_VIEW` sees 4. Client-side, scoped per user id (CR-068 precedent). The thing to know before adding any future first-run interruption: **a modal that greets new users greets every Playwright test** — `newPage` now seeds the tour as seen and takes `firstVisit: true` to opt in. The products spec was the first casualty.
+
+**The Platform Admin Console is complete** — 16 pages — and deliberately does not get the tour: different layout, different audience.
+
+**Previous entry follows.**
+
+---
+
+**Updated (previous):** 2026-09-09 (**API sweep — BUG-BE-003 and BUG-BE-004 found and fixed**). `SCOPE: BACKEND ONLY` for both. No frontend file, no migration, no DTO shape changed.
+
+**The ask was "test all api and find the backend bugs and fix it".** The committed suite was already green — 474 unit + 224 integration, `mvn clean verify` exit 0 on a clean worktree at `e991542` — so it could not be the instrument: a passing suite cannot find a bug it does not test for. The API was therefore driven directly: the app started on the dev profile, and **all 292 operations in the OpenAPI document** enumerated and swept (262 GET calls, each id-bearing path probed with 1 / 999999 / 0 / -1).
+
+**Two real defects, from 262 calls.** Everything else was correct: the 401s are platform-admin endpoints properly refusing a tenant token, the 403s are dev-inspection correctly gated behind `DEVELOPER_INSPECT` (which no role holds, CR-045), and the 400s are missing required query params. Analytics turned out to be well guarded — 422 on a reversed range, an over-long span or a bad granularity, and `buckets` is clamped to 30 no matter what is asked for.
+
+**BUG-BE-003 (High) — a read that tried to write.** `GET /v1/stock/{id}` and `/movements` were `@Transactional(readOnly = true)`, and both reached the "create the stock row lazily on first access" `save()`. PostgreSQL refuses an INSERT in a read-only transaction, so the endpoint **could only ever work for products whose row already existed** — 14 of 10,018 on the dev database. Every newly created product 500'd on its own inventory view. Fixed by having the read path map an **unsaved** zero-quantity row; the write path still creates it for real. Dropping `readOnly` was rejected — it would fix the status code and leave a GET that writes.
+
+**The seed comment explains why a green suite never saw it.** The dev/test seed inserts opening stock for every product it creates, saying so explicitly: *"not a Stock row created lazily at zero on first API call"*. Every product any test could reach already had a row, so the lazy branch was never entered through a read. **The regression IT therefore creates its own product** — which is also the real user path: add a product, open it, 500.
+
+**BUG-BE-004 (Medium) — an unknown `?sort=` field returned 500 on nine list endpoints.** Endpoints that bind a `Pageable` let the client's sort property into the JPQL order-by; Hibernate's `UnknownPathException` was unmapped and fell to the catch-all. Products, suppliers, categories and brands were immune because they take `sortBy`/`sortDir` through an explicit whitelist and never bind a `Pageable` — **which is exactly why the defect was invisible from the modules most tests exercise**. Fixed in `GlobalExceptionHandler` (one unmapped exception, not nine controllers — converting those modules to the whitelist would be a refactor and needs its own CR).
+
+**Two details in that fix cost a cycle each and are worth keeping.** The cause chain must be **walked**, not read one level down — the first attempt checked `getCause()` only and still returned 500 for every real case. And a non-sort `InvalidDataAccessApiUsageException` is handled in place rather than rethrown, because **Spring does not re-resolve an exception thrown out of an `@ExceptionHandler`**: rethrowing would have escaped the `ErrorResponse` contract and served a container error page.
+
+**Verified — executed, in both directions.** Every new test was run against a clean worktree at the previous commit and **seen to fail there** before being accepted: `StockReadWithoutRowIT` 3 of 4 (the fourth is the 404 guard that must pass both ways), both new `StockServiceImplTest` cases, and `InvalidSortFieldIT` (500 → 400). Live re-check after the fix: all nine lists answer 400 `INVALID_SORT_FIELD` with valid sorts still 200, whitelist lists still 200, stock reads 200 with `quantityOnHand: 0`, unknown product still 404.
+
+**⚠ Build trap on this machine, hit twice.** Maven's incremental compilation did not pick up an edited source and `failsafe:integration-test` cheerfully ran the previous build — a fix looked broken when it was merely not compiled. Always `mvn -o clean test-compile` before believing an integration-test result here. `mvn clean` also fails outright while the app jar is running (`Failed to delete ...jar`), and `javap` is not on PATH in Git Bash, so it cannot be used to check what compiled. Beware `mvn ... | tail`, which masks the real exit code.
+
+**Not committed, and not mine to commit.** The working tree carries another session's in-flight notification/SendGrid/Twilio work. The final `mvn clean verify` ran in that tree and passed — **510 unit (2 skipped) + 231 integration, 0 failures** — so it covers their changes as well as mine. Split before committing. `registry/static_check.py` **not executed**: python3 is not installed here (hard rule 10).
+
+---
+
+**Updated:** 2026-09-09 (**CR-074 — SMS goes real over Twilio, email over SendGrid, and three email paths become one**). `SCOPE: BACKEND ONLY` — no `.tsx` file touched; the API contract did not change, so the frontend needed nothing.
+
+**The triggers were never the missing part.** `notifyInvoiceCreated` and `notifyPaymentReceived` have fired on every invoice and payment since CR-027. What they reached was a stub: `SmsNotificationProvider` logged the message and returned `LOGGED_ONLY`. **Every customer-facing SMS this application has ever "sent" was a line in a log file.** It now calls Twilio Programmable Messaging, and email can be switched to SendGrid with `EMAIL_PROVIDER=sendgrid`.
+
+**Credentials are app-wide, not per tenant — and that is deliberately unlike CR-056.** A WhatsApp message must come from the shop's own verified number, so that token has to be the tenant's. An SMS goes out from one sender the platform owns. Per-tenant Twilio would mean a table, an encrypted column, a service, a controller and a Settings screen — a CR-056-sized build. The user was asked and chose app-level config.
+
+**The defect this surfaced, fixed in the same commit.** Switching only the notification channel would have left three divergent email paths — `SmtpMailService` (password-reset links), `InvoiceEmailServiceImpl` (invoice PDF) and `MailDiagnosticServiceImpl` (the Settings test button) each reached for `JavaMailSender` directly. **A deployment with a SendGrid key and no `MAIL_USER` would have looked healthy, sent invoices, and silently dropped every password-reset link.** All three now go through one `EmailTransport`; `SmtpMailService` is renamed `PasswordResetMailService`, since SMTP is no longer necessarily how it sends.
+
+### Verified on the commit itself, in a clean worktree
+
+`18ca265`, checked out detached into its own worktree so nothing else could touch its `target/`: **510 unit tests and 228 integration tests, 0 failures, 0 errors, `mvn clean verify` exit 0.** Frontend: `tsc -b --force` exit 0, `vite build` exit 0, E2E **95/95**.
+
+That isolation was not ceremony. Three earlier full runs in the shared checkout failed with three different phantom defects — a missing `@SpringBootConfiguration`, a missing `TotpService` bean, and 101 errors from a vanished nested class — all caused by another session running `mvn clean` against the same `target/`. See lesson 18 in `PROJECT_SKILLS.md`; do not chase these.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this machine (hard rule 10).
+
+### Also in this commit — CR-073, and why it could not be separated
+
+**Contact admin accepts an optional screenshot** (CR-073): PNG/JPEG/WebP, 2MB, validated by the same shared `ImageValidation.PHOTO_TYPES` as avatar, logo and expense receipts. Emailed as a MIME attachment and **never stored** — `notification_log.body` keeps only the name, type and size. A second mapping on the same path, separated by `consumes`, so the JSON contract is untouched. Five unit tests in `EmailAttachmentTest`.
+
+**CR-073 and CR-074 were built by two sessions at once, in the same files.** `EmailNotificationProvider` carries the attachment overload *and* `implements EmailTransport`; `NotificationServiceImpl` carries both too. Neither CR compiles without the other, so they land as one commit rather than as a commit that cannot build. Worth knowing if you bisect this range expecting one concern per commit.
+
+### Shipped just before, separately — BUG-FE-036 (`e991542`)
+
+The sidebar active state had **never once rendered**: `.sidebar-link[data-active=true]` needed the class and the attribute on one element, and the component put the class on the anchor and `data-active` on a span inside it. Now keyed on `aria-current=page`. Half of that fix had been committed by accident inside CR-072 (`8501899`), so **every commit from 8501899 to e991542 has the highlight broken outright**. Regression test `frontend/tests/navigation/sidebar.spec.mjs` asserts computed style including the `::before` pill — verified to fail 9 assertions against the old CSS.
+
+**A bug only the Spring context tests could catch.** Adding a package-private constructor as a test seam left two unannotated constructors on `SmsNotificationProvider`, so Spring fell back to a default constructor that does not exist and **the whole application context failed to start**. Every unit test still passed — they call the constructors directly. `@Autowired` on the injectable constructor of both new providers fixes it. Next provider added with a test seam: annotate the constructor.
+
+**Verified — actually executed:** `mvn -o clean verify` with Docker running, exit 0 — **508 unit tests run (0 failures, 2 skipped) and 224 Testcontainers integration tests**. 29 of those tests are new: `TwilioSmsProviderTest` and `SendGridEmailProviderTest` (10 each, asserting the real wire format of both APIs rather than mocking the send), `EmailProviderSelectionTest` (7), and `LiveMailSmokeTest` (2, opt-in).
+
+**The email process was then checked end to end, and a real environment problem fell out of it.** `EmailProviderSelectionTest` proves in a real context what the provider unit tests structurally cannot — that `provider=sendgrid` **replaces** the SMTP bean rather than joining it, that exactly one bean claims EMAIL either way, and that both new property prefixes actually bind (a prefix typo leaves every field null, which reads as unconfigured and silently logs instead of sending).
+
+`LiveMailSmokeTest` then sent a **real** message through the whole chain with this machine's own `.env` credentials. The chain works — connection opened, STARTTLS negotiated, Gmail answered. **What Gmail answered was `535-5.7.8 Username and Password not accepted`.** The `MAIL_PASSWORD` in `.env` is dead; Gmail revokes app passwords the moment 2-Step Verification is switched off. The value reached Gmail intact (LF file, 16 unquoted letters, no whitespace, no trailing CR), so this is the credential, not the code.
+
+**⚠ That means email is silently failing in this environment right now, and was before CR-074 too.** `MAIL_USER` is non-blank, so `isConfigured()` is true, so the app does **not** fall back to LOGGED_ONLY — it attempts a real send, fails, writes `FAILED` to `notification_log`, and carries on. Invoice emails and password-reset links are not arriving. **To fix: generate a fresh Gmail app password** (2-Step Verification must be ON at myaccount.google.com/apppasswords), put it in `.env`, and re-run `MAIL_LIVE_TEST=true mvn -o test -Dtest=LiveMailSmokeTest` — it should turn green with no code change.
+
+**The SendGrid half is NOT proven live.** No `SENDGRID_API_KEY` exists in this environment. Request shape, payload nesting, base64 attachment, header-borne message id and error handling are unit-tested, and bean selection is context-tested, but **no real SendGrid delivery has happened**. Do not record it as proven until it has.
+
+**Stated limitation, not hidden:** India's TRAI DLT regime requires a registered sender id before an SMS reaches an Indian handset. **Twilio accepts the call and returns a message SID regardless**; the operator drops it downstream. `TWILIO_MESSAGING_SERVICE_SID` is the field that carries a DLT-registered sender. No code can satisfy that registration.
+
+**Deliberately not built, worth their own CRs:** a "Test SMS" button (email and WhatsApp both have one, SMS has none, so a wrong Twilio credential stays invisible until a customer misses a message); per-tenant Twilio/SendGrid accounts; Twilio/SendGrid delivery-status webhooks (`DELIVERED`/`READ` already exist on `NotificationStatus`, but only Meta's webhook is built).
+
+**⚠ Nothing was committed.** This tree carries at least three sessions' in-flight work — CR-073 (contact-admin screenshot), the sidebar/frontend pass, and this one. **Split before committing**; CR-073's note below about waiting for "the SendGrid/Twilio transport refactor" is referring to this entry, and that refactor has now landed in the working tree.
+
+**Not executed:** `registry/static_check.py` — python3 is not installed on this machine (hard rule 10).
+
+---
+
+**Updated:** 2026-09-09 (**BUG-FE-036 closed out — the sidebar active state, verified this time**). `SCOPE: FRONTEND ONLY` — no Java file, DTO, migration or test touched.
+
+**The ask was to clear BUG-FE-036 from the bug registry. It was not deleted, and the reason matters.** It is a genuine shipped defect with a real root cause, a fix already half-committed in `8501899`, and three code comments pointing at the ID. Deleting the entry would have erased the lesson and left those comments dangling. "Clear" was read as *close it out properly* — verify, finish, make the entry true.
+
+**Verifying it is what found that it was not fixed.** The entry claimed "confirmed to fail against the old markup and pass against the new". The regression spec was run and returned **14/23**: the two `aria-current` assertions passed, all nine style assertions failed with `background rgba(0, 0, 0, 0)`, `font-weight 400`, `pill content none`. `Sidebar.tsx` had shipped (committed), `index.css` had been reverted to `.sidebar-link[data-active='true']` — so the CSS keyed off an attribute nothing set any more, and the removal of the inner span made it *worse* than the original bug rather than better.
+
+**Fixed by re-keying the three rules to `aria-current='page'`** — the attribute `NavLink` sets on the anchor itself, so the highlight and the screen-reader signal are one fact that cannot drift apart. Spec **23/23**, full frontend suite **95/95**, `tsc -b --force` and `vite build` exit 0.
+
+**This is BUG-FE-034 → BUG-FE-035 happening a second time in two days: a registry entry asserting a verification nobody ran.** Hard rule 10 covers registry entries as much as builds — an entry that says "verified" has to name the run that verified it. The entry now carries the run that does.
+
+**⚠ Two sessions are writing this tree simultaneously.** `index.css` was reverted underneath a read mid-pass, and a first splice interleaved with a concurrent write and dropped `.sidebar-link` outright. What worked: `git checkout HEAD --` on the single file, then re-apply in **one** command that computes its own line numbers — never split a file edit across two tool calls here. **Nothing was committed**: the tree carries 28 changed files of another session's in-flight notification/SendGrid/Twilio work. Split before committing.
+
+**Not executed:** `registry/static_check.py` — python3 is not installed on this machine (hard rule 10). Backend untouched, so `mvn verify` was not re-run.
+
+---
+
+**Updated:** 2026-09-09 (**BUG-FE-036 — the sidebar active state had never once rendered**).
+
+## Start here
+
+**BUG-FE-036 is committed. CR-073 is finished but deliberately NOT committed — see below.**
+
+**BUG-FE-036: a CSS rule that could never match.** `.sidebar-link[data-active='true']` needed the class and the attribute on one element; the class was on the `NavLink` anchor and `data-active` on a span inside it. The rail never highlighted the current page, on any route, for the life of the styling. Now keyed on `aria-current='page'`, which `NavLink` sets on the anchor itself, so the highlight and the screen-reader signal are the same fact.
+
+**Half of that fix was accidentally committed inside CR-072 (8501899).** `Sidebar.tsx` lost its `data-active` span there while `index.css` still keyed on it, so **every commit from 8501899 until this one has the sidebar highlight fully broken** — worth knowing if you bisect through that range.
+
+**The regression test is `frontend/tests/navigation/sidebar.spec.mjs`**, registered in `tests/run.mjs`. It asserts `getComputedStyle`, including the `::before` pseudo-element, because a selector that matches nothing is invisible to typecheck, build and render tests alike. Verified to fail 9 assertions against the old CSS and pass against the new. Suite: **95/95** (was 72/72).
+
+### CR-073 — done, verified, held back
+
+Contact-admin accepts an optional screenshot, emailed as a MIME attachment and never stored. Backend, frontend, registries and five unit tests are all complete in the working tree; `EmailAttachmentTest` passes 5/5 and the frontend builds clean.
+
+**It is uncommitted because another session is mid-refactor in the same files.** `EmailNotificationProvider.java` now also declares `implements EmailTransport` and references an untracked `SendGridEmailProvider`/`EmailTransport`/`TwilioProperties` set. Staging it would either sweep up that unfinished work or produce a commit that cannot compile. **Commit CR-073 once the SendGrid/Twilio transport refactor lands**, not before.
+
+**The ask was the deferred backlog, worked through one item at a time, tested, committed and pushed.** Four earlier passes in this session cleared the registry work; this is the last and largest item.
+
+**`activity_log` had been write-only since CR-015.** Roughly ten services write it, it carries before/after values, and no controller had ever read it back — so the one thing that makes the table worth keeping was reachable only through a database client. CR-070 tried to add the viewer and **correctly refused**: V3 created the table with no `tenant_id`, and a shop-wide query over it would have served every tenant's business changes to any `AUDIT_VIEW` holder. V55 adds the column; this CR is the endpoint that was waiting for it.
+
+**CR-070 sized the write path at ten call sites. There is one.** Every module reaches the table through `created`/`updated`/`deleted`/`action`, and all four funnel into a single `write(...)`, so the tenant is stamped once from `SecurityUtils.currentTenantId()`. That is worth knowing before anyone re-estimates a change to this table.
+
+**The column is nullable, and that is the decision to keep.** The backfill can attribute only rows carrying a `user_id`, resolved through `app_user.tenant_id`. Rows written by a scheduled job or an import have no user and no honest way to recover an owner, so they stay null — and **null is the safe value**, because every read filters `tenant_id = :tenantId` and `NULL` never equals anything in SQL. An unattributable row is therefore invisible to every tenant rather than visible to all of them. `NOT NULL` would have forced the migration to invent an owner for a row in an audit table.
+
+**`searchForTenant(...)` is a separate repository method** from the pre-existing unscoped `search(...)`, not an extra nullable parameter on it, specifically so no future caller can reach the shop-wide shape by passing null.
+
+**BUG-BE-002, found in the one method this CR had to change, and it is the more interesting half.** `write(...)` carried `@Transactional(REQUIRES_NEW)` with a comment promising a logging failure never rolls back the user's real work. **The annotation was inert** — it sat on a `protected` method self-invoked as `this.write(...)`, which never reaches the proxy (proxy-based AOP, no AspectJ anywhere). Its `catch` made the failure silent rather than survivable: with `IDENTITY` generation the INSERT fires at `save()`, so the violation *was* caught, but the surrounding transaction was already rollback-only and the invoice being described was lost at commit with nothing in the response to explain why.
+
+**The fix has a subtlety that cost a full test cycle.** Moving the write into its own `ActivityLogWriter` bean is only half of it — **the handler had to move OUT of the transactional method, not travel with it.** Under `REQUIRES_NEW` the flush happens as the method returns and its transaction commits, inside the proxy, after any `try` in the method body has exited. The first attempt kept the catch inside the new bean and still failed. `ActivityLogWriter.write` therefore throws and `ActivityLogServiceImpl` catches outside the boundary, on `RuntimeException` rather than `DataAccessException` because a flush failure surfaces as `TransactionSystemException`/`UnexpectedRollbackException` at least as often.
+
+**Checked while there, and the comparison is the useful part.** `SecurityAuditServiceImpl` and `JobExecutionTracker` both have a private helper called from public methods and look like the same bug. They are correct, because the annotation sits on their **public entry points** — the proxy is already crossed by the time the helper runs. The thing to look for when reviewing any `REQUIRES_NEW` is not whether a self-call exists but **whether the annotation is on the method reached from outside the bean.**
+
+**Verified — executed, not claimed.** `mvn clean verify`: **474 unit + 224 integration, 0 failures, 0 errors, BUILD SUCCESS**. `tsc -b --force` and `vite build` exit 0. Frontend e2e **72/72**. `registry/static_check.py` **not executed** — `python3` is not installed here (hard rule 10).
+
+**The BUG-BE-002 test was verified against the defect, not merely written.** `ActivityLogWriterPropagationIT` was run against a deliberately restored pre-fix shape, failed there, then passed against the fix. A regression test nobody has seen fail is a description, not a test.
+
+**The responsive route sweep earned its keep immediately.** `/activity-log` was added to it and instantly failed at all five viewports: `moduleCodes()` can answer with a null body, and `modules.map()` then took the whole page down blank. Guarded with `Array.isArray` — the module filter is a convenience and must never be the reason the log cannot be read.
+
+**Also unblocked:** CR-066's `recent-activity` widget moves from `needs-endpoint` to `available` (and `out-of-stock-list` did the same under CR-070 earlier in this session).
+
+**⚠ At least one other session is writing to this tree.** `Sidebar.tsx` carries an 84-line restructuring from another session around the one line added here; it was committed because the alternative was shipping a page with no way to navigate to it. Uncommitted `notification/` work (email attachments, `NotificationAttachment`, `ContactAdminDialog`, `apiClient.ts`, `backend/pom.xml`) belongs to that session and was deliberately left alone. **Check `git status` and split before committing.**
+
+---
+
+**Updated:** 2026-09-09 (**BUG-FE-035 — a busy toolbar crushed the page title**). `SCOPE: FRONTEND ONLY` — the API response was correct; the header column was 69px wide.
+
+**Reported from a screenshot** of `/invoices/53`: the invoice number rendered as `I...` and `Bug Fix Test · 9123456700 · 2026-09-01` came down the page one word per line. Measured rather than guessed at: the title column was **69px** at 1440px and **0px** at 768px, where the toolbar also ran off the page.
+
+**The root cause is that BUG-FE-034's fix never reached 19 of the 21 pages.** `PageHeader` carries `flex-wrap` on its actions container, but that wraps the container's *children* — and every caller hands it a single nested `<div className="flex items-center gap-2">`. One child, nothing to wrap, min-content width of the whole toolbar: **1039px** on Invoice detail. Both header children were free to shrink and the title, with `min-w-0` and a content-sized basis, was the one that lost. BUG-FE-034 recorded "this one edit covers all of them"; it covered exactly the two pages whose caller divs were hand-patched with `flex-wrap` in that same commit. That claim is now corrected in place in the registry rather than left standing.
+
+**Fixed in two parts, same root cause, same commit.** `sm:flex-wrap` on the header row so an oversized toolbar drops to its own row instead of taking the title's space, plus `sm:flex-1 sm:basis-64` giving the title a 16rem floor — without the basis the title is still the smaller item and still loses. Then `flex-wrap` on the 19 caller divs that lacked it, so the toolbar wraps instead of overflowing at narrow widths.
+
+**Verified by measurement.** Title column 69px → **1120px** at 1440 and 0px → **728px** at 768; description 100px → **20px**; `scrollWidth > clientWidth` **true → false** at 768. All 14 list pages re-measured at both widths still show title and actions sharing one row, so the simple headers did not regress.
+
+**The regression test, and why the suite missed this.** `frontend/tests/navigation/page-header.spec.mjs` is new. The responsive sweep beside it visits **list routes only** — a detail route needs an id — and that is exactly the gap this defect lived in. It asserts measured geometry rather than class names, and it was checked in both directions: **3 of 12 assertions fail against the old markup**, 12/12 pass against the new. Suite is **72/72**, up from 60/60.
+
+**A fixture bug found on the way, fixed here.** The stub OWNER in `tests/support/fixtures.mjs` held neither `INVOICE_CANCEL` nor `PAYMENT_MANAGE`, so the stubbed invoice toolbar rendered two buttons short — 763px against the real 1039px. The suite could not have caught this at full severity while its own fixture disagreed with the DTO. With both added the stub measures 1039px, matching the live page exactly. That is worth remembering: **a green e2e suite is only as honest as its fixtures**.
+
+**Not executed:** `registry/static_check.py` — python3 is not installed on this machine (hard rule 10). Backend untouched, so `mvn verify` was not re-run.
+
+---
+
 **Updated:** 2026-09-09 (**CR-071 — the two registries the last pass did not reach**). Documentation only. No code, no schema, no endpoint.
 
 **What was asked:** confirm every registry is complete, verify the architecture, test it, then commit and merge to `main`.

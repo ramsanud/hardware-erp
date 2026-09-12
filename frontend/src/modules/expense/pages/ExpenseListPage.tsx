@@ -191,7 +191,7 @@ export function ExpenseListPage() {
         title="Expenses"
         description="Shop-wide costs - rent, salaries, utilities and everything else, separate from project costs."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="expense" />
             <PermissionGate permission={PERMISSIONS.EXPENSE_MANAGE}>
               <Button onClick={() => setCreating(true)}>

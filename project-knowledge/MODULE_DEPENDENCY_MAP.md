@@ -81,7 +81,7 @@ auth + tenant  (every module below depends on both)
  ├── analytics ─── invoice
  ├── ai ────────── (read-only tools over the modules above)
  ├── export ────── (rendering only; owns no entity)
- ├── notification  (email live; SMS/WhatsApp stubbed)
+ ├── notification  (email live; SMS live via Twilio; WhatsApp live per tenant - CR-074)
  ├── supportticket
  ├── legal         (entities only — no controller)
  └── developer     (diagnostics, double-gated: environment + DEVELOPER_INSPECT)

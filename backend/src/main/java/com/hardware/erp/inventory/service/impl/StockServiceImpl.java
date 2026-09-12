@@ -54,14 +54,16 @@ public class StockServiceImpl implements StockService {
     @Override
     @Transactional(readOnly = true)
     public StockResponse get(Long productId) {
-        return stockMapper.toResponse(requireStock(productId, SecurityUtils.requireCurrentTenantId()));
+        return stockMapper.toResponse(readStock(productId, SecurityUtils.requireCurrentTenantId()));
     }
 
     @Override
     @Transactional(readOnly = true)
     public PageResponse<StockMovementResponse> movements(Long productId, Pageable pageable) {
         Long tenantId = SecurityUtils.requireCurrentTenantId();
-        requireStock(productId, tenantId);
+        // Only to 404 on a product this tenant does not own - a product with no
+        // stock row simply has no movements, and the query below returns empty.
+        readStock(productId, tenantId);
         return PageResponse.from(
                 movementRepository.findByProduct(tenantId, productId, pageable),
                 stockMapper::toResponse);
@@ -111,18 +113,40 @@ public class StockServiceImpl implements StockService {
     }
 
     private Stock createStockRow(Long productId, Long tenantId) {
+        return stockRepository.save(zeroStock(productId, tenantId));
+    }
+
+    /**
+     * BUG-BE-003: the read path must NOT create the row.
+     *
+     * "Created lazily on first access" (see the class comment) was implemented
+     * as a save() reached from get() and movements(), both of which are
+     * {@code @Transactional(readOnly = true)}. PostgreSQL refuses an INSERT in
+     * a read-only transaction outright, so every product without a stock row -
+     * 10,004 of 10,018 on the dev database, and *every* product until its first
+     * movement - answered 500 instead of "0 on hand".
+     *
+     * A GET must not have side effects, so the zero row is built and mapped
+     * without ever being persisted. The write path (applyMovement) still
+     * creates it for real, which is the only place that legitimately can.
+     */
+    private Stock readStock(Long productId, Long tenantId) {
+        return stockRepository.findByTenantIdAndProductId(tenantId, productId)
+                .orElseGet(() -> zeroStock(productId, tenantId));
+    }
+
+    /**
+     * Unsaved. StockMapper reads only the product and the quantity, so a
+     * transient instance maps to exactly the response a freshly-created row
+     * would have produced.
+     */
+    private Stock zeroStock(Long productId, Long tenantId) {
         Product product = productRepository.findByIdAndTenantId(productId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
-        Stock stock = Stock.builder()
+        return Stock.builder()
                 .tenant(tenantRepository.getReferenceById(tenantId))
                 .product(product)
                 .quantityOnHand(BigDecimal.ZERO)
                 .build();
-        return stockRepository.save(stock);
-    }
-
-    private Stock requireStock(Long productId, Long tenantId) {
-        return stockRepository.findByTenantIdAndProductId(tenantId, productId)
-                .orElseGet(() -> createStockRow(productId, tenantId));
     }
 }

@@ -345,8 +345,9 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
     description: 'Who changed what, most recent first.',
     category: 'operations',
     permission: PERMISSIONS.AUDIT_VIEW,
-    dataSource: 'needs-endpoint',
-    blockedReason: 'activity_log is written by every module but no controller reads it back.',
+    // CR-072 gave it GET /v1/activity-log, and V55 the tenant_id that made
+    // the endpoint safe to expose in the first place.
+    dataSource: 'available',
   },
   {
     id: 'tasks-reminders',

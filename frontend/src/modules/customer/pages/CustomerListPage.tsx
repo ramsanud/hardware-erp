@@ -161,7 +161,7 @@ export function CustomerListPage() {
         title="Customers"
         description="People and businesses the shop sells to."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="customer" />
             <PermissionGate permission={PERMISSIONS.CUSTOMER_MANAGE}>
               <Button onClick={() => setDialogTarget('new')}>

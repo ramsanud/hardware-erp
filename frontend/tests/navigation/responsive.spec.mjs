@@ -18,7 +18,7 @@ const ROUTES = [
   '/invoices', '/quotations', '/purchases',
   '/stock', '/payments', '/expenses', '/coupons',
   '/projects', '/labour/workers', '/labour/attendance',
-  '/users', '/roles', '/permissions', '/security-audit-log',
+  '/users', '/roles', '/permissions', '/security-audit-log', '/activity-log',
   '/profile', '/profile/appearance',
   '/settings/shop', '/tools/gst-calculator', '/support',
 ];
@@ -40,7 +40,16 @@ export default async function run() {
       for (const route of ROUTES) {
         try {
           await page.goto(BASE + route, { waitUntil: 'networkidle', timeout: 20000 });
-          await page.waitForTimeout(120);
+          // networkidle fires 500ms after the last request, which on a stubbed
+          // API can land BEFORE React has committed a lazy-loaded route - so a
+          // fixed 120ms here scored still-loading pages as [blank], a different
+          // route each run. Wait for content instead; a page that genuinely
+          // renders nothing still fails, after 5s rather than 120ms.
+          await page.waitForFunction(
+            () => document.body.innerText.trim().length >= 20,
+            null,
+            { timeout: 5000 },
+          ).catch(() => { /* fall through - the evaluate below records it as blank */ });
           const state = await page.evaluate(() => ({
             notFound: document.body.innerText.includes('Page not found'),
             blank: document.body.innerText.trim().length < 20,

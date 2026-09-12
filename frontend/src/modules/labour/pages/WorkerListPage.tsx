@@ -150,7 +150,7 @@ export function WorkerListPage() {
         title="Workers"
         description="The shop's own day-wage labour force - separate from suppliers and customers."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ColumnSettings preferences={columns} label="worker" />
             <PermissionGate permission={PERMISSIONS.LABOUR_MANAGE}>
               <Button onClick={() => setCreating(true)}>

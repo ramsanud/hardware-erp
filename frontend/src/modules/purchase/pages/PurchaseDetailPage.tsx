@@ -132,7 +132,7 @@ export function PurchaseDetailPage() {
         title={purchase.purchaseNumber}
         description={`${purchase.supplierName} · ${purchase.supplierMobile} · ${purchase.purchaseDate}`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {purchase.hasDocument ? (
               <Button variant="outline" asChild>
                 <a href={purchaseService.documentUrl(id)} target="_blank" rel="noreferrer">
