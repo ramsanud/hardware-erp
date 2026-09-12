@@ -4,12 +4,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft, ShieldAlert } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
-import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
-} from '@/shared/components/ui/card';
 import { Alert, AlertDescription } from '@/shared/components/ui/alert';
 import { ApiError } from '@/shared/types/api';
 import { AUTH_ROUTES } from '../constants';
+import { AuthCard } from '../components/AuthCard';
 import { authService } from '../services/authService';
 import { resetPasswordSchema, type ResetPasswordValues } from '../validation/schemas';
 import { PASSWORD_HINT, PasswordInput } from '../forms/PasswordFields';
@@ -86,19 +84,15 @@ export function ResetPasswordPage() {
   // explanation rather than a form that will always fail.
   if (!token) {
     return (
-      <Card className="mx-auto w-full max-w-md">
-        <CardHeader>
-          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
+      <AuthCard
+        title="This link is not valid"
+        description="The reset link is missing its token. It may have been broken by your email client. Request a new one."
+      >
+        <div className="space-y-3">
+          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-destructive/10">
             <ShieldAlert className="h-5 w-5 text-destructive" aria-hidden />
           </div>
-          <CardTitle>This link is not valid</CardTitle>
-          <CardDescription>
-            The reset link is missing its token. It may have been broken by your email
-            client. Request a new one.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <Button className="w-full" asChild>
+          <Button size="lg" className="h-12 w-full rounded-xl text-[15px] font-semibold" asChild>
             <Link to={AUTH_ROUTES.forgotPassword} replace>Request a new link</Link>
           </Button>
           <Button variant="ghost" className="w-full" asChild>
@@ -107,18 +101,13 @@ export function ResetPasswordPage() {
               Back to sign in
             </Link>
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </AuthCard>
     );
   }
 
   return (
-    <Card className="mx-auto w-full max-w-md">
-      <CardHeader>
-        <CardTitle>Choose a new password</CardTitle>
-        <CardDescription>This link can only be used once.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <AuthCard title="Choose a new password" description="This link can only be used once.">
         <form onSubmit={submit} className="space-y-4" noValidate>
           {formError ? (
             <Alert variant="destructive">
@@ -135,11 +124,10 @@ export function ResetPasswordPage() {
             error={errors.confirmPassword} registration={register('confirmPassword')}
           />
 
-          <Button type="submit" className="w-full" loading={isSubmitting}>
+          <Button type="submit" size="lg" className="h-12 w-full rounded-xl text-[15px] font-semibold" loading={isSubmitting}>
             Set new password
           </Button>
         </form>
-      </CardContent>
-    </Card>
+    </AuthCard>
   );
 }

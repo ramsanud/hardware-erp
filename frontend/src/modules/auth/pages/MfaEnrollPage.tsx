@@ -1,11 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
-} from '@/shared/components/ui/card';
 import { Alert, AlertDescription } from '@/shared/components/ui/alert';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
+import { AuthCard } from '../components/AuthCard';
 import { Label } from '@/shared/components/ui/label';
 import { ApiError } from '@/shared/types/api';
 import { AUTH_ROUTES } from '../constants';
@@ -66,20 +64,17 @@ export function MfaEnrollPage() {
 
   if (backupCodes) {
     return (
-      <Card className="mx-auto w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-xl">Save your backup codes</CardTitle>
-          <CardDescription>
-            Each code signs you in once, in place of your authenticator app, if you
-            lose access to it. Shown only this once - save them somewhere safe.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <AuthCard
+        title="Save your backup codes"
+        description="Each code signs you in once, in place of your authenticator app, if you lose access to it. Shown only this once - save them somewhere safe."
+      >
+        <div className="space-y-4">
           <div className="grid grid-cols-2 gap-2 rounded-md border bg-muted/40 p-4 font-mono text-sm">
             {backupCodes.map((c) => <div key={c}>{c}</div>)}
           </div>
           <Button
-            className="w-full"
+            size="lg"
+            className="h-12 w-full rounded-xl text-[15px] font-semibold"
             onClick={() => navigate(
               mustChangePassword ? AUTH_ROUTES.forceChangePassword : '/dashboard',
               { replace: true },
@@ -87,22 +82,17 @@ export function MfaEnrollPage() {
           >
             I've saved these codes
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </AuthCard>
     );
   }
 
   return (
-    <Card className="mx-auto w-full max-w-md">
-      <CardHeader>
-        <CardTitle className="text-xl">Set up two-factor authentication</CardTitle>
-        <CardDescription>
-          This protects your shop's data even if your password is stolen. Scan this
-          QR code with an authenticator app (Google Authenticator, Authy, 1Password),
-          then enter the 6-digit code it shows.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <AuthCard
+      title="Set up two-factor authentication"
+      description="This protects your shop's data even if your password is stolen. Scan this QR code with an authenticator app (Google Authenticator, Authy, 1Password), then enter the 6-digit code it shows."
+    >
+      <div className="space-y-4">
         {error ? (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
@@ -132,16 +122,18 @@ export function MfaEnrollPage() {
               id="code"
               inputMode="numeric"
               autoComplete="one-time-code"
+              placeholder="Enter 6-digit code"
               required
               value={code}
               onChange={(e) => setCode(e.target.value)}
+              className="h-12 rounded-xl text-[15px] tracking-wide"
             />
           </div>
-          <Button type="submit" className="w-full" loading={submitting} disabled={loadingQr}>
+          <Button type="submit" size="lg" className="h-12 w-full rounded-xl text-[15px] font-semibold" loading={submitting} disabled={loadingQr}>
             Confirm and continue
           </Button>
         </form>
-      </CardContent>
-    </Card>
+      </div>
+    </AuthCard>
   );
 }

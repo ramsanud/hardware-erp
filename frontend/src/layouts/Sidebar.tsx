@@ -4,7 +4,7 @@ import {
   Boxes, Calculator, CalendarCheck, ChevronDown, ClipboardList, Coins, FileClock, FileDown, FileText, HardHat, History, KeyRound, Landmark,
   LayoutDashboard, Layers, LifeBuoy, Package, PackageSearch, PanelLeftClose, Settings,
   ShieldCheck, ShoppingBag, ShoppingCart, Tags, TerminalSquare, Ticket, TrendingUp, Truck,
-  UserCheck, UserCircle, Users, Wallet, Wrench,
+  UserCheck, UserCircle, Users, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
@@ -15,6 +15,7 @@ import { brandService } from '@/modules/settings/services/brandService';
 import { useAuthenticatedImage } from '@/shared/hooks/useAuthenticatedImage';
 import { APP_NAME } from '@/shared/constants';
 import { cn } from '@/shared/lib/utils';
+import { BrandGlyph } from '@/shared/components/BrandMark';
 import { useAppChrome } from './AppChromeProvider';
 
 interface NavItem {
@@ -251,10 +252,11 @@ export function SidebarBrand({ collapsed = false, onToggleCollapsed }: SidebarBr
       )}
     >
       <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-sidebar-active">
+        {/* CR-081: the fallback is the same post-and-lintel mark as the sign-in page and favicon. */}
         {logoSrc ? (
           <img src={logoSrc} alt={`${brandName ?? APP_NAME} logo`} className="h-full w-full object-cover" />
         ) : (
-          <Wrench className="h-4 w-4 text-white" aria-hidden />
+          <BrandGlyph size={20} className="text-white" />
         )}
       </span>
       {collapsed ? null : (

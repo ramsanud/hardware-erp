@@ -360,8 +360,17 @@ export const COLOR_THEMES: ColorTheme[] = [
   },
 ];
 
-export const DEFAULT_COLOR_THEME_ID = 'royal-blue';
+/**
+ * CR-081. Emerald is the brand: the post-and-lintel mark, the favicon and the
+ * approved sign-in design are all drawn in it, and a first-time visitor sees
+ * the sign-in page before any per-user theme exists - so the default is what
+ * the brand looks like. Was royal-blue. Every other theme stays selectable;
+ * only the never-chose-one case changes.
+ */
+export const DEFAULT_COLOR_THEME_ID = 'emerald';
 
 export function findColorTheme(id: string): ColorTheme {
-  return COLOR_THEMES.find((t) => t.id === id) ?? COLOR_THEMES[0];
+  return COLOR_THEMES.find((t) => t.id === id)
+    ?? COLOR_THEMES.find((t) => t.id === DEFAULT_COLOR_THEME_ID)
+    ?? COLOR_THEMES[0];
 }

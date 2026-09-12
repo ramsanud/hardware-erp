@@ -1,12 +1,11 @@
 import { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
-} from '@/shared/components/ui/card';
 import { Alert, AlertDescription } from '@/shared/components/ui/alert';
+import { APP_NAME } from '@/shared/constants';
 import { isAuthRoute } from '@/routes/ProtectedRoute';
 import { AUTH_ROUTES } from '../constants';
 import { useAuth } from '../hooks/AuthProvider';
+import { AuthCard } from '../components/AuthCard';
 import { LoginForm } from '../forms/LoginForm';
 import type { LoginValues } from '../validation/schemas';
 
@@ -80,34 +79,25 @@ export function LoginPage() {
   };
 
   return (
-    <Card
-      className="mx-auto w-full max-w-md rounded-3xl shadow-2xl
-                 animate-in fade-in slide-in-from-bottom-3 duration-500 sm:p-2"
-    >
-      <CardHeader>
-        <CardTitle className="text-2xl font-bold tracking-tight">Sign in</CardTitle>
-        <CardDescription>
-          Welcome back. Enter your credentials to continue.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
+    <AuthCard title="Welcome back!" description="Sign in to your account to continue">
+      <div className="space-y-5">
         {justRegistered ? (
           <Alert>
             <AlertDescription>Your shop is ready. Sign in below to get started.</AlertDescription>
           </Alert>
         ) : null}
-        {/* "Forgot password?" now sits beside Remember me inside the form, so it is not repeated here. */}
+        {/* "Forgot password?" sits beside Remember me inside the form, so it is not repeated here. */}
         <LoginForm onSubmit={handleSubmit} />
-        <div className="border-t pt-4 text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{' '}
+        <p className="text-center text-sm text-muted-foreground">
+          New to {APP_NAME}?{' '}
           <Link
             to={AUTH_ROUTES.register}
             className="font-medium text-primary underline-offset-4 hover:underline"
           >
             Register your shop
           </Link>
-        </div>
-      </CardContent>
-    </Card>
+        </p>
+      </div>
+    </AuthCard>
   );
 }

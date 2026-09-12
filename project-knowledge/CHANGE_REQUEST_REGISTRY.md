@@ -83,6 +83,7 @@ Nothing is implemented from conversation memory.
 | CR-071 | 2026-09-09 | Claude | Documentation only. Rebuild `FEATURE_REGISTRY.md` and `MODULE_DEPENDENCY_MAP.md` against the real source tree; both had drifted far enough to mislead — they named MySQL as the database and listed shipped modules as "planned". Records the `product` ↔ `invoice` package cycle rather than hiding it. No code change. | **APPLIED, 2026-09-09** |
 | CR-074 | 2026-09-09 | User | SMS goes real over Twilio; email can move to SendGrid with `EMAIL_PROVIDER=sendgrid`. Credentials are app-wide, not per tenant (unlike CR-056 WhatsApp). Collapses the three divergent direct-`JavaMailSender` paths — password reset, invoice PDF, Settings test button — onto one `EmailTransport`, so a SendGrid deployment cannot silently drop password-reset mail. | **APPLIED, 2026-09-09** |
 | CR-075 | 2026-09-09 | User | A first-visit guided tour that explains the application, built from the permissions the signed-in person actually holds, so an owner, accountant, storekeeper and auditor each get their own walkthrough. Skippable at every step and replayable from the header. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-09** |
+| CR-081 | 2026-09-12 | User | The approved sign-in design, implemented: a 50/50 split with a forest-green hero over a shop interior, a new post-and-lintel H brand mark (also the favicon and the sidebar fallback), and one `AuthCard` shell for all six auth screens. Default colour theme becomes Emerald so a first-time visitor sees the brand. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-12** |
 ---
 
 
@@ -4648,3 +4649,69 @@ role chips for both fixtures, every tip transition (shown → Got it → next
 screen still shown → dismissed stays dismissed → Turn off silences all →
 replay restores), nested-route matching, and the phone: the tour fits 390px,
 Skip is visible without scrolling, and works.
+
+---
+
+## CR-081 — The approved sign-in design, implemented (APPLIED 2026-09-12)
+
+**Raised by:** User. **Type:** frontend redesign. `SCOPE: FRONTEND ONLY`.
+
+### Why this one is different
+
+This is the **fifth** shape of the auth panel, and the first built to a design
+the owner approved *as a render* before it was code. CR-062 cut a billboard
+down to a strip ("too absurd"); CR-069 brought glass tiles back ("very low
+quality"); an uncommitted editorial pass from another session removed the card
+entirely. All three were written from a brief and judged on the result. This
+time the brief became a design canvas first (`Hardware ERP Sign In`,
+2026-09-12), the owner signed off on it, and the code reproduces that canvas.
+The user's instruction was "exact UI from that image, do not change anything".
+
+### Shape
+
+| Piece | Decision |
+|---|---|
+| Layout | 50/50 at `lg`. Left: `--sidebar` hero over a softly blurred shop interior with a token-driven overlay, brand lockup, eyebrow, headline with the accent phrase in `--sidebar-active`, one paragraph, a 2×2 grid of capabilities with glowing icon tiles, a cursive slogan bottom-left. Right: `bg-muted/30` with two ambient `--primary` blobs, theme toggle top-right, the card centred |
+| Below `lg` | A ~110px `--sidebar` band (mark, name, eyebrow, toggle) then the card, top-aligned. CR-061's ban on `--sidebar` for mobile chrome is about a slab a third of the screen tall; this band is the approved phone artboard |
+| Brand mark | `BrandMark.tsx` — a **post-and-lintel H**: two posts carrying a beam that overhangs them. The overhang is what makes it a mark rather than a letter and it survives at 16px. Used on the hero, the card, the sidebar's no-logo fallback, and the favicon. The wrench is gone from all four |
+| Card | `AuthCard.tsx` — one shell for **all six** auth screens (sign in, verify, enrol, register, forgot, reset): mark + name + tagline, centred heading, page content, lock + "Your data is secure and encrypted". Pages keep their own width. Every `Card` import under AuthLayout is replaced |
+| Controls | 48px, 12px radius, primary-tinted leading icons, arrow on the primary action, `Start over` as a real outlined button — as drawn |
+| Background | `AuthHeroBackdrop.tsx` — the drawn interior (two shelving bays in perspective, stocked; pegboard of tools; warm lamps) at **6px blur**, not the 14px the canvas first used: the owner's verdict on that was "looks blur". Drop a photo at `src/assets/auth-hero.{jpg,png,webp}` and `import.meta.glob` picks it up with no code change; the build never fails on its absence |
+| Slogan face | A **system cursive stack**, not Caveat from Google Fonts. A self-hosted shop has no business fetching a webfont to sign in |
+
+### Every colour is a token — and one default changed
+
+The canvas was drawn in the Emerald theme's resolved values (forest `#0f1f1a`
+= `--sidebar`, emerald `#16794b` = `--primary`, bright `#49df99` =
+`--sidebar-active`) and the code maps each back. On Emerald the page is the
+canvas; on the other ten themes it is the same design in that shop's colours.
+
+**The default colour theme is now `emerald`, was `royal-blue`.** The first
+render in a fresh browser was blue — the sign-in page shows before any
+per-user theme exists, so a first-time visitor would have seen a blue page
+under a green favicon and a green brand mark. The brand is Emerald; the
+default is what the brand looks like. Every other theme stays selectable; only
+the never-chose-one case changes. `findColorTheme` now falls back to the
+default rather than to index 0, so an unknown stored id also lands on Emerald.
+
+### Verified
+
+`tsc -b --force` 0, `vite build` 0. Screenshots at 1440 and 390 of both the
+sign-in and verification screens compared against the canvas before this was
+called done — that comparison is what caught the blue default, a dead dark
+band where the scene's floor sat below the panel (fixed by cropping the
+viewBox), and a card floating mid-screen on the phone (now top-aligned as
+drawn). Frontend suite **192/192** against a build served from its own
+directory. One regression of my own found and fixed on the way: nudging the
+password eye-toggle 4px inward made it overlap the clear button — the
+existing `clear and eye do not overlap` assertion caught it.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this
+machine (hard rule 10).
+
+### Left alone, on purpose
+
+The other session's uncommitted editorial pass over `AuthLayout`, `LoginPage`
+and `LoginForm` was superseded by this and overwritten. Its diff was read in
+full before that; the copy it carried is this brief's copy, so nothing of
+substance was lost.

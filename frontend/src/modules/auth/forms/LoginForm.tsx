@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff, Lock, User } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, ArrowRight } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Checkbox } from '@/shared/components/ui/checkbox';
 import { Label } from '@/shared/components/ui/label';
@@ -117,7 +117,7 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
 
       <FormField id="identifier" label="Mobile number or email" error={errors.identifier?.message} required>
         <div className="relative">
-          <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <User className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-primary" aria-hidden />
           <ClearableInput
             id="identifier"
             autoComplete="username"
@@ -126,7 +126,7 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
             // caret in the password box, not back on a field they have done.
             autoFocus={!rememberedIdentifier}
             placeholder="9876543210"
-            className="pl-9"
+            className="h-12 rounded-xl pl-11 text-[15px]"
             aria-invalid={Boolean(errors.identifier)}
             aria-describedby={errors.identifier ? 'identifier-error' : undefined}
             {...register('identifier')}
@@ -136,14 +136,14 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
 
       <FormField id="password" label="Password" error={errors.password?.message} required>
         <div className="relative">
-          <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-primary" aria-hidden />
           {/* trailingSlot reserves the eye toggle's corner so the clear
               button lands beside it, never on top of it. */}
           <ClearableInput
             id="password"
             type={showPassword ? 'text' : 'password'}
             autoComplete="current-password"
-            className="pl-9"
+            className="h-12 rounded-xl pl-11 text-[15px]"
             trailingSlot={1}
             autoFocus={Boolean(rememberedIdentifier)}
             aria-invalid={Boolean(errors.password)}
@@ -192,8 +192,15 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
         />
       ) : null}
 
-      <Button type="submit" variant="gradient" size="lg" className="w-full" loading={isSubmitting}
-              disabled={captchaRequired && !captchaToken}>
+      <Button
+        type="submit" size="lg" loading={isSubmitting}
+        disabled={captchaRequired && !captchaToken}
+        className="h-12 w-full rounded-xl text-[15px] font-semibold
+                   shadow-[0_6px_16px_-8px_hsl(var(--primary)/0.6)]
+                   transition-[transform,box-shadow] hover:-translate-y-px
+                   hover:shadow-[0_10px_24px_-10px_hsl(var(--primary)/0.55)]"
+      >
+        <ArrowRight className="h-[18px] w-[18px]" aria-hidden />
         Sign in
       </Button>
     </form>
