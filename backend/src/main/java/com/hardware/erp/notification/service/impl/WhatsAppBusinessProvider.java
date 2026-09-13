@@ -2,6 +2,7 @@ package com.hardware.erp.notification.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hardware.erp.common.util.PhoneNumberNormalizer;
 import com.hardware.erp.notification.entity.NotificationChannel;
 import com.hardware.erp.notification.entity.TenantWhatsAppConnection;
 import com.hardware.erp.notification.entity.WhatsAppConnectionStatus;
@@ -136,17 +137,13 @@ public class WhatsAppBusinessProvider implements NotificationProvider {
     }
 
     /**
-     * Indian mobile numbers are stored as bare 10 digits throughout this
-     * app (see the {@code ^[6-9]\d{9}$} validation on Customer/Supplier/
-     * User); Meta's Cloud API needs E.164 without the leading '+'. Only
-     * India is handled - this app's own customer/supplier phone
-     * validation is India-only today, so a non-10-digit value here would
-     * already indicate a data problem elsewhere, not a real second country
-     * to support.
+     * Meta's Cloud API wants E.164 without the leading '+'. The normalisation
+     * itself lives in {@link PhoneNumberNormalizer} since CR-080 - this class
+     * and the Twilio provider used to carry near-identical private copies
+     * that could drift apart, and did.
      */
     private String toIndianE164(String mobileNo) {
-        String digitsOnly = mobileNo.replaceAll("\\D", "");
-        return digitsOnly.length() == 10 ? "91" + digitsOnly : digitsOnly;
+        return PhoneNumberNormalizer.toE164Digits(mobileNo);
     }
 
     private record MetaTextMessage(String messaging_product, String to, String type, MetaTextBody text) {}

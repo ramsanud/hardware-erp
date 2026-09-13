@@ -37,7 +37,7 @@ originally locked module order was *completed*, not abandoned. Treat any
 
 | Module | State |
 |---|---|
-| **Notification** | email live (SMTP, or SendGrid via EMAIL_PROVIDER); SMS live over Twilio; WhatsApp live per tenant. Every channel logs instead of sending when its credentials are blank (CR-074) |
+| **Notification** | email live (SMTP, or SendGrid via EMAIL_PROVIDER); SMS live over Twilio; WhatsApp live per tenant. Every channel logs instead of sending when its credentials are blank (CR-074). Manual WhatsApp (CR-080): one click opens the customer's chat with the invoice / quotation / receipt / reminder / greeting already typed - free, no credential, works for every shop |
 | **AI chat** | read-only tools over existing modules |
 | **Analytics** | aggregation endpoints over invoice data |
 | **Export** | PDF / Excel / CSV rendering; owns no entity |

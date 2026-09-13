@@ -11,6 +11,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/shared/components/ui/table';
 import { PageHeader } from '@/shared/components/PageHeader';
+import { WhatsAppButton } from '@/shared/components/WhatsAppButton';
+import { whatsAppLinkService } from '@/modules/notification/services/whatsAppLinkService';
 import { BackLink } from '@/shared/components/BackLink';
 import { ErrorState } from '@/shared/components/ErrorState';
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog';
@@ -177,6 +179,12 @@ export function QuotationDetailPage() {
               <Download className="h-4 w-4" />
               <span className="hidden sm:inline">Download PDF</span>
             </Button>
+            {/* CR-080 - opens the customer's chat with the quotation summary typed; the owner presses Send. */}
+            <WhatsAppButton
+              fetchLink={() => whatsAppLinkService.quotation(id)}
+              recipient={quotation.customerName}
+              disabledReason={quotation.customerMobile ? undefined : 'This customer does not have a phone number.'}
+            />
             {canEdit ? (
               <PermissionGate permission={PERMISSIONS.QUOTATION_MANAGE}>
                 <Button variant="outline" onClick={handleEdit}>

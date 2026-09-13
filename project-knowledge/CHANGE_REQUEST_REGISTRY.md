@@ -83,7 +83,11 @@ Nothing is implemented from conversation memory.
 | CR-071 | 2026-09-09 | Claude | Documentation only. Rebuild `FEATURE_REGISTRY.md` and `MODULE_DEPENDENCY_MAP.md` against the real source tree; both had drifted far enough to mislead — they named MySQL as the database and listed shipped modules as "planned". Records the `product` ↔ `invoice` package cycle rather than hiding it. No code change. | **APPLIED, 2026-09-09** |
 | CR-074 | 2026-09-09 | User | SMS goes real over Twilio; email can move to SendGrid with `EMAIL_PROVIDER=sendgrid`. Credentials are app-wide, not per tenant (unlike CR-056 WhatsApp). Collapses the three divergent direct-`JavaMailSender` paths — password reset, invoice PDF, Settings test button — onto one `EmailTransport`, so a SendGrid deployment cannot silently drop password-reset mail. | **APPLIED, 2026-09-09** |
 | CR-075 | 2026-09-09 | User | A first-visit guided tour that explains the application, built from the permissions the signed-in person actually holds, so an owner, accountant, storekeeper and auditor each get their own walkthrough. Skippable at every step and replayable from the header. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-09** |
+| CR-076 | 2026-09-12 | User | Choose an address on a map (Leaflet + OpenStreetMap, no API key). | **APPLIED, 2026-09-12** |
+| CR-077–079 | 2026-09-12 | — | Reserved by branch `feature/cr-077-079-auth-stack` (CR-077 = email over Resend, SMS opt-in), which had committed CR-077 before this entry was written. Numbered around it rather than renumbered under it. | — |
+| CR-080 | 2026-09-12 | User | Manual WhatsApp: a `wa.me` link opens the customer's own chat with the invoice / quotation / receipt / reminder / greeting already typed; the owner taps Send. Free, no credential, nothing stored, nothing sent by the app. One `PhoneNumberNormalizer` replaces the two near-copies in the Meta and Twilio providers. | **APPLIED, 2026-09-12** |
 | CR-081 | 2026-09-12 | User | The approved sign-in design, implemented: a 50/50 split with a forest-green hero over a shop interior, a new post-and-lintel H brand mark (also the favicon and the sidebar fallback), and one `AuthCard` shell for all six auth screens. Default colour theme becomes Emerald so a first-time visitor sees the brand. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-12** |
+| CR-082 | 2026-09-13 | User | The approved dashboard design and app shell, implemented on tokens: shop identity card and grouped rail with a user footer, greeting eyebrow and live shop-time chip, eight KPI cards with real-series sparklines and week-over-week deltas, Quick actions and Recent actions cards. Widget titles renamed to counter-staff language. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-13** |
 ---
 
 
@@ -4649,6 +4653,93 @@ role chips for both fixtures, every tip transition (shown → Got it → next
 screen still shown → dismissed stays dismissed → Turn off silences all →
 replay restores), nested-route matching, and the phone: the tour fits 390px,
 Skip is visible without scrolling, and works.
+
+## CR-080 — Manual WhatsApp: one click opens the customer's chat with the message already typed (APPLIED 2026-09-12)
+
+**Raised by:** User. **Type:** new capability; no schema change, no new
+provider credentials.
+
+### Why
+
+CR-056 made WhatsApp *automatic* — but only for a shop that has connected its
+own WhatsApp Business account through Meta, which needs a Business Manager, a
+verified number and (for anything outside a 24-hour customer session) approved
+message templates. Most hardware shops have none of that. They have the
+owner's phone with WhatsApp on it. For them every "Send WhatsApp" button in
+the application has answered `LOGGED_ONLY` since it shipped — an honest state,
+and a useless one.
+
+This CR gives every shop the free path: the button opens WhatsApp itself —
+the app on a phone, WhatsApp Web on a desktop — **on the right customer's
+chat, with the message already typed**. The owner reads it and taps Send.
+Nothing is sent by the application, nothing is stored, no credential exists.
+
+### What it is, precisely — and what it is not
+
+It is a `https://wa.me/<number>?text=<encoded message>` link, generated
+server-side and opened by the browser. That is the whole mechanism.
+
+It is **not** the WhatsApp Cloud API (that is CR-056, unchanged), not Twilio,
+not WhatsApp Web automation, not an unofficial library, not a QR-code
+session, and it cannot send in bulk — each message is one chat, one human tap.
+That last point is a property of the design, not a limitation to work around:
+it is exactly what keeps this free of Meta's registration, templates and
+per-message pricing.
+
+### Shape
+
+| Piece | Decision |
+|---|---|
+| Link generation | **Server-side**, per entity: `GET /v1/whatsapp/links/{invoices/{id} \| invoices/{id}/reminder \| invoices/{id}/payments/{pid} \| quotations/{id} \| customers/{id}}` → `{url, toMobileNo, message}`. Built on the existing tenant-scoped `InvoiceService.get` / `QuotationService.get` / `CustomerService.get`, so a foreign tenant's id is a 404 exactly as it is everywhere else — no new repository access, no new isolation code to get wrong. A pure `{phone, message} → url` endpoint was rejected as a network round-trip for a string concatenation; per-entity links are what actually needed the server (the tenant check and one source of message text) |
+| Abstraction | `WhatsAppService.generateChatUrl(phone, message)` with `ManualWhatsAppService` as the only implementation. The automatic path already exists as `WhatsAppBusinessProvider` behind `NotificationProvider`; the two contracts genuinely differ (open a link vs. send a message), so they are two small interfaces rather than one forced one |
+| Phone normalisation | **One** utility, `common/util/PhoneNumberNormalizer`, replacing the two near-copies that CR-056 and CR-074 had grown (`WhatsAppBusinessProvider.toIndianE164`, `SmsNotificationProvider.toE164`). `9876543210`, `+91 98765 43210`, `+91-98765-43210`, `919876543210`, `09876543210` all become `+919876543210`; `0044…` becomes `+44…`; an already-international number is kept; anything else is refused with a clear message rather than guessed at |
+| Encoding | `URLEncoder` with `+` rewritten to `%20`, so the text is RFC 3986 percent-encoded and survives Tamil, emoji, `&`, `?`, `/`, `#` and apostrophes unchanged. Never string-concatenated |
+| Templates | `WhatsAppMessageTemplates` — invoice, quotation, payment receipt, payment reminder, customer greeting. Plain text, built from the DTOs' own `…Display` money strings, so the amounts a customer reads are the amounts the invoice page shows |
+| Frontend | One `WhatsAppButton` (shared), used on Invoice (message, reminder, per-payment receipt), Quotation, Customer. Fetches the link on click and opens it in a new tab with `noopener,noreferrer`; pre-warms the fetch on hover/focus so the click's own user-activation is what opens the window |
+| Confirmation | None — one click, by the user's explicit instruction. The recipient is visible in the page header beside the button, and WhatsApp itself is the review step |
+| Storage / logging | Nothing stored. Phone numbers, message text and generated URLs are never logged — a wa.me URL *is* the customer's number and the message |
+
+### The one UI relocation
+
+The Invoice page's toolbar button labelled "WhatsApp reminder" was the CR-056
+*automatic* send. It is now the manual link — the thing that works for every
+shop — and the automatic send moved into the Share menu as "Send reminder via
+WhatsApp Business", beside the automatic invoice send (renamed from "Send
+WhatsApp" to say what it is). Nothing was removed. The Customer page's
+per-invoice "Send WhatsApp Reminder" (CR-056 §9) is unchanged; the manual
+reminder for that invoice is one click away on its detail page.
+
+### Deliberately not built
+
+- **Bulk / multi-select sending.** wa.me opens one chat per click by
+  design; a loop opening 50 tabs is not a feature. The request's own sketch
+  ("Customer 1 → WhatsApp → Send → back → Customer 2") is what the per-row
+  buttons already give.
+- **Low-stock and daily-summary "to owner" links.** A wa.me link opens a
+  chat *with someone else*; the owner messaging themself is not a workflow.
+  Those alerts already reach the owner through `ReminderSchedulerService`.
+- **A row action on the Payments list page.** Its rows are column-driven
+  (CR-068); receipts are reachable from the invoice's own Payments card.
+- **Consent gating on the manual link.** `whatsapp_opt_in` governs what the
+  *application* sends automatically (CR-056 §16). A human opening a chat
+  and choosing to type is not that, and the flag is still shown on the
+  customer page for the owner to respect.
+
+### Verified
+
+On a clean worktree holding HEAD plus exactly this change (another session had
+`Sidebar.tsx` mid-edit in the main tree): `mvn -o clean verify` exit 0 — **561
+unit tests (0 failures, 2 skipped: the opt-in live-mail pair) and 235
+integration tests (0 failures)**. New: `PhoneNumberNormalizerTest` (28),
+`ManualWhatsAppServiceTest` (16, every message decoded back and compared —
+Tamil, emoji, `&`, `?`, `/`, `#`, apostrophe, a literal `+`, empty),
+`WhatsAppLinkServiceTest` (7), `WhatsAppLinkControllerIT` (4, including the
+cross-tenant 404 whose body names nothing). Frontend: `tsc -b --force` exit 0,
+`vite build` exit 0, Playwright **192/192** with the new `whatsapp` suite on
+desktop and mobile. `eslint` is in `package.json` but not installed — lint
+**not executed**. `registry/static_check.py` **not executed** — python3 is not
+installed on this machine (hard rule 10).
+
 
 ---
 

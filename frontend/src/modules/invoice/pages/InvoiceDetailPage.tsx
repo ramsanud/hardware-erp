@@ -31,6 +31,8 @@ import { FormField } from '@/shared/components/FormField';
 import { ApiError } from '@/shared/types/api';
 import { downloadBlob, formatDateTime, previewBlob } from '@/shared/lib/utils';
 import { PermissionGate } from '@/routes/RequirePermission';
+import { WhatsAppButton } from '@/shared/components/WhatsAppButton';
+import { whatsAppLinkService } from '@/modules/notification/services/whatsAppLinkService';
 import { PERMISSIONS } from '@/modules/auth/constants';
 import { useToast } from '@/modules/auth/hooks/useToast';
 import { useAppChrome } from '@/layouts/AppChromeProvider';
@@ -162,13 +164,14 @@ export function InvoiceDetailPage() {
   };
 
   /**
-   * No WhatsApp Business API is configured anywhere in this app (there is no
-   * real provider credential to send through) - this uses the browser's own
-   * Web Share API, which hands the actual PDF to whatever the device offers
-   * (WhatsApp included, on a phone or a browser that supports file sharing).
-   * Falls back to opening WhatsApp's own web link with a text summary (no
-   * attachment - a URL can't carry a file) when the browser can't share files,
-   * telling the user plainly rather than pretending it attached the PDF.
+   * The browser's own Web Share API, which hands the actual PDF to whatever
+   * the device offers (WhatsApp included, on a phone or a browser that
+   * supports file sharing). When the browser cannot share files it downloads
+   * the PDF and opens the customer's WhatsApp chat with the invoice summary
+   * already typed (CR-080's manual link - no attachment, a URL can't carry a
+   * file), telling the user plainly rather than pretending it attached the PDF.
+   * Distinct from the two automatic sends in the Share menu, which need a
+   * connected WhatsApp Business account (CR-056).
    */
   const handleShareViaApp = async () => {
     if (!invoice) return;
@@ -182,8 +185,12 @@ export function InvoiceDetailPage() {
         return;
       }
       downloadBlob(blob, `${invoice.invoiceNumber}.pdf`);
-      const text = encodeURIComponent(`Invoice ${invoice.invoiceNumber} for ${invoice.totalDisplay} - I've downloaded the PDF, attaching it here.`);
-      window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
+      // The customer's own chat when they have a number; WhatsApp's chooser
+      // (no recipient) when they do not, so the download is never orphaned.
+      const url = await whatsAppLinkService.invoice(id)
+        .then((link) => link.url)
+        .catch(() => `https://wa.me/?text=${encodeURIComponent(`Invoice ${invoice.invoiceNumber} for ${invoice.totalDisplay}`)}`);
+      window.open(url, '_blank', 'noopener,noreferrer');
       toast.info('The PDF was downloaded - attach it manually in the WhatsApp chat that just opened.');
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === 'AbortError') return;
@@ -321,6 +328,12 @@ export function InvoiceDetailPage() {
               <Download className="h-4 w-4" />
               <span className="hidden sm:inline">Download PDF</span>
             </Button>
+            {/* CR-080 - opens the customer's chat with the invoice summary typed; the owner presses Send. */}
+            <WhatsAppButton
+              fetchLink={() => whatsAppLinkService.invoice(id)}
+              recipient={invoice.customerName}
+              disabledReason={invoice.customerMobile ? undefined : 'This customer does not have a phone number.'}
+            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline">
@@ -333,16 +346,25 @@ export function InvoiceDetailPage() {
                   <Mail className="h-4 w-4" />
                   Email
                 </DropdownMenuItem>
+                <DropdownMenuItem disabled={sharingViaApp} onSelect={() => void handleShareViaApp()}>
+                  <Share2 className="h-4 w-4" />
+                  Share PDF via app
+                </DropdownMenuItem>
+                {/* CR-056 - the automatic sends, which need a connected WhatsApp Business account. */}
                 <PermissionGate permission={PERMISSIONS.INVOICE_VIEW}>
                   <DropdownMenuItem onSelect={() => setSendWhatsAppConfirmOpen(true)}>
                     <MessageCircle className="h-4 w-4" />
-                    Send WhatsApp
+                    Send via WhatsApp Business
                   </DropdownMenuItem>
                 </PermissionGate>
-                <DropdownMenuItem disabled={sharingViaApp} onSelect={() => void handleShareViaApp()}>
-                  <MessageCircle className="h-4 w-4" />
-                  WhatsApp / more apps
-                </DropdownMenuItem>
+                {canTakePayment ? (
+                  <PermissionGate permission={PERMISSIONS.INVOICE_VIEW}>
+                    <DropdownMenuItem disabled={sendingReminder} onSelect={() => void handleSendReminder()}>
+                      <MessageCircle className="h-4 w-4" />
+                      Send reminder via WhatsApp Business
+                    </DropdownMenuItem>
+                  </PermissionGate>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
             {canEdit ? (
@@ -361,10 +383,13 @@ export function InvoiceDetailPage() {
             </PermissionGate>
             {canTakePayment ? (
               <PermissionGate permission={PERMISSIONS.INVOICE_VIEW}>
-                <Button variant="outline" onClick={() => void handleSendReminder()} loading={sendingReminder}>
-                  <MessageCircle className="h-4 w-4" />
-                  <span className="hidden sm:inline">WhatsApp reminder</span>
-                </Button>
+                {/* CR-080 - manual reminder link. The automatic (WhatsApp Business) reminder lives in the Share menu. */}
+                <WhatsAppButton
+                  label="WhatsApp reminder"
+                  fetchLink={() => whatsAppLinkService.paymentReminder(id)}
+                  recipient={invoice.customerName}
+                  disabledReason={invoice.customerMobile ? undefined : 'This customer does not have a phone number.'}
+                />
               </PermissionGate>
             ) : null}
             {canTakePayment ? (
@@ -495,14 +520,25 @@ export function InvoiceDetailPage() {
                       <p>₹{payment.amountDisplay} · {payment.paymentMethod}</p>
                       <p className="text-xs text-muted-foreground">{formatDateTime(payment.paymentDate)}</p>
                     </div>
-                    <PermissionGate permission={PERMISSIONS.PAYMENT_MANAGE}>
-                      <Button type="button" variant="ghost" size="sm"
-                              onClick={() => void handleSendPaymentReceipt(payment.id)}
-                              loading={sendingReceiptId === payment.id}>
-                        <MessageCircle className="h-4 w-4" />
-                        <span className="hidden sm:inline">Send receipt</span>
-                      </Button>
-                    </PermissionGate>
+                    <div className="flex items-center gap-1">
+                      <PermissionGate permission={PERMISSIONS.PAYMENT_VIEW}>
+                        <WhatsAppButton
+                          variant="ghost" size="sm" label="WhatsApp receipt"
+                          fetchLink={() => whatsAppLinkService.paymentReceipt(id, payment.id)}
+                          recipient={invoice.customerName}
+                          disabledReason={invoice.customerMobile ? undefined : 'This customer does not have a phone number.'}
+                        />
+                      </PermissionGate>
+                      <PermissionGate permission={PERMISSIONS.PAYMENT_MANAGE}>
+                        <Button type="button" variant="ghost" size="sm"
+                                onClick={() => void handleSendPaymentReceipt(payment.id)}
+                                loading={sendingReceiptId === payment.id}
+                                title="Send automatically through the connected WhatsApp Business account">
+                          <MessageCircle className="h-4 w-4" />
+                          <span className="hidden sm:inline">Auto-send receipt</span>
+                        </Button>
+                      </PermissionGate>
+                    </div>
                   </div>
                 ))}
               </CardContent>

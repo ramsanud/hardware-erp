@@ -1,24 +1,27 @@
 # RESUME POINT
 
+**Updated:** 2026-09-12 (**CR-080 — Manual WhatsApp: one click opens the customer's chat with the message already typed**). `SCOPE: BOTH` — new endpoints, new shared button; no migration, no credential, nothing stored.
+
+**What it is, in one sentence:** a `https://wa.me/<number>?text=<message>` link, built server-side from the customer's stored mobile and one of five templates, opened by the browser in a new tab. The owner reads the pre-filled text in WhatsApp and presses Send. **The application never sends.** It is not the Cloud API (CR-056, unchanged), not Twilio, not automation.
+
+**Why server-side rather than a string in the browser.** Two things needed the server: the tenant check and one source of message text. Both come free from the existing tenant-scoped `InvoiceService.get` / `QuotationService.get` / `CustomerService.get` — `WhatsAppLinkService` has no repository access at all, so there is no new place for a cross-tenant read to be written. A pure `{phone, message} → url` endpoint (the request's suggestion) was rejected as a network round-trip for a concatenation.
+
+**One phone normaliser now, not three.** `common/util/PhoneNumberNormalizer` replaces the near-copies CR-056 and CR-074 had each grown; the Meta and Twilio providers now delegate to it (their tests still pass, unchanged). Bare digits are only ever read as Indian — that is how every mobile is stored — and anything it cannot vouch for is refused with the message the UI shows, never guessed at. Twenty-eight cases pinned in `PhoneNumberNormalizerTest`.
+
+**The one UI relocation, stated plainly.** The Invoice toolbar's "WhatsApp reminder" was the CR-056 *automatic* send, which answers LOGGED_ONLY for every shop without a connected Business account — most of them. It is now the manual link, which works for all of them; the automatic reminder moved into the Share menu as "Send reminder via WhatsApp Business", beside the automatic invoice send (renamed to say what it is). Nothing was removed.
+
+**Verified — actually executed, on a clean worktree holding HEAD + exactly these files** (another session had `Sidebar.tsx` mid-edit and the main tree would not typecheck through no fault of this change): backend `mvn -o clean verify` exit 0 — **561 unit tests (0 failures, 2 skipped: the opt-in live-mail pair) and 235 Testcontainers integration tests (0 failures)**, 51 backend tests new to this CR; frontend `tsc -b --force` exit 0, `vite build` exit 0, Playwright **192/192** (was 133), the new `whatsapp` suite proving on desktop and mobile that one click opens exactly the server's URL with `_blank` + `noopener,noreferrer`, that only a GET was made and nothing was POSTed, that a customer with no number gets a disabled button with the reason as its tooltip, and that a 422 from the server surfaces its own sentence as a toast and opens nothing.
+
+**Deliberately not built:** bulk/multi-select (wa.me is one chat per click by design — the thing that keeps it free); low-stock / daily-summary "to owner" links (a chat with yourself is not a workflow; `ReminderSchedulerService` already covers those); a row action on the Payments list (column-driven rows, CR-068 — receipts are on the invoice's Payments card); consent gating on the manual link (`whatsapp_opt_in` governs what the *app* sends automatically, CR-056 §16). `eslint` is in `package.json` but not installed in `node_modules`, so lint was **not executed**.
+
+**Still open from the email session (2026-09-12, earlier):** `mvn spring-boot:run` does not read `.env`, and the startup banner names MFA/billing/database but not mail — together the reason a dead Gmail app password went unnoticed. Neither was changed; both are one-file fixes worth their own small CR.
+
+**Not executed:** `registry/static_check.py` — python3 is not installed on this machine (hard rule 10).
+
+---
+
+
 **Updated:** 2026-09-12 (**CR-076 — choose an address on a map**). `SCOPE: FRONTEND ONLY` — no entity, no migration, no endpoint, no DTO.
-
-
-## CR-081 — the sign-in page is now the approved design (2026-09-12)
-
-**Built to a canvas the owner approved as a render, not to a brief.** 50/50
-hero over a shop interior, a new post-and-lintel H mark (favicon and sidebar
-fallback too), one `AuthCard` shell on all six auth screens. Every colour is
-a token. **The default colour theme is now `emerald`** — the sign-in page
-renders before a per-user theme exists, so a fresh visitor was going to see
-blue under a green mark. Blur is 6px; a photo dropped at
-`src/assets/auth-hero.{jpg,png,webp}` replaces the drawn scene with no code
-change. Suite 192/192 on an isolated build. The design canvas
-("Hardware ERP Sign In") matches what shipped; a copy lives in
-`Documents/Hardware ERP sign-in design/`.
-
-**If the login ever looks wrong again, read the CR-081 registry entry before
-touching it.** This panel has now been reshaped five times; the one that
-stuck was judged on a render before it was code.
 
 ## Start here
 
