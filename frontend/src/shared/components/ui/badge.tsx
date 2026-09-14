@@ -12,6 +12,9 @@ const badgeVariants = cva(
         success: 'border-transparent bg-success/10 text-success',
         warning: 'border-transparent bg-warning/10 text-warning',
         destructive: 'border-transparent bg-destructive/10 text-destructive',
+        /* CR-083: "done and moved on" - a converted quotation. Not success (that is
+           Accepted) and not pending. */
+        info: 'border-transparent bg-info/10 text-info',
         /*
          * A tinted badge cannot carry two different "bad" states apart on
          * colour alone, and Supplier/User have two: Inactive (switched off)

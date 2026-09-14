@@ -3,6 +3,7 @@ package com.hardware.erp.quotation.service;
 import com.hardware.erp.common.dto.PageResponse;
 import com.hardware.erp.quotation.dto.QuotationRequest;
 import com.hardware.erp.quotation.dto.QuotationResponse;
+import com.hardware.erp.quotation.dto.QuotationStatsResponse;
 import com.hardware.erp.quotation.dto.QuotationSummaryResponse;
 import com.hardware.erp.quotation.entity.QuotationStatus;
 import org.springframework.data.domain.Pageable;
@@ -25,7 +26,16 @@ public interface QuotationService {
     PageResponse<QuotationSummaryResponse> search(String search, QuotationStatus status,
                                                     LocalDate fromDate, LocalDate toDate, Pageable pageable);
 
+    /** CR-083. Totals for the KPI cards over the same search and date range as the list, all statuses. */
+    QuotationStatsResponse stats(String search, LocalDate fromDate, LocalDate toDate);
+
     QuotationResponse updateStatus(Long id, QuotationStatus status);
+
+    /**
+     * CR-083. Removes a DRAFT quotation outright. Anything past DRAFT has been
+     * put in front of a customer and is refused - reject it instead.
+     */
+    void delete(Long id);
 
     QuotationResponse convert(Long id);
 

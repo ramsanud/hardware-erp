@@ -10,13 +10,19 @@ const LABEL: Record<QuotationStatus, string> = {
   CONVERTED: 'Converted',
 };
 
-const VARIANT: Record<QuotationStatus, 'success' | 'warning' | 'secondary' | 'destructive'> = {
+/**
+ * CR-083 palette: grey while it is only ours, blue once it is with the
+ * customer, green when agreed, red when it died, violet once it became an
+ * invoice - Converted and Accepted used to share green, which hid the one
+ * distinction the list is most often scanned for.
+ */
+const VARIANT: Record<QuotationStatus, 'default' | 'success' | 'info' | 'secondary' | 'destructive'> = {
   DRAFT: 'secondary',
-  SENT: 'warning',
+  SENT: 'default',
   ACCEPTED: 'success',
   REJECTED: 'destructive',
   EXPIRED: 'destructive',
-  CONVERTED: 'success',
+  CONVERTED: 'info',
 };
 
 /** expired overrides the raw status label - EXPIRED is never actually stored (CR-022), it's computed. */

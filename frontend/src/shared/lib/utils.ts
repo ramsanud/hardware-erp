@@ -29,6 +29,24 @@ export function previewBlob(blob: Blob): void {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * 2026-09-14 (an ISO date, no time) -> 14 Sep 2026. Parsed as a calendar date,
+ * so no timezone can shift it a day. The month names are a table rather than
+ * Intl.DateTimeFormat because en-IN and en-GB have printed "Sept" since CLDR
+ * 42 - the brief, the CSV and the tests all say "Sep", and a formatter whose
+ * output depends on the browser's ICU build cannot be asserted against.
+ */
+export function formatDate(value?: string | null): string {
+  if (!value) return '—';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return '—';
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return '—';
+  return `${match[3]} ${SHORT_MONTHS[month - 1]} ${match[1]}`;
+}
+
 /** 2026-08-13T09:14:22.331 -> 13 Aug 2026, 09:14 */
 export function formatDateTime(value?: string | null): string {
   if (!value) return '—';

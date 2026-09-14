@@ -4,6 +4,7 @@ import com.hardware.erp.common.dto.ApiResponse;
 import com.hardware.erp.common.dto.PageResponse;
 import com.hardware.erp.quotation.dto.QuotationRequest;
 import com.hardware.erp.quotation.dto.QuotationResponse;
+import com.hardware.erp.quotation.dto.QuotationStatsResponse;
 import com.hardware.erp.quotation.dto.QuotationStatusRequest;
 import com.hardware.erp.quotation.dto.QuotationSummaryResponse;
 import com.hardware.erp.quotation.entity.QuotationStatus;
@@ -48,6 +49,16 @@ public class QuotationController {
         return ApiResponse.ok(quotationService.search(search, status, fromDate, toDate, pageable));
     }
 
+    /** CR-083. KPI cards - same search and date range as the list, every status. Declared before /{id} for clarity; Spring prefers the literal path regardless. */
+    @GetMapping("/stats")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).QUOTATION_VIEW)")
+    public ApiResponse<QuotationStatsResponse> stats(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+        return ApiResponse.ok(quotationService.stats(search, fromDate, toDate));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).QUOTATION_VIEW)")
     public ApiResponse<QuotationResponse> get(@PathVariable Long id) {
@@ -66,6 +77,14 @@ public class QuotationController {
     public ApiResponse<QuotationResponse> updateStatus(
             @PathVariable Long id, @Valid @RequestBody QuotationStatusRequest request) {
         return ApiResponse.ok(quotationService.updateStatus(id, request.status()));
+    }
+
+    /** CR-083. DRAFT only - the service refuses anything later with a message that says to reject it. */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).QUOTATION_MANAGE)")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) {
+        quotationService.delete(id);
     }
 
     @PostMapping("/{id}/convert")

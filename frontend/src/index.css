@@ -32,6 +32,11 @@
     --success-foreground: 210 40% 98%;
     --warning: 32 95% 44%;
     --warning-foreground: 210 40% 98%;
+    /* CR-083. A fourth status hue for "done, moved on" states (a converted
+       quotation) that is neither good, bad nor pending. Violet, like the
+       others a token, so every colour theme keeps it. */
+    --info: 262 83% 50%;
+    --info-foreground: 210 40% 98%;
     --border: 214 32% 91%;
     --input: 214 32% 91%;
     --ring: 217 91% 35%;
@@ -102,6 +107,8 @@
     --success-foreground: 222 47% 11%;
     --warning: 32 90% 55%;
     --warning-foreground: 222 47% 11%;
+    --info: 262 80% 70%;
+    --info-foreground: 222 47% 11%;
     --border: 217 33% 20%;
     --input: 217 33% 20%;
     --ring: 217 91% 60%;
