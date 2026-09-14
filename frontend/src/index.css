@@ -297,6 +297,19 @@
     border-radius: 0 9999px 9999px 0;
     background: hsl(var(--sidebar-active));
   }
+  /*
+   * CR-082: a collapsible group header that reads as a row of its own -
+   * same height, padding and type as a link, chevron at the right - rather
+   * than the small uppercase caption it used to be. It is a button, not a
+   * link, so it never carries aria-current and never takes the active pill.
+   */
+  .sidebar-group {
+    @apply flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors;
+    color: hsl(var(--sidebar-foreground));
+  }
+  .sidebar-group:hover {
+    background: hsl(var(--sidebar-hover));
+  }
   .sidebar-section {
     @apply px-3 pb-1.5 pt-5 text-[10px] font-bold uppercase tracking-wider;
     color: hsl(var(--sidebar-section));
@@ -313,6 +326,10 @@
     }
     .sidebar-section {
       @apply pb-1.5 pt-5;
+    }
+    .sidebar-group {
+      @apply py-2.5;
+      min-height: 2.75rem;
     }
   }
 

@@ -28,6 +28,8 @@ export const PRODUCT_SORT_FIELDS = [
 
 export const PRODUCT_ROUTES = {
   list: '/products',
+  /** CR-082: opens the list with the create dialog already open. */
+  create: '/products?new=1',
   detail: (id: number | string) => `/products/${id}`,
   categories: '/categories',
   brands: '/brands',

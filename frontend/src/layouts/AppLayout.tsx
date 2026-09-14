@@ -167,8 +167,10 @@ function AppLayoutInner() {
                       initials(user?.fullName)
                     )}
                   </span>
-                  <span className="hidden max-w-[10rem] truncate text-sm font-medium sm:inline">
-                    {user?.fullName}
+                  {/* CR-082: name over role, as the mockup draws it - who and what, at a glance. */}
+                  <span className="hidden max-w-[10rem] flex-col items-start leading-tight sm:flex">
+                    <span className="w-full truncate text-sm font-medium">{user?.fullName}</span>
+                    <span className="w-full truncate text-[11px] font-normal text-muted-foreground">{user?.roleName}</span>
                   </span>
                 </Button>
               </DropdownMenuTrigger>

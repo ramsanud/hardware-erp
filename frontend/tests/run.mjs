@@ -19,6 +19,7 @@ const SPECS = [
   ['onboarding', './onboarding/tour.spec.mjs'],
   ['address-map', './customers/address-map.spec.mjs'],
   ['whatsapp', './whatsapp/manual-link.spec.mjs'],
+  ['dashboard', './dashboard/dashboard.spec.mjs'],
 ];
 
 const external = Boolean(process.env.E2E_BASE_URL);

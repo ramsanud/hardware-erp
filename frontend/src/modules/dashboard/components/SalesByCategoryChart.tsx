@@ -49,7 +49,7 @@ export function SalesByCategoryChart() {
     <Card>
       <CardHeader className="flex-row items-start justify-between gap-4 space-y-0 pb-2">
         <div>
-          <CardTitle className="text-base">Sales by category</CardTitle>
+          <CardTitle className="text-base">Top Selling Categories</CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">Share of revenue this period</p>
         </div>
 

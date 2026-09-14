@@ -4806,3 +4806,111 @@ The other session's uncommitted editorial pass over `AuthLayout`, `LoginPage`
 and `LoginForm` was superseded by this and overwritten. Its diff was read in
 full before that; the copy it carried is this brief's copy, so nothing of
 substance was lost.
+
+
+---
+
+## CR-082 — The approved dashboard and app shell, implemented (APPLIED 2026-09-13)
+
+**Raised by:** User. **Type:** frontend redesign + widget renames. `SCOPE: FRONTEND ONLY`.
+
+### What was asked
+
+Two briefs in one: build the dashboard mockup exactly, and rename every
+widget to counter-staff language. Both done. Where the mockup drew something
+the data cannot support, this entry says so rather than faking it.
+
+### The rail (`Sidebar.tsx`)
+
+| Piece | Decision |
+|---|---|
+| Overview | A direct row, active pill on `/dashboard`, not a section heading over a "Dashboard" item |
+| Groups | Sales · Projects · Purchase · Inventory · Accounting · Administration · Developer, each a **row that folds** with a chevron (`.sidebar-group`). **Every group starts open** (CR-023: folding is a per-viewer choice, never a way to lose a module); the fold is persisted per user via `themeScope`, so the mockup's tidy folded state is something you arrive at |
+| Shop card | Shop name + "Hardware shop" under the brand. The mockup draws a dropdown caret, which would promise a **shop switcher — and there is none** (one login is one shop, CR-016). It opens Shop settings for `SETTINGS_VIEW` holders and is static otherwise; the chevron points right, the way a link does |
+| Utility list | **WhatsApp Reminders** (`SETTINGS_VIEW`) and **Help & Support**, under a divider. "Support" and "My profile" left Administration so nothing is listed twice |
+| Footer | The person signed in — avatar, name, role — opens their profile |
+| Header | Role under the name in the top bar, as drawn |
+
+### The page (`DashboardPage.tsx`)
+
+- Greeting eyebrow (**Good morning / afternoon / evening**, from the clock), title, subtitle; a live **date + Shop Time** chip that ticks on the minute; the two primary actions.
+- **Row 1** — Total Sales · Today's Earnings · Pending Payments · Low Stock Alerts.
+- **Row 2** — Items Catalog · Wholesalers & Dealers · Bills Raised · Customer List, each a door to its list.
+- Charts 2:1, then **Quick actions** (2/3) and **Recent Actions** (1/3, `AUDIT_VIEW`, reads the CR-072 activity log), then the four lists.
+
+**Sparklines and deltas are measured, or absent.** Total Sales and Today's
+Earnings draw from the real 14-day daily series (`/v1/analytics/revenue-trend`,
+`REPORT_VIEW`); "vs last week" is the last 7 buckets against the 7 before,
+"vs yesterday" is the summary's two figures. **Pending Payments and Low Stock
+Alerts have no time series in the API, so they carry no sparkline and no
+delta.** The mockup drew red and orange lines on them; a line drawn from
+nothing is decoration pretending to be data. A previous window of zero shows
+"—", not "0%".
+
+**"Pending Estimates" means it** — `status=SENT`, not the last five of any
+status. Renaming "Recent quotations" to "Pending" and keeping the old query
+would have been a label lying about its list.
+
+**Quick actions open the real forms.** Product and customer creation are
+dialogs on their list pages, not routes, so `?new=1` now opens them
+(`PRODUCT_ROUTES.create`, `CUSTOMER_ROUTES.create`); the buttons no longer
+just land on a list.
+
+**Retired:** the CR-034 §21 Bento hero treatment for the KPI row. Bento's
+grid is three cells with a double-width hero; the approved row is four
+equals. Design styles still govern surfaces, radii and motion everywhere else.
+
+### Every colour is a token
+
+The brief named `bg-emerald-950`, `#059669`, `text-slate-900`,
+`border-gray-200`. None of those appear. Each maps to the token the spec
+table in the same brief already listed — `--sidebar`, `--primary`,
+`--foreground`, `--border` — so the page is the mockup on Emerald and the
+same design in every other shop's colours.
+
+### Widget titles
+
+| Was | Now |
+|---|---|
+| Total sales | Total Sales |
+| Today's sales | Today's Earnings |
+| Outstanding customer balance | Pending Payments |
+| Low stock items / Low stock | Low Stock Alerts |
+| Products | Items Catalog |
+| Suppliers | Wholesalers & Dealers |
+| Invoices | Bills Raised |
+| Customers | Customer List |
+| Recent invoices | Recent Bills |
+| Recent quotations | Pending Estimates (now filtered) |
+| Sales trend | Sales Growth |
+| Sales by category | Top Selling Categories |
+| Recent activity | Recent Actions |
+
+Applied to the page, both chart cards, and the `DASHBOARD_WIDGETS` catalogue
+so the customise-dashboard picker says the same words. Rail labels are
+untouched — the whole point is that a widget and a menu entry never share a
+name.
+
+### Verified
+
+`tsc -b --force` 0, `vite build` 0. Screenshots at 1440 and 390 read against
+the mockup before this was called done — which caught the one real defect:
+**a 26px figure, a 40px tile and a 64px sparkline cannot share a 226px card**,
+and "₹26,100.00" truncated to "₹26,1…". The mockup only gets away with it
+because its figures are ₹0.00. The sparkline now sits on the delta row and the
+figure owns the width. Two smaller finds: the delta's flex layout dropped the
+space between "30.8%" and "vs yesterday" from the DOM text (a screen reader
+heard one word) — it is inline now; and lucide icons are built from
+`<polyline>`, so the sparkline carries `data-sparkline` for anything that
+needs to count them.
+
+New suite `frontend/tests/dashboard/dashboard.spec.mjs`, **38 assertions**:
+every renamed title present and the old label absent; figures render in
+full at 1440 and 390; deltas computed from the stubbed series; **exactly two**
+sparklines with data and **zero** without; quick actions are links and
+"Add product" carries `?new=1`; Overview active; groups fold, the fold
+survives a reload, and unfolds. Full suite **230/230** against a build served
+from its own directory.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this
+machine (hard rule 10).
