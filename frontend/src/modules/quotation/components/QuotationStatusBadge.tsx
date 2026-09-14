@@ -16,13 +16,13 @@ const LABEL: Record<QuotationStatus, string> = {
  * invoice - Converted and Accepted used to share green, which hid the one
  * distinction the list is most often scanned for.
  */
-const VARIANT: Record<QuotationStatus, 'default' | 'success' | 'info' | 'secondary' | 'destructive'> = {
+const VARIANT: Record<QuotationStatus, 'success' | 'info' | 'complete' | 'secondary' | 'destructive'> = {
   DRAFT: 'secondary',
-  SENT: 'default',
+  SENT: 'info',
   ACCEPTED: 'success',
   REJECTED: 'destructive',
   EXPIRED: 'destructive',
-  CONVERTED: 'info',
+  CONVERTED: 'complete',
 };
 
 /** expired overrides the raw status label - EXPIRED is never actually stored (CR-022), it's computed. */

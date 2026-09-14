@@ -22,7 +22,7 @@ originally locked module order was *completed*, not abandoned. Treat any
 | **Product** | `PRD-nnnnnn`, barcode unique per tenant, HSN, GST rate, current pricing on the product row, cost fields hidden without `PRODUCT_VIEW_COST`, Excel/CSV import with preview then confirm, images, price history from recent sales |
 | **Inventory** | stock, append-only `stock_movement`, warehouses, reorder rules, low and out-of-stock filtering (CR-070) |
 | **Purchase** | PO to GRN to bill, landed cost, supplier price comparison, bill import with preview |
-| **Quotation** | quote, revision, convert to invoice, margin badge |
+| **Quotation** | quote, revision, convert to invoice, margin badge; list desk (CR-083): KPI cards, status pills, date presets, CSV export, row menu (PDF / WhatsApp / convert / edit / delete draft) |
 | **Invoice** | GST / non-GST / mixed, GST on the final invoice rate, initial payment at creation, loss-sale protection with approval workflow, coupon application |
 | **Payment** | full, partial, initial, later; history; reversal |
 | **Sales Order / Delivery Challan / Credit Note** | order to challan to invoice to credit-note reversal, with the stock effect at each step |

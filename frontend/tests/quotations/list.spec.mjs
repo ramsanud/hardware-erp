@@ -19,12 +19,14 @@ const QUOTATIONS = [
     quotationDate: '2026-09-01', validUntil: '2026-09-05', expired: true, totalDisplay: '900.00', status: 'SENT' },
   { id: 4, quotationNumber: 'QUO-000004', customerName: 'Priya Interiors', customerMobile: '9876500004',
     quotationDate: '2026-09-02', validUntil: plusDays(30), expired: false, totalDisplay: '48,000.00', status: 'CONVERTED' },
+  { id: 5, quotationNumber: 'QUO-000005', customerName: 'Selvam Constructions', customerMobile: '9876500005',
+    quotationDate: '2026-09-03', validUntil: plusDays(12), expired: false, totalDisplay: '1,25,000.00', status: 'ACCEPTED' },
 ];
 
 const STATS = {
-  totalCount: 4, totalValueDisplay: '64,350.00',
+  totalCount: 5, totalValueDisplay: '1,89,350.00',
   pendingCount: 2, pendingValueDisplay: '15,450.00',
-  approvedCount: 1, approvedValueDisplay: '48,000.00',
+  approvedCount: 2, approvedValueDisplay: '1,73,000.00',
   closedCount: 1, closedValueDisplay: '900.00',
 };
 
@@ -60,11 +62,11 @@ export default async function run() {
     s.check('four KPI cards render above the toolbar',
       (await desktop.locator('[data-testid="quotation-kpis"] > *').count()) === 4);
     s.check('Total shows the count and the rupee value from /stats, not the page',
-      (await desktop.locator('[data-testid="kpi-totalCount"]').innerText()).replace(/\s+/g, ' ').includes('4')
-      && (await desktop.locator('[data-testid="kpi-totalCount"]').innerText()).includes('₹64,350.00'));
+      (await desktop.locator('[data-testid="kpi-totalCount"]').innerText()).replace(/\s+/g, ' ').includes('5')
+      && (await desktop.locator('[data-testid="kpi-totalCount"]').innerText()).includes('₹1,89,350.00'));
     s.check('Pending / Approved / Closed cards carry their counts',
       (await desktop.locator('[data-testid="kpi-pendingCount-count"]').innerText()) === '2'
-      && (await desktop.locator('[data-testid="kpi-approvedCount-count"]').innerText()) === '1'
+      && (await desktop.locator('[data-testid="kpi-approvedCount-count"]').innerText()) === '2'
       && (await desktop.locator('[data-testid="kpi-closedCount-count"]').innerText()) === '1');
     s.check('the stats call never carries the status pill',
       calls.filter((u) => u.includes('/stats')).every((u) => !u.includes('status=')));
@@ -87,8 +89,11 @@ export default async function run() {
     const sent = await colourOf('QUO-000002', 'Sent');
     const expired = await colourOf('QUO-000003', 'Expired');
     const converted = await colourOf('QUO-000004', 'Converted');
-    s.check('Draft, Sent, Expired and Converted are four different colours',
-      new Set([draft, sent, expired, converted]).size === 4, [draft, sent, expired, converted].join(' / '));
+    const accepted = await colourOf('QUO-000005', 'Accepted');
+    // Five, and Accepted is in the set on purpose: on the Emerald theme a Sent
+    // badge on --primary was the same green as Accepted on --success.
+    s.check('Draft, Sent, Accepted, Expired and Converted are five different colours',
+      new Set([draft, sent, accepted, expired, converted]).size === 5, [draft, sent, accepted, expired, converted].join(' / '));
 
     // Status pills drive the list
     await desktop.getByRole('tab', { name: 'Expired' }).click();
@@ -97,7 +102,7 @@ export default async function run() {
       calls.some((u) => u.includes('status=EXPIRED'))
       && (await desktop.locator('table tbody tr').innerText()).includes('QUO-000003'));
     await desktop.getByRole('tab', { name: 'All' }).click();
-    await desktop.waitForFunction(() => document.querySelectorAll('table tbody tr').length === 4);
+    await desktop.waitForFunction(() => document.querySelectorAll('table tbody tr').length === 5);
 
     // Row menu - a draft offers everything; a converted quote offers only PDF and WhatsApp
     await desktop.getByRole('button', { name: 'Actions for QUO-000001' }).click();

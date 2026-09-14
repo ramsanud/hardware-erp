@@ -32,11 +32,17 @@
     --success-foreground: 210 40% 98%;
     --warning: 32 95% 44%;
     --warning-foreground: 210 40% 98%;
-    /* CR-083. A fourth status hue for "done, moved on" states (a converted
-       quotation) that is neither good, bad nor pending. Violet, like the
-       others a token, so every colour theme keeps it. */
-    --info: 262 83% 50%;
+    /* CR-083. Two more status hues, tokens like the others so every colour
+       theme keeps them. --info is "with someone else, in progress" (a SENT
+       quotation) - blue, and fixed, because on the default Emerald theme
+       --primary is green and a Sent badge on primary read the same as
+       Accepted. --complete is "done, moved on" (a CONVERTED quotation):
+       neither good, bad nor pending - violet. Both measured >= 5.9:1 on
+       their 10% tint. */
+    --info: 217 91% 40%;
     --info-foreground: 210 40% 98%;
+    --complete: 262 83% 50%;
+    --complete-foreground: 210 40% 98%;
     --border: 214 32% 91%;
     --input: 214 32% 91%;
     --ring: 217 91% 35%;
@@ -107,8 +113,10 @@
     --success-foreground: 222 47% 11%;
     --warning: 32 90% 55%;
     --warning-foreground: 222 47% 11%;
-    --info: 262 80% 70%;
+    --info: 217 91% 70%;
     --info-foreground: 222 47% 11%;
+    --complete: 262 80% 70%;
+    --complete-foreground: 222 47% 11%;
     --border: 217 33% 20%;
     --input: 217 33% 20%;
     --ring: 217 91% 60%;

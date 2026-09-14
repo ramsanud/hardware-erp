@@ -101,6 +101,8 @@ for every module; see each module's controller for its actual endpoints).
 | PATCH | `/v1/quotations/{id}/status` | QUOTATION_MANAGE | 200 |
 | POST | `/v1/quotations/{id}/convert` | INVOICE_CREATE | 200 |
 | GET | `/v1/quotations/{id}/pdf` | QUOTATION_VIEW | 200, `application/pdf` (CR-026) |
+| GET | `/v1/quotations/stats` | QUOTATION_VIEW | 200 — CR-083. `search`, `fromDate`, `toDate` (same as the list; no `status`). Counts and rupee totals over every match: `totalCount/totalValueDisplay`, `pendingCount` (DRAFT+SENT still valid), `approvedCount` (ACCEPTED still valid + CONVERTED), `closedCount` (expired DRAFT/SENT/ACCEPTED + REJECTED); the three buckets sum to the total |
+| DELETE | `/v1/quotations/{id}` | QUOTATION_MANAGE | 204 — CR-083. DRAFT only; 422 `BUSINESS_RULE_VIOLATION` for anything later (reject it instead). Items go with it; logged to `activity_log` |
 
 Search parameters on `GET /v1/quotations`: `search`, `status`, `fromDate`,
 `toDate` (ISO date, inclusive), `page`, `size`, sort fixed to
@@ -110,6 +112,11 @@ exact same `InvoiceService.create()` path a normal invoice uses (stock
 decrements, GST recalculated from current product rates). 422
 `PAYMENT_EXCEEDS_TOTAL`-style business errors: converting an expired
 quotation, or one that is `REJECTED`/`CONVERTED` already.
+
+`status` follows the badge, not the stored column (BUG-BE-005, CR-083): `EXPIRED`
+means past `validUntil` while still DRAFT/SENT/ACCEPTED — it is never stored
+(CR-022) — and `DRAFT`/`SENT`/`ACCEPTED` mean the still-valid ones. `REJECTED`
+and `CONVERTED` are the stored values.
 
 ## Invoice PDF + shop settings (CR-022)
 

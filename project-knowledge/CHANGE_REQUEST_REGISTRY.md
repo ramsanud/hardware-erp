@@ -5043,10 +5043,24 @@ badge uses, so the pill and the badge always agree. `REJECTED` and
 - **KPI cards**: Total (count · ₹ value), Drafts / Pending (DRAFT + SENT, live),
   Approved / Converted (ACCEPTED live + CONVERTED), Expired / Rejected. Amber /
   emerald / rose are the `warning` / `success` / `destructive` tokens.
-- **Status colours**: Draft → `secondary`, Sent → `default` (primary), Accepted →
-  `success`, Expired/Rejected → `destructive`, Converted → new `info` token
-  (violet, light and dark). The token is added rather than a raw Tailwind
-  purple so it follows every colour theme like the others.
+- **Status colours**: Draft → `secondary`, Sent → new `info` token (blue),
+  Accepted → `success`, Expired/Rejected → `destructive`, Converted → new
+  `complete` token (violet). Both tokens are added, light and dark, rather
+  than raw Tailwind colours so they follow every colour theme like the
+  others. *Second pass, same day:* Sent first shipped on `default`
+  (primary), and on the default Emerald theme primary is green — a Sent
+  badge read the same as Accepted in the screenshot, which is the one
+  distinction the list is scanned for. Fixed blue `--info` (6.06:1 light,
+  5.98:1 dark on its 10% tint, measured) replaces it; the violet that had
+  been called `info` became `complete`, since "info" is blue everywhere
+  else in the industry and the next reader should not have to learn
+  otherwise. The suite's colour assertion now includes Accepted — it
+  checked four hues and left out the pair that collided. Also in that
+  pass: the KPI label wraps instead of truncating ("APPROVED / CONVER…" at
+  375px), and the empty-state Clear-filters check waits for the refetch
+  to settle — the pill sets `filtered` before `loading` flips, so the
+  button paints, hides under the skeleton and returns; the test counted
+  in the gap (1 flake in 272, reproduced 0/3 alone).
 - **Expiring soon**: an amber "3 days left" style badge on Valid until when a
   live quotation expires within three days.
 - **Date range**: All time / Today / This month / Custom (two `DatePicker`s).

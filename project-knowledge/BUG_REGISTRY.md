@@ -98,6 +98,7 @@ generating new code; never reintroduce a listed bug.
 | BUG-FE-038 | Frontend | Medium | Fixed 2026-09-14 |
 | BUG-BE-003 | Backend / Inventory | High | Fixed 2026-09-09 |
 | BUG-BE-004 | Backend / Common | Medium | Fixed 2026-09-09 |
+| BUG-BE-005 | Backend / Quotation | Medium | Fixed 2026-09-14 |
 
 **This index is complete and covers every entry in this file (verified
 2026-09-08).** It previously stopped at `BUG-ENV-003`, omitting 33 later
@@ -3692,3 +3693,33 @@ not touched.
 **Regression test.** `responsive.spec.mjs`, mobile viewports only: the profile
 tab strip is no wider than the viewport, and the last tab can be scrolled to
 inside the strip and selected. Suite **234/234**.
+
+## BUG-BE-005 — the quotations "Expired" filter could never match anything (FIXED, 2026-09-14)
+
+| | |
+|---|---|
+| **Severity** | Medium — a filter that silently returned an empty page; no data at risk, but every expired quotation was invisible to the one filter meant to find it |
+| **Layer** | BACKEND ONLY |
+| **Found** | Reading `QuotationRepository.search` while building the CR-083 status pills |
+| **Symptom** | `GET /v1/quotations?status=EXPIRED` → an empty page, always, while the badge on those rows said "Expired" |
+
+**Root cause — a computed state compared as a stored one.** CR-022 made expiry a
+read-time computation from `validUntil` (`Quotation.isExpired()`); `EXPIRED`
+exists in the enum but `updateStatus` refuses to store it and nothing else
+does. The search query compared `q.status = :status`, which for `EXPIRED` is
+a column value no row has. The Draft/Sent/Accepted filters had the mirror
+defect: they listed expired quotations under the label the badge had already
+stopped using for them.
+
+**Fix.** The service translates the requested status into three parameters —
+the stored value, `expiredOnly` (past `validUntil` and still
+DRAFT/SENT/ACCEPTED) and `liveOnly` (`validUntil >= today`) — so the filter
+uses exactly the badge's rule. `REJECTED`/`CONVERTED` pass through untouched.
+The new `/stats` aggregate buckets the same way, so the cards, the pills and
+the badges can never disagree.
+
+**Regression tests.** `QuotationListFiltersIT.expiredFilterMatchesComputedExpiry`
+creates a live and an expired draft and asserts each filter returns only its
+own — against the real query, since a mocked repository has no opinion about
+JPQL. `QuotationServiceImplTest.searchTranslatesExpiredIntoComputedExpiry`
+pins the translation one level down.

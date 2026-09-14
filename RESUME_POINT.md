@@ -1,5 +1,90 @@
 # RESUME POINT
 
+**Updated:** 2026-09-14 (**CR-083 — the quotations list becomes a working desk; BUG-BE-005 fixed on the way**). `SCOPE: BOTH`.
+
+## CR-083 second pass, later the same day — `SCOPE: FRONTEND ONLY`, NOT committed
+
+A review of `6ad7d65` against the brief, done by rendering it (375 / 768 /
+1440 / 1920, light and dark) rather than reading the diff. Two visible
+defects, fixed in the working tree on top of that commit:
+
+- **Sent was green.** It sat on `default` (`--primary`), and the default
+  Emerald theme's primary is green, so Sent and Accepted were the same
+  pill. Now a fixed blue `--info`; the violet formerly named `info` is
+  `--complete` (Converted). Contrast measured, not reasoned: 6.06:1 / 5.98:1
+  light / dark. The suite's colour assertion gained Accepted — it had checked
+  four hues and skipped the pair that collided.
+- **"APPROVED / CONVER…"** truncated at 375px; the KPI label wraps now.
+- One flake: the empty-state "Clear filters" check counted during the
+  skeleton gap between the pill click and the refetch (1/272 in a full run,
+  0/3 alone). It waits for `networkidle` now.
+
+Verified on a private build (`--outDir` in the scratchpad, preview on 4183):
+`tsc -b --force` 0, `vite build` 0, Playwright **272/272**. Backend untouched
+by this pass; the detached-worktree `mvn clean verify` for `6ad7d65` reached
+**579 unit tests, 0 failures** before the session ended mid-ITs — the ITs
+are **not re-verified here**. `static_check.py` not executed (no python3).
+
+Files: `index.css`, `tailwind.config.js`, `ui/badge.tsx`,
+`QuotationStatusBadge.tsx`, `QuotationKpiCards.tsx`,
+`tests/quotations/list.spec.mjs`, plus the CR-083 body. Stage those
+explicitly — the tree also carries another session's registry edits.
+
+## CR-083 — quotations list: KPI cards, pills, row menu, CSV, empty state (2026-09-14)
+
+**Frontend** (`quotation/pages/QuotationListPage.tsx` rewritten; three new
+components in `quotation/components/`): four KPI cards fed by a new
+`/v1/quotations/stats`; combined search + date presets (All time / Today /
+This month / Custom); status pills on Radix Tabs; Columns · Export CSV · New
+quotation; number + date, customer + `+91` mobile, Valid until with an amber
+"N days left" badge inside 3 days, amount, colour-coded status (Converted is a
+**new `info` violet token** — `index.css`, `tailwind.config`, `badge.tsx`);
+a `...` row menu (PDF preview, WhatsApp via the CR-080 link warmed on hover,
+Convert with the detail page's confirm copy, Edit via the same hand-off the
+detail page uses, Delete for drafts); an illustrated empty state with Create
+and — only when a filter is set — Clear filters. `shared/lib/utils.ts` gained
+`formatDate` (a month table, not `Intl`: Chromium's en-IN prints "Sept").
+
+**Backend**: `GET /v1/quotations/stats` (native aggregate, `GROUP BY 1, 2` —
+the same PostgreSQL bind-parameter trap as the analytics trend query) and
+`DELETE /v1/quotations/{id}` (DRAFT only, 422 otherwise, activity-logged).
+
+**BUG-BE-005**: `?status=EXPIRED` had never matched a row — EXPIRED is
+computed, never stored (CR-022). The service now translates the filter into
+the badge's rule (`expiredOnly` / `liveOnly` + `today`), so Draft/Sent/
+Accepted also stop listing expired ones. Regression IT
+`QuotationListFiltersIT` (3 tests) + 4 unit tests in `QuotationServiceImplTest`.
+
+**Verified on the working tree, not a clean worktree** (the work is uncommitted
+and other sessions' edits share the tree): `tsc -b --force` 0, `vite build` 0,
+frontend suite **271/272 on a private build served on 4175** — the one miss is
+a pre-existing timing race in `whatsapp/manual-link.spec.mjs` on the invoice
+page (its own detail printed `count=1`), **40/40 when rerun alone**; the new
+`quotations/list.spec.mjs` is 24/24. Backend: see the commit body for the
+`mvn -o clean verify` figures. `registry/static_check.py` **not executed**
+(no python3).
+
+**The trap this session hit twice**: `vite preview` on 4173 died mid-suite
+because another session rebuilt `dist/`; and the first `mvn clean verify`
+"errored" two context tests only because Docker Desktop was not running.
+Neither was a defect. Private `--outDir` + `E2E_BASE_URL`, and check
+`docker info` before believing a Testcontainers error.
+
+**Not committed.** Stage by pathspec — the tree also carries the other
+session's dashboard/sidebar/customer work. CR-083 files: the six backend
+files under `quotation/` (+ `QuotationStatsResponse`, `QuotationListFiltersIT`),
+`frontend/src/modules/quotation/**`, `shared/lib/utils.ts`, `shared/components/ui/badge.tsx`,
+`index.css` (the `--info` hunk only), `tailwind.config.*`, `tests/quotations/`,
+`tests/run.mjs` (one line), and the four registries + this file.
+
+**Candidate CRs noticed, not built**: server-side CSV export; bulk actions;
+`hasAvatar` on `/me` so the app stops requesting an avatar that 404s on
+every page load (seen during the live smoke on 2026-09-12).
+
+---
+
+**Previous entry follows.**
+
 **Updated:** 2026-09-14 (**CR-082 — the approved dashboard and app shell, both passes**). `SCOPE: FRONTEND ONLY`.
 
 ## CR-082 — the approved dashboard and app shell (2026-09-13 → 14)

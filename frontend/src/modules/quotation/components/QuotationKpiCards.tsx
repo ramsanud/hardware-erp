@@ -61,7 +61,7 @@ export function QuotationKpiCards({ stats, loading }: QuotationKpiCardsProps) {
               ) : null}
             </div>
             <div className="min-w-0">
-              <p className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+              <p className="text-xs font-medium uppercase leading-snug tracking-wide text-muted-foreground">{label}</p>
               {loading && !stats ? (
                 <>
                   <Skeleton className="mt-1.5 h-7 w-12" />
