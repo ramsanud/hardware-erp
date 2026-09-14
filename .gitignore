@@ -80,3 +80,14 @@ replay_pid*.log
 .env.cloud
 
 .env.selfhosted
+
+# =====================================================================
+# Session scratch (2026-09-14). Concurrent Claude sessions drop one-off
+# live-smoke scripts and a second Vite config beside the real suites so
+# two dev servers can run side by side. They carry local dev passwords
+# and paths into a session's temp directory, so they must never be
+# swept in by a broad `git add`.
+# =====================================================================
+frontend/tests/*.tmp.mjs
+frontend/tests/.tmp-*
+frontend/vite.config.audit.ts
