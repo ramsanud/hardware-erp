@@ -1,17 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  AlertTriangle, ArrowDown, ArrowUp, ClipboardList, FileText, IndianRupee, Package, Plus, TrendingUp, Truck, Users,
+  AlertTriangle, Box, ClipboardList, FileText, IndianRupee, Package, Plus, Truck, UserRound, Users,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import {
   Card, CardContent, CardHeader, CardTitle,
 } from '@/shared/components/ui/card';
-import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { PermissionGate } from '@/routes/RequirePermission';
 import { SalesTrendChart } from '../components/SalesTrendChart';
 import { SalesByCategoryChart } from '../components/SalesByCategoryChart';
+import { CountCard, KpiCard } from '../components/StatCards';
+import { QuickActionsCard } from '../components/QuickActionsCard';
+import { RecentActionsCard } from '../components/RecentActionsCard';
+import { ShopTimeChip, greetingFor } from '../components/ShopTimeChip';
 import { PERMISSIONS } from '@/modules/auth/constants';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { useDesignStyle } from '@/theme/DesignStyleProvider';
@@ -22,6 +25,7 @@ import { invoiceService } from '@/modules/invoice/services/invoiceService';
 import { quotationService } from '@/modules/quotation/services/quotationService';
 import { customerService } from '@/modules/customer/services/customerService';
 import { dashboardService, type SalesSummaryResponse } from '../services/dashboardService';
+import { analyticsService, type AnalyticsSummary, type TrendPoint } from '../services/analyticsService';
 import { INVOICE_ROUTES } from '@/modules/invoice/constants';
 import { QUOTATION_ROUTES } from '@/modules/quotation/constants';
 import { CUSTOMER_ROUTES } from '@/modules/customer/constants';
@@ -35,63 +39,107 @@ import type { QuotationSummaryResponse } from '@/modules/quotation/types';
 import type { CustomerSummaryResponse } from '@/modules/customer/types';
 import type { StockResponse } from '@/modules/inventory/types';
 
-interface Stat {
+/**
+ * CR-082. The approved dashboard, built to the signed-off mockup.
+ *
+ * Widget titles are counter-staff language rather than the module names in
+ * the rail - "Bills Raised", not "Invoices" - so a card and a menu entry are
+ * never the same words pointing at two different things.
+ *
+ * What is measured and what is not. Total Sales and Today's Earnings have a
+ * real daily revenue series behind them (/v1/analytics/revenue-trend, CR-048)
+ * and their sparklines and deltas are computed from it. Pending Payments has
+ * a real week-over-week comparison from /v1/analytics/summary but no daily
+ * series. Low Stock Alerts has neither. The owner asked that every card keep
+ * its mini chart and delta row regardless, so a card without a series draws
+ * the flat baseline (Sparkline marks it `data-sparkline-empty`) and a card
+ * without a comparison reads "→ 0%". Nothing is smoothed or invented beyond
+ * that flat line.
+ */
+interface Count {
+  id: 'products' | 'suppliers' | 'invoices' | 'customers' | 'low-stock';
   label: string;
   value: number | null;
   icon: typeof Package;
   to: string;
-  tone?: 'default' | 'warning';
+  tone?: 'primary' | 'warning';
 }
+
+/** Fourteen days of daily revenue: the last 7 for the sparkline and delta, the 7 before for the comparison. */
+const LOOKBACK_DAYS = 14;
+
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+const sum = (points: TrendPoint[]) => points.reduce((total, p) => total + p.revenuePaise, 0);
 
 export function DashboardPage() {
   const { user, hasPermission } = useAuth();
-  const { designStyleId, motion } = useDesignStyle();
-  const isBento = designStyleId === 'bento';
+  const { motion } = useDesignStyle();
   const entranceClass = motion !== 'reduced' ? 'animate-in fade-in slide-in-from-bottom-2 duration-500' : '';
-  const [stats, setStats] = useState<Stat[]>([]);
+  const [counts, setCounts] = useState<Count[]>([]);
   const [sales, setSales] = useState<SalesSummaryResponse | null>(null);
+  const [trend, setTrend] = useState<TrendPoint[] | null>(null);
+  const [outstanding, setOutstanding] = useState<{ now: AnalyticsSummary; before: AnalyticsSummary } | null>(null);
   const [recentInvoices, setRecentInvoices] = useState<InvoiceSummaryResponse[] | null>(null);
-  const [recentQuotations, setRecentQuotations] = useState<QuotationSummaryResponse[] | null>(null);
+  const [pendingQuotations, setPendingQuotations] = useState<QuotationSummaryResponse[] | null>(null);
   const [recentCustomers, setRecentCustomers] = useState<CustomerSummaryResponse[] | null>(null);
   const [lowStock, setLowStock] = useState<StockResponse[] | null>(null);
 
   useEffect(() => {
-    const loaders: Array<Promise<Stat>> = [];
-
+    const loaders: Array<Promise<Count>> = [];
     if (hasPermission(PERMISSIONS.PRODUCT_VIEW)) {
       loaders.push(productService.search({ size: 1 })
-        .then((page) => ({ label: 'Products', value: page.totalElements, icon: Package, to: PRODUCT_ROUTES.list }))
-        .catch(() => ({ label: 'Products', value: null, icon: Package, to: PRODUCT_ROUTES.list })));
+        .then((page) => ({ id: 'products' as const, label: 'Items Catalog', value: page.totalElements, icon: Package, to: PRODUCT_ROUTES.list }))
+        .catch(() => ({ id: 'products' as const, label: 'Items Catalog', value: null, icon: Package, to: PRODUCT_ROUTES.list })));
     }
     if (hasPermission(PERMISSIONS.SUPPLIER_VIEW)) {
       loaders.push(supplierService.search({ size: 1 })
-        .then((page) => ({ label: 'Suppliers', value: page.totalElements, icon: Truck, to: SUPPLIER_ROUTES.list }))
-        .catch(() => ({ label: 'Suppliers', value: null, icon: Truck, to: SUPPLIER_ROUTES.list })));
+        .then((page) => ({ id: 'suppliers' as const, label: 'Wholesalers & Dealers', value: page.totalElements, icon: Truck, to: SUPPLIER_ROUTES.list }))
+        .catch(() => ({ id: 'suppliers' as const, label: 'Wholesalers & Dealers', value: null, icon: Truck, to: SUPPLIER_ROUTES.list })));
     }
     if (hasPermission(PERMISSIONS.INVENTORY_VIEW)) {
       loaders.push(stockService.search({ lowStockOnly: true, size: 1 })
-        .then((page) => ({ label: 'Low stock items', value: page.totalElements, icon: AlertTriangle, to: INVENTORY_ROUTES.stock, tone: 'warning' as const }))
-        .catch(() => ({ label: 'Low stock items', value: null, icon: AlertTriangle, to: INVENTORY_ROUTES.stock, tone: 'warning' as const })));
+        .then((page) => ({ id: 'low-stock' as const, label: 'Low Stock Alerts', value: page.totalElements, icon: AlertTriangle, to: INVENTORY_ROUTES.stock, tone: 'warning' as const }))
+        .catch(() => ({ id: 'low-stock' as const, label: 'Low Stock Alerts', value: null, icon: AlertTriangle, to: INVENTORY_ROUTES.stock, tone: 'warning' as const })));
     }
     if (hasPermission(PERMISSIONS.INVOICE_VIEW)) {
       loaders.push(invoiceService.search({ size: 1 })
-        .then((page) => ({ label: 'Invoices', value: page.totalElements, icon: FileText, to: INVOICE_ROUTES.list }))
-        .catch(() => ({ label: 'Invoices', value: null, icon: FileText, to: INVOICE_ROUTES.list })));
+        .then((page) => ({ id: 'invoices' as const, label: 'Bills Raised', value: page.totalElements, icon: FileText, to: INVOICE_ROUTES.list }))
+        .catch(() => ({ id: 'invoices' as const, label: 'Bills Raised', value: null, icon: FileText, to: INVOICE_ROUTES.list })));
     }
     if (hasPermission(PERMISSIONS.CUSTOMER_VIEW)) {
       loaders.push(customerService.search({ size: 1 })
-        .then((page) => ({ label: 'Customers', value: page.totalElements, icon: Users, to: CUSTOMER_ROUTES.list }))
-        .catch(() => ({ label: 'Customers', value: null, icon: Users, to: CUSTOMER_ROUTES.list })));
+        .then((page) => ({ id: 'customers' as const, label: 'Customer List', value: page.totalElements, icon: Users, to: CUSTOMER_ROUTES.list }))
+        .catch(() => ({ id: 'customers' as const, label: 'Customer List', value: null, icon: Users, to: CUSTOMER_ROUTES.list })));
     }
-
-    void Promise.all(loaders).then(setStats);
+    void Promise.all(loaders).then(setCounts);
 
     if (hasPermission(PERMISSIONS.INVOICE_VIEW)) {
       invoiceService.search({ size: 5 }).then((page) => setRecentInvoices(page.content)).catch(() => setRecentInvoices([]));
       dashboardService.salesSummary().then(setSales).catch(() => setSales(null));
     }
+    // The same endpoint the Sales Growth chart reads, gated the same way.
+    if (hasPermission(PERMISSIONS.REPORT_VIEW)) {
+      const to = new Date();
+      const from = new Date();
+      from.setDate(to.getDate() - (LOOKBACK_DAYS - 1));
+      analyticsService.revenueTrend(iso(from), iso(to), 'day')
+        .then((series) => setTrend(series?.points ?? []))
+        .catch(() => setTrend(null));
+      // Pending Payments "vs last week": outstanding raised this week against
+      // the week before, from the same analytics summary the reports use.
+      const weekAgo = new Date(); weekAgo.setDate(to.getDate() - 6);
+      const twoWeeksAgo = new Date(); twoWeeksAgo.setDate(to.getDate() - 13);
+      const dayBefore = new Date(); dayBefore.setDate(to.getDate() - 7);
+      Promise.all([
+        analyticsService.summary(iso(weekAgo), iso(to)),
+        analyticsService.summary(iso(twoWeeksAgo), iso(dayBefore)),
+      ]).then(([now, before]) => setOutstanding(now && before ? { now, before } : null))
+        .catch(() => setOutstanding(null));
+    }
     if (hasPermission(PERMISSIONS.QUOTATION_VIEW)) {
-      quotationService.search({ size: 5 }).then((page) => setRecentQuotations(page.content)).catch(() => setRecentQuotations([]));
+      // "Pending Estimates" means it: quotations sent and not yet answered,
+      // not the last five of any status.
+      quotationService.search({ status: 'SENT', size: 5 }).then((page) => setPendingQuotations(page.content)).catch(() => setPendingQuotations([]));
     }
     if (hasPermission(PERMISSIONS.CUSTOMER_VIEW)) {
       customerService.search({ size: 5 }).then((page) => setRecentCustomers(page.content)).catch(() => setRecentCustomers([]));
@@ -102,12 +150,43 @@ export function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /*
+   * Week-over-week from the 14-day series. Buckets arrive oldest first; a
+   * shop younger than 14 days simply has a shorter "before" window, and the
+   * delta is null (shown as "—") when that window sums to zero.
+   */
+  const weekly = useMemo(() => {
+    if (!trend || trend.length === 0) return null;
+    const thisWeek = trend.slice(-7);
+    const lastWeek = trend.slice(-14, -7);
+    return {
+      series: trend.map((p) => p.revenuePaise),
+      thisWeekSeries: thisWeek.map((p) => p.revenuePaise),
+      now: sum(thisWeek),
+      before: sum(lastWeek),
+    };
+  }, [trend]);
+
+
+  const lowStockCount = counts.find((c) => c.id === 'low-stock');
+  const secondRow = counts.filter((c) => c.id !== 'low-stock');
+  const firstName = user?.fullName?.split(' ')[0];
+
   return (
     <>
-      <PageHeader
-        title={`Welcome back${user?.fullName ? `, ${user.fullName.split(' ')[0]}` : ''}`}
-        description="A quick look at the shop today."
-        actions={
+      {/* Page header: greeting eyebrow, title, subtitle; date chip and the
+          two primary actions on the right. */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase tracking-[0.1em] text-primary">{greetingFor(new Date().getHours())},</p>
+          <h1 className="mt-1 truncate text-2xl font-bold tracking-tight sm:text-[28px]">
+            Welcome back{firstName ? `, ${firstName}` : ''}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">Here&apos;s what&apos;s happening with your shop today.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+          <ShopTimeChip />
+          <span className="hidden h-8 w-px bg-border sm:block" aria-hidden />
           <div className="flex flex-wrap items-center gap-2">
             <PermissionGate permission={PERMISSIONS.QUOTATION_MANAGE}>
               <Button variant="outline" asChild>
@@ -120,121 +199,72 @@ export function DashboardPage() {
               </Button>
             </PermissionGate>
           </div>
-        }
-      />
-
-      {sales ? (() => {
-        const totalCard = (
-          <Card key="total" className={entranceClass}>
-            <CardContent className="flex h-full items-center justify-between p-5">
-              <div>
-                <p className="text-sm text-muted-foreground">Total sales</p>
-                <p className="figure mt-1 text-2xl">₹{sales.totalSalesDisplay}</p>
-              </div>
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <TrendingUp className="h-5 w-5" aria-hidden />
-              </span>
-            </CardContent>
-          </Card>
-        );
-        const todayChange = sales.yesterdaySalesPaise > 0
-          ? ((sales.todaySalesPaise - sales.yesterdaySalesPaise) / sales.yesterdaySalesPaise) * 100
-          : null;
-        const todayDelta = todayChange !== null ? (
-          <p className={`mt-1 flex items-center gap-1 text-xs ${todayChange >= 0 ? 'text-success' : 'text-destructive'}`}>
-            {todayChange >= 0 ? <ArrowUp className="h-3 w-3" aria-hidden /> : <ArrowDown className="h-3 w-3" aria-hidden />}
-            {Math.abs(todayChange).toFixed(1)}% vs yesterday
-          </p>
-        ) : null;
-        const todayIcon = (
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <IndianRupee className="h-5 w-5" aria-hidden />
-          </span>
-        );
-        /*
-         * Two genuinely different layouts rather than one structure bent into
-         * both (BUG-FE-020). The old markup nested a "label + icon" ROW inside
-         * the flat variant's own row, so the icon shrank up against the label
-         * instead of sitting right like Total sales and Outstanding do -
-         * "Today's sales (₹)        ₹8,877.91". It only ever looked right in
-         * the bento column, which is what it was written for.
-         */
-        const todayCard = (
-          <Card key="today" className={entranceClass}>
-            {isBento ? (
-              <CardContent className="flex h-full flex-col justify-center gap-2 p-6">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-muted-foreground">Today&apos;s sales</p>
-                  {todayIcon}
-                </div>
-                <div>
-                  <p className="figure text-4xl">₹{sales.todaySalesDisplay}</p>
-                  {todayDelta}
-                </div>
-              </CardContent>
-            ) : (
-              // Identical shape to totalCard and outstandingCard: text block
-              // left, icon hard right. min-w-0 so a long figure truncates
-              // rather than pushing the icon off the card.
-              <CardContent className="flex h-full items-center justify-between gap-3 p-5">
-                <div className="min-w-0">
-                  <p className="text-sm text-muted-foreground">Today&apos;s sales</p>
-                  <p className="figure mt-1 text-2xl">₹{sales.todaySalesDisplay}</p>
-                  {todayDelta}
-                </div>
-                {todayIcon}
-              </CardContent>
-            )}
-          </Card>
-        );
-        const outstandingCard = (
-          <Card key="outstanding" className={entranceClass}>
-            <CardContent className="flex h-full items-center justify-between p-5">
-              <div>
-                <p className="text-sm text-muted-foreground">Outstanding customer balance</p>
-                <p className="figure mt-1 text-2xl">₹{sales.outstandingCustomerBalanceDisplay}</p>
-              </div>
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/10 text-warning">
-                <AlertTriangle className="h-5 w-5" aria-hidden />
-              </span>
-            </CardContent>
-          </Card>
-        );
-
-        // CR-034 §21: Bento leads with the day's figure as the large "hero" cell (.bento-grid in index.css); every other
-        // design style keeps the original even 3-up grid. Same data and cards either way - only the layout changes.
-        return isBento
-          ? <div className="bento-grid">{[todayCard, totalCard, outstandingCard]}</div>
-          : <div className="grid gap-4 sm:grid-cols-3">{[totalCard, todayCard, outstandingCard]}</div>;
-      })() : null}
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <Link key={stat.label} to={stat.to}>
-            <Card className="transition-colors hover:bg-accent/40">
-              <CardContent className="flex items-center justify-between p-5">
-                <div>
-                  <p className="text-sm text-muted-foreground">{stat.label}</p>
-                  <p className="figure mt-1 text-2xl">{stat.value ?? '—'}</p>
-                </div>
-                <span
-                  className={`flex h-10 w-10 items-center justify-center rounded-full ${
-                    stat.tone === 'warning' ? 'bg-warning/10 text-warning' : 'bg-primary/10 text-primary'
-                  }`}
-                >
-                  <stat.icon className="h-5 w-5" aria-hidden />
-                </span>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
+        </div>
       </div>
 
-      {/* Full width: a trend needs horizontal room to be readable, and it is
-          the one thing on this page that answers 'how is the shop doing'
-          rather than 'what is the number right now'. REPORT_VIEW gates it -
-          the same permission the analytics endpoints require, so the card is
-          never shown to someone whose request would 403. */}
+      {/* Row 1: the money and the one thing that needs attention. */}
+      {sales || lowStockCount ? (
+        <div className={`grid gap-4 sm:grid-cols-2 xl:grid-cols-4 ${entranceClass}`}>
+          {sales ? (
+            <>
+              <KpiCard
+                label="Total Sales"
+                value={`₹${sales.totalSalesDisplay}`}
+                icon={Box}
+                sparkTone="success"
+                delta={weekly ? { now: weekly.now, before: weekly.before, against: 'vs last week', upIsGood: true } : undefined}
+                against="vs last week"
+                series={weekly?.series}
+              />
+              <KpiCard
+                label="Today's Earnings"
+                value={`₹${sales.todaySalesDisplay}`}
+                icon={IndianRupee}
+                sparkTone="success"
+                delta={{ now: sales.todaySalesPaise, before: sales.yesterdaySalesPaise, against: 'vs yesterday', upIsGood: true }}
+                series={weekly?.thisWeekSeries}
+              />
+              <KpiCard
+                label="Pending Payments"
+                value={`₹${sales.outstandingCustomerBalanceDisplay}`}
+                icon={UserRound}
+                sparkTone="destructive"
+                delta={outstanding
+                  ? { now: outstanding.now.outstandingPaise, before: outstanding.before.outstandingPaise, against: 'vs last week', upIsGood: false }
+                  : undefined}
+                against="vs last week"
+                to={INVOICE_ROUTES.list}
+              />
+            </>
+          ) : null}
+          {/* No history endpoint for the low-stock count yet, so its row is the
+              owner-specified zero state: flat amber baseline, "→ 0% vs last
+              week". A weekly snapshot would make it measured - see CR-082. */}
+          {lowStockCount ? (
+            <KpiCard
+              label={lowStockCount.label}
+              value={String(lowStockCount.value ?? '—')}
+              icon={AlertTriangle}
+              tone="warning"
+              sparkTone="warning"
+              against="vs last week"
+              to={lowStockCount.to}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Row 2: counts, each the door to its list. */}
+      {secondRow.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {secondRow.map((c) => (
+            <CountCard key={c.id} label={c.label} value={c.value} icon={c.icon} to={c.to} tone={c.tone} />
+          ))}
+        </div>
+      ) : null}
+
+      {/* Charts, 2:1. REPORT_VIEW gates both - the analytics endpoints need it,
+          so the cards are never shown to someone whose request would 403. */}
       <PermissionGate permission={PERMISSIONS.REPORT_VIEW}>
         <div className="grid gap-5 lg:grid-cols-3">
           <div className="lg:col-span-2"><SalesTrendChart /></div>
@@ -242,15 +272,24 @@ export function DashboardPage() {
         </div>
       </PermissionGate>
 
+      {/* Quick actions and Recent actions, same 2:1. The activity log needs
+          AUDIT_VIEW; without it the actions card takes the full width. */}
+      <div className="grid gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2"><QuickActionsCard /></div>
+        <PermissionGate permission={PERMISSIONS.AUDIT_VIEW}>
+          <RecentActionsCard />
+        </PermissionGate>
+      </div>
+
       <div className="grid gap-5 lg:grid-cols-2">
         <PermissionGate permission={PERMISSIONS.INVOICE_VIEW}>
           <Card>
-            <CardHeader><CardTitle className="text-base">Recent invoices</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Recent Bills</CardTitle></CardHeader>
             <CardContent className="space-y-1">
               {recentInvoices === null ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
               ) : recentInvoices.length === 0 ? (
-                <EmptyState icon={FileText} title="No invoices yet" description="Create the first one to see it here." />
+                <EmptyState icon={FileText} title="No bills yet" description="Raise the first one to see it here." />
               ) : (
                 recentInvoices.map((invoice) => (
                   <Link
@@ -275,7 +314,7 @@ export function DashboardPage() {
 
         <PermissionGate permission={PERMISSIONS.INVENTORY_VIEW}>
           <Card>
-            <CardHeader><CardTitle className="text-base">Low stock</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Low Stock Alerts</CardTitle></CardHeader>
             <CardContent className="space-y-1">
               {lowStock === null ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
@@ -302,14 +341,14 @@ export function DashboardPage() {
 
         <PermissionGate permission={PERMISSIONS.QUOTATION_VIEW}>
           <Card>
-            <CardHeader><CardTitle className="text-base">Recent quotations</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Pending Estimates</CardTitle></CardHeader>
             <CardContent className="space-y-1">
-              {recentQuotations === null ? (
+              {pendingQuotations === null ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
-              ) : recentQuotations.length === 0 ? (
-                <EmptyState icon={ClipboardList} title="No quotations yet" description="Create the first one to see it here." />
+              ) : pendingQuotations.length === 0 ? (
+                <EmptyState icon={ClipboardList} title="No estimates waiting" description="Quotations you have sent and not yet heard back on appear here." />
               ) : (
-                recentQuotations.map((quotation) => (
+                pendingQuotations.map((quotation) => (
                   <Link
                     key={quotation.id}
                     to={QUOTATION_ROUTES.detail(quotation.id)}
@@ -332,7 +371,7 @@ export function DashboardPage() {
 
         <PermissionGate permission={PERMISSIONS.CUSTOMER_VIEW}>
           <Card>
-            <CardHeader><CardTitle className="text-base">Recent customers</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Recent Customers</CardTitle></CardHeader>
             <CardContent className="space-y-1">
               {recentCustomers === null ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>

@@ -2,6 +2,7 @@ package com.hardware.erp.notification.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hardware.erp.common.util.PhoneNumberNormalizer;
 import com.hardware.erp.notification.entity.NotificationChannel;
 import com.hardware.erp.notification.service.NotificationProvider;
 import com.hardware.erp.notification.service.NotificationSendResult;
@@ -83,6 +84,14 @@ public class SmsNotificationProvider implements NotificationProvider {
 
     @Override
     public NotificationSendResult send(Long tenantId, NotificationChannel channel, String toAddress, String subject, String body) {
+        if (!properties.enabled()) {
+            // CR-077: the paid channel is off unless a deployment opts in. Debug,
+            // not info - with SMS deliberately off this fires on every invoice
+            // and payment and is not news.
+            log.debug("SMS is disabled (SMS_ENABLED=false) - logged instead of sent. To: {} - Message: {}",
+                    toAddress, body);
+            return NotificationSendResult.loggedOnly();
+        }
         if (!properties.isConfigured()) {
             log.info("Twilio is not configured - SMS logged instead of sent. Set TWILIO_ACCOUNT_SID, "
                     + "TWILIO_AUTH_TOKEN and TWILIO_MESSAGING_SERVICE_SID (or TWILIO_FROM_NUMBER) to enable "
@@ -160,22 +169,13 @@ public class SmsNotificationProvider implements NotificationProvider {
     }
 
     /**
-     * Indian mobile numbers are stored as bare 10 digits throughout this app
-     * (see the 10-digit 6-9-leading validation on Customer/Supplier/User);
-     * Twilio needs full E.164 including the leading '+', unlike Meta's Cloud
-     * API which wants it omitted - hence a near-copy of
-     * WhatsAppBusinessProvider's helper rather than a shared one, because the
-     * two formats genuinely differ. A value that already carries a '+' passes
-     * through untouched: it came from somewhere other than this app's
-     * India-only phone validation, so assuming +91 would be wrong.
+     * Twilio wants full E.164 including the '+'. Delegates to
+     * {@link PhoneNumberNormalizer} since CR-080 (see that class for why the
+     * copy this method used to be was worth removing); kept as a method so
+     * the wire-format tests keep reading naturally.
      */
     String toE164(String mobileNo) {
-        String trimmed = mobileNo == null ? "" : mobileNo.trim();
-        if (trimmed.startsWith("+")) {
-            return "+" + trimmed.substring(1).replaceAll("\\D", "");
-        }
-        String digitsOnly = trimmed.replaceAll("\\D", "");
-        return digitsOnly.length() == 10 ? "+91" + digitsOnly : "+" + digitsOnly;
+        return PhoneNumberNormalizer.toE164(mobileNo);
     }
 
     private String twilioError(String responseBody) {

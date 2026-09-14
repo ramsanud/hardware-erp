@@ -95,8 +95,10 @@ generating new code; never reintroduce a listed bug.
 | BUG-FE-035 | Frontend | Medium | Fixed 2026-09-09 |
 | BUG-FE-036 | Frontend | Medium | Fixed 2026-09-09 |
 | BUG-FE-037 | Frontend | Medium | Fixed 2026-09-12 |
+| BUG-FE-038 | Frontend | Medium | Fixed 2026-09-14 |
 | BUG-BE-003 | Backend / Inventory | High | Fixed 2026-09-09 |
 | BUG-BE-004 | Backend / Common | Medium | Fixed 2026-09-09 |
+| BUG-BE-005 | Backend / Quotation | Medium | Fixed 2026-09-14 |
 
 **This index is complete and covers every entry in this file (verified
 2026-09-08).** It previously stopped at `BUG-ENV-003`, omitting 33 later
@@ -3658,3 +3660,66 @@ navigates to the described route; the pill carries the step; the pill
 survives a reload without the dialog restarting; *Continue* reopens at the
 same step; *End tour* from the pill is final across navigation. Suite
 **152/152**.
+
+---
+
+## BUG-FE-038 — the profile page scrolled sideways on a phone (FIXED, 2026-09-14)
+
+| | |
+|---|---|
+| **Severity** | Medium — a horizontal page scroll on a phone breaks the "swipe = scroll down" contract on every list beneath it, and the fourth tab was off-screen |
+| **Layer** | FRONTEND ONLY |
+| **Found** | Measured, not reported: a four-viewport responsive audit (375 / 768 / 1440 / 1920) against the real app read `document.documentElement.scrollWidth` = 388 on `/profile` at 375px. Every other route measured 375 |
+| **Symptom** | The *Details · Appearance · Permissions · Sessions* strip ran off the right edge; "Sessions" was reachable only by dragging the whole page sideways |
+
+**Root cause.** The shared `TabsList` (`shared/components/ui/tabs.tsx`) is an
+`inline-flex` box, so it is exactly as wide as its triggers, and four labelled
+triggers at `px-3 text-sm` are wider than a 375px viewport minus the card's
+padding. Nothing capped it at its parent's width, so the strip - and with it
+the document - grew past the viewport. The other three `TabsList` sites happen
+to have two or three short tabs and stayed inside by luck.
+
+**Why the sweep missed it.** `tests/navigation/responsive.spec.mjs` visits
+`/profile` at 320px and 414px and asserts no horizontal scroll - but against a
+stubbed API whose fixture user renders fewer tabs than a real account does,
+so the strip never grew wide enough there.
+
+**Fix.** In the shared component, not the page: `max-w-full overflow-x-auto`
+with the scrollbar hidden, `justify-start` below `sm` so the first tab is the
+one visible, `sm:justify-center` above it so nothing changes on a desktop.
+Every present and future `TabsList` gets the contract; the profile page was
+not touched.
+
+**Regression test.** `responsive.spec.mjs`, mobile viewports only: the profile
+tab strip is no wider than the viewport, and the last tab can be scrolled to
+inside the strip and selected. Suite **234/234**.
+
+## BUG-BE-005 — the quotations "Expired" filter could never match anything (FIXED, 2026-09-14)
+
+| | |
+|---|---|
+| **Severity** | Medium — a filter that silently returned an empty page; no data at risk, but every expired quotation was invisible to the one filter meant to find it |
+| **Layer** | BACKEND ONLY |
+| **Found** | Reading `QuotationRepository.search` while building the CR-083 status pills |
+| **Symptom** | `GET /v1/quotations?status=EXPIRED` → an empty page, always, while the badge on those rows said "Expired" |
+
+**Root cause — a computed state compared as a stored one.** CR-022 made expiry a
+read-time computation from `validUntil` (`Quotation.isExpired()`); `EXPIRED`
+exists in the enum but `updateStatus` refuses to store it and nothing else
+does. The search query compared `q.status = :status`, which for `EXPIRED` is
+a column value no row has. The Draft/Sent/Accepted filters had the mirror
+defect: they listed expired quotations under the label the badge had already
+stopped using for them.
+
+**Fix.** The service translates the requested status into three parameters —
+the stored value, `expiredOnly` (past `validUntil` and still
+DRAFT/SENT/ACCEPTED) and `liveOnly` (`validUntil >= today`) — so the filter
+uses exactly the badge's rule. `REJECTED`/`CONVERTED` pass through untouched.
+The new `/stats` aggregate buckets the same way, so the cards, the pills and
+the badges can never disagree.
+
+**Regression tests.** `QuotationListFiltersIT.expiredFilterMatchesComputedExpiry`
+creates a live and an expired draft and asserts each filter returns only its
+own — against the real query, since a mocked repository has no opinion about
+JPQL. `QuotationServiceImplTest.searchTranslatesExpiredIntoComputedExpiry`
+pins the translation one level down.

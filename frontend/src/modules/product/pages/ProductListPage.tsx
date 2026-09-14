@@ -204,7 +204,9 @@ export function ProductListPage() {
 
   const [categories, setCategories] = useState<CategoryResponse[]>([]);
   const [brands, setBrands] = useState<BrandResponse[]>([]);
-  const [creating, setCreating] = useState(false);
+  // CR-082: the dashboard's "Add product" lands here with ?new=1 - the form is
+  // a dialog on this page, not a route, so a link needs a way to open it.
+  const [creating, setCreating] = useState(searchParams.get('new') === '1');
   const [editing, setEditing] = useState<ProductSummaryResponse | null>(null);
   const [editingFull, setEditingFull] = useState<ProductResponse | null>(null);
   const [deleting, setDeleting] = useState<ProductSummaryResponse | null>(null);

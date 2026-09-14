@@ -2,6 +2,7 @@ package com.hardware.erp.quotation.service.impl;
 
 import com.hardware.erp.common.sequence.DocumentSequenceService;
 import com.hardware.erp.common.sequence.DocumentType;
+import com.hardware.erp.common.util.IndianCurrencyFormat;
 import com.hardware.erp.common.util.LineDiscount;
 import com.hardware.erp.common.activity.ActivityLogService;
 import com.hardware.erp.common.dto.PageResponse;
@@ -18,6 +19,7 @@ import com.hardware.erp.product.repository.ProductRepository;
 import com.hardware.erp.quotation.dto.QuotationItemRequest;
 import com.hardware.erp.quotation.dto.QuotationRequest;
 import com.hardware.erp.quotation.dto.QuotationResponse;
+import com.hardware.erp.quotation.dto.QuotationStatsResponse;
 import com.hardware.erp.quotation.dto.QuotationSummaryResponse;
 import com.hardware.erp.quotation.entity.Quotation;
 import com.hardware.erp.quotation.entity.QuotationItem;
@@ -199,9 +201,52 @@ public class QuotationServiceImpl implements QuotationService {
     public PageResponse<QuotationSummaryResponse> search(String search, QuotationStatus status,
                                                            LocalDate fromDate, LocalDate toDate, Pageable pageable) {
         Long tenantId = SecurityUtils.requireCurrentTenantId();
+        // BUG-BE-005: EXPIRED is computed, never stored, so it cannot be matched
+        // as a column value. Translate the badge's vocabulary into the query's:
+        // "Expired" = past validUntil while still open; "Draft/Sent/Accepted" =
+        // that status AND still valid, which is what the badge shows for them.
+        boolean expiredOnly = status == QuotationStatus.EXPIRED;
+        boolean liveOnly = status == QuotationStatus.DRAFT || status == QuotationStatus.SENT
+                || status == QuotationStatus.ACCEPTED;
+        QuotationStatus stored = expiredOnly ? null : status;
         return PageResponse.from(
-                quotationRepository.search(tenantId, search, status, fromDate, toDate, pageable),
+                quotationRepository.search(tenantId, search, stored, expiredOnly, liveOnly, LocalDate.now(),
+                        fromDate, toDate, pageable),
                 quotationMapper::toSummary);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public QuotationStatsResponse stats(String search, LocalDate fromDate, LocalDate toDate) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        long total = 0, pending = 0, approved = 0, closed = 0;
+        long totalPaise = 0, pendingPaise = 0, approvedPaise = 0, closedPaise = 0;
+        for (QuotationRepository.StatsRow row : quotationRepository.stats(tenantId, search, fromDate, toDate, LocalDate.now())) {
+            QuotationStatus status = QuotationStatus.valueOf(row.getStatus());
+            boolean expired = Boolean.TRUE.equals(row.getExpired());
+            long count = row.getCount() == null ? 0 : row.getCount();
+            long paise = row.getTotalPaise() == null ? 0 : row.getTotalPaise();
+            total += count;
+            totalPaise += paise;
+            // Same buckets as the badge: an open quotation past its date is closed, whatever its column says.
+            boolean open = status == QuotationStatus.DRAFT || status == QuotationStatus.SENT
+                    || status == QuotationStatus.ACCEPTED;
+            if (status == QuotationStatus.CONVERTED || (status == QuotationStatus.ACCEPTED && !expired)) {
+                approved += count;
+                approvedPaise += paise;
+            } else if (open && !expired) {
+                pending += count;
+                pendingPaise += paise;
+            } else {
+                closed += count;
+                closedPaise += paise;
+            }
+        }
+        return new QuotationStatsResponse(
+                total, IndianCurrencyFormat.rupees(totalPaise),
+                pending, IndianCurrencyFormat.rupees(pendingPaise),
+                approved, IndianCurrencyFormat.rupees(approvedPaise),
+                closed, IndianCurrencyFormat.rupees(closedPaise));
     }
 
     @Override
@@ -227,6 +272,22 @@ public class QuotationServiceImpl implements QuotationService {
                 com.hardware.erp.common.activity.ActivityAction.UPDATE, "Status changed to " + target);
 
         return quotationMapper.toResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public void delete(Long id) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        Quotation quotation = require(id, tenantId);
+        // A draft has not been issued: no invoice, no stock movement, no number
+        // in a customer's hands. Everything after DRAFT is a record of an offer
+        // the shop made, and rejecting it keeps that record.
+        if (quotation.getStatus() != QuotationStatus.DRAFT) {
+            throw new BusinessException("Only a draft quotation can be deleted - reject this one instead");
+        }
+        quotationRepository.delete(quotation);
+        activityLog.deleted(MODULE, ENTITY, quotation.getId(), quotation.getQuotationNumber(),
+                "Draft quotation deleted");
     }
 
     @Override

@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { BackLink } from '@/shared/components/BackLink';
 import { Button } from '@/shared/components/ui/button';
+import { WhatsAppButton } from '@/shared/components/WhatsAppButton';
+import { whatsAppLinkService } from '@/modules/notification/services/whatsAppLinkService';
 import {
   Card, CardContent, CardHeader, CardTitle,
 } from '@/shared/components/ui/card';
@@ -187,6 +189,12 @@ export function CustomerDetailPage() {
                   <Pencil className="h-4 w-4" /> Edit
                 </Button>
               </PermissionGate>
+              {/* CR-080 - opens this customer's chat with a greeting typed; the owner presses Send. */}
+              <WhatsAppButton
+                fetchLink={() => whatsAppLinkService.customer(id)}
+                recipient={customer.customerName}
+                disabledReason={customer.mobileNo ? undefined : 'This customer does not have a phone number.'}
+              />
             </div>
           ) : undefined
         }

@@ -92,3 +92,29 @@ export interface QuotationSearchParams {
   page?: number;
   size?: number;
 }
+
+/**
+ * CR-083. Mirrors quotation/dto/QuotationStatsResponse.java. Computed over
+ * every quotation matching the search and date range - never just one page.
+ * The three buckets follow the badge (an open quotation past its date is
+ * closed) and always add up to totalCount.
+ */
+export interface QuotationStatsResponse {
+  totalCount: number;
+  totalValueDisplay: string;
+  /** DRAFT + SENT, still valid. */
+  pendingCount: number;
+  pendingValueDisplay: string;
+  /** ACCEPTED still valid + CONVERTED. */
+  approvedCount: number;
+  approvedValueDisplay: string;
+  /** Expired DRAFT/SENT/ACCEPTED + REJECTED. */
+  closedCount: number;
+  closedValueDisplay: string;
+}
+
+export interface QuotationStatsParams {
+  search?: string;
+  fromDate?: string;
+  toDate?: string;
+}

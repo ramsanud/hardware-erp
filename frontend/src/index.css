@@ -32,6 +32,17 @@
     --success-foreground: 210 40% 98%;
     --warning: 32 95% 44%;
     --warning-foreground: 210 40% 98%;
+    /* CR-083. Two more status hues, tokens like the others so every colour
+       theme keeps them. --info is "with someone else, in progress" (a SENT
+       quotation) - blue, and fixed, because on the default Emerald theme
+       --primary is green and a Sent badge on primary read the same as
+       Accepted. --complete is "done, moved on" (a CONVERTED quotation):
+       neither good, bad nor pending - violet. Both measured >= 5.9:1 on
+       their 10% tint. */
+    --info: 217 91% 40%;
+    --info-foreground: 210 40% 98%;
+    --complete: 262 83% 50%;
+    --complete-foreground: 210 40% 98%;
     --border: 214 32% 91%;
     --input: 214 32% 91%;
     --ring: 217 91% 35%;
@@ -102,6 +113,10 @@
     --success-foreground: 222 47% 11%;
     --warning: 32 90% 55%;
     --warning-foreground: 222 47% 11%;
+    --info: 217 91% 70%;
+    --info-foreground: 222 47% 11%;
+    --complete: 262 80% 70%;
+    --complete-foreground: 222 47% 11%;
     --border: 217 33% 20%;
     --input: 217 33% 20%;
     --ring: 217 91% 60%;
@@ -297,6 +312,19 @@
     border-radius: 0 9999px 9999px 0;
     background: hsl(var(--sidebar-active));
   }
+  /*
+   * CR-082: a collapsible group header that reads as a row of its own -
+   * same height, padding and type as a link, chevron at the right - rather
+   * than the small uppercase caption it used to be. It is a button, not a
+   * link, so it never carries aria-current and never takes the active pill.
+   */
+  .sidebar-group {
+    @apply flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors;
+    color: hsl(var(--sidebar-foreground));
+  }
+  .sidebar-group:hover {
+    background: hsl(var(--sidebar-hover));
+  }
   .sidebar-section {
     @apply px-3 pb-1.5 pt-5 text-[10px] font-bold uppercase tracking-wider;
     color: hsl(var(--sidebar-section));
@@ -313,6 +341,10 @@
     }
     .sidebar-section {
       @apply pb-1.5 pt-5;
+    }
+    .sidebar-group {
+      @apply py-2.5;
+      min-height: 2.75rem;
     }
   }
 

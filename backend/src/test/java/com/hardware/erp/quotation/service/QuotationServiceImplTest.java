@@ -15,6 +15,7 @@ import com.hardware.erp.product.repository.ProductRepository;
 import com.hardware.erp.quotation.dto.QuotationItemRequest;
 import com.hardware.erp.quotation.dto.QuotationRequest;
 import com.hardware.erp.quotation.dto.QuotationResponse;
+import com.hardware.erp.quotation.dto.QuotationStatsResponse;
 import com.hardware.erp.quotation.entity.Quotation;
 import com.hardware.erp.quotation.entity.QuotationStatus;
 import com.hardware.erp.quotation.mapper.QuotationMapper;
@@ -39,6 +40,9 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -228,5 +232,100 @@ class QuotationServiceImplTest {
 
         assertThatThrownBy(() -> quotationService.updateStatus(1L, QuotationStatus.CONVERTED))
                 .isInstanceOf(BusinessException.class);
+    }
+    // ------------------------------------------------------------ CR-083
+
+    private Quotation stored(long id, QuotationStatus status, LocalDate validUntil, long totalPaise) {
+        return Quotation.builder().id(id).tenant(tenant)
+                .quotationNumber("QUO-00000" + id).customer(customer)
+                .quotationDate(LocalDate.now().minusDays(3)).validUntil(validUntil)
+                .subtotalPaise(totalPaise).gstAmountPaise(0L).totalPaise(totalPaise)
+                .status(status).build();
+    }
+
+    @Test
+    @DisplayName("CR-083: a draft quotation can be deleted, and the deletion is logged under its number")
+    void deleteRemovesDraft() {
+        Quotation draft = stored(1L, QuotationStatus.DRAFT, LocalDate.now().plusDays(7), 35400L);
+        when(quotationRepository.findByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(draft));
+
+        quotationService.delete(1L);
+
+        verify(quotationRepository).delete(draft);
+        verify(activityLog).deleted(eq("QUOTATION"), eq("QUOTATION"), eq(1L), eq("QUO-000001"), anyString());
+    }
+
+    @Test
+    @DisplayName("CR-083: anything past DRAFT is refused - a sent quote is a record of an offer")
+    void deleteRefusesIssuedQuotation() {
+        for (QuotationStatus status : List.of(QuotationStatus.SENT, QuotationStatus.ACCEPTED,
+                QuotationStatus.REJECTED, QuotationStatus.CONVERTED)) {
+            Quotation issued = stored(1L, status, LocalDate.now().plusDays(7), 35400L);
+            when(quotationRepository.findByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(issued));
+
+            assertThatThrownBy(() -> quotationService.delete(1L))
+                    .as("status " + status)
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("draft");
+        }
+        verify(quotationRepository, never()).delete(any(Quotation.class));
+    }
+
+    private static QuotationRepository.StatsRow row(QuotationStatus status, boolean expired, long count, long paise) {
+        return new QuotationRepository.StatsRow() {
+            @Override public String getStatus() { return status.name(); }
+            @Override public Boolean getExpired() { return expired; }
+            @Override public Long getCount() { return count; }
+            @Override public Long getTotalPaise() { return paise; }
+        };
+    }
+
+    @Test
+    @DisplayName("CR-083: the KPI buckets follow the badge - an open quotation past its date is closed, not pending")
+    void statsBucketsFollowComputedExpiry() {
+        when(quotationRepository.stats(eq(1L), isNull(), isNull(), isNull(), any(LocalDate.class)))
+                .thenReturn(List.of(
+                        row(QuotationStatus.DRAFT, false, 2, 20000L),
+                        row(QuotationStatus.SENT, false, 1, 10000L),
+                        row(QuotationStatus.SENT, true, 1, 5000L),        // expired while sent -> closed
+                        row(QuotationStatus.ACCEPTED, false, 1, 40000L),
+                        row(QuotationStatus.ACCEPTED, true, 1, 3000L),    // expired after acceptance -> closed
+                        row(QuotationStatus.CONVERTED, false, 2, 100000L),
+                        row(QuotationStatus.CONVERTED, true, 1, 50000L),  // past its date but converted -> still approved
+                        row(QuotationStatus.REJECTED, false, 1, 7000L)));
+
+        QuotationStatsResponse stats = quotationService.stats(null, null, null);
+
+        assertThat(stats.totalCount()).isEqualTo(10);
+        assertThat(stats.totalValueDisplay()).isEqualTo("2,350.00");
+        assertThat(stats.pendingCount()).isEqualTo(3);
+        assertThat(stats.pendingValueDisplay()).isEqualTo("300.00");
+        assertThat(stats.approvedCount()).isEqualTo(4);
+        assertThat(stats.approvedValueDisplay()).isEqualTo("1,900.00");
+        assertThat(stats.closedCount()).isEqualTo(3);
+        assertThat(stats.closedValueDisplay()).isEqualTo("150.00");
+        assertThat(stats.pendingCount() + stats.approvedCount() + stats.closedCount())
+                .as("the three buckets partition the total")
+                .isEqualTo(stats.totalCount());
+    }
+
+    @Test
+    @DisplayName("BUG-BE-005: asking for EXPIRED queries computed expiry, not a stored status that never exists")
+    void searchTranslatesExpiredIntoComputedExpiry() {
+        Page<Quotation> empty = new PageImpl<>(List.of());
+        when(quotationRepository.search(eq(1L), isNull(), any(), anyBoolean(), anyBoolean(), any(LocalDate.class),
+                isNull(), isNull(), any(PageRequest.class))).thenReturn(empty);
+
+        quotationService.search(null, QuotationStatus.EXPIRED, null, null, PageRequest.of(0, 20));
+        verify(quotationRepository).search(eq(1L), isNull(), isNull(), eq(true), eq(false), any(LocalDate.class),
+                isNull(), isNull(), any(PageRequest.class));
+
+        quotationService.search(null, QuotationStatus.DRAFT, null, null, PageRequest.of(0, 20));
+        verify(quotationRepository).search(eq(1L), isNull(), eq(QuotationStatus.DRAFT), eq(false), eq(true),
+                any(LocalDate.class), isNull(), isNull(), any(PageRequest.class));
+
+        quotationService.search(null, QuotationStatus.REJECTED, null, null, PageRequest.of(0, 20));
+        verify(quotationRepository).search(eq(1L), isNull(), eq(QuotationStatus.REJECTED), eq(false), eq(false),
+                any(LocalDate.class), isNull(), isNull(), any(PageRequest.class));
     }
 }

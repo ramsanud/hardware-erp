@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { MoreHorizontal, Pencil, UserCheck, Users, UserPlus, UserX } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Card } from '@/shared/components/ui/card';
@@ -88,7 +88,12 @@ export function CustomerListPage() {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
 
-  const [dialogTarget, setDialogTarget] = useState<CustomerResponse | 'new' | null>(null);
+  const [searchParams] = useSearchParams();
+  // CR-082: the dashboard's "Add customer" lands here with ?new=1 - the form is
+  // a dialog on this page, not a route, so a link needs a way to open it.
+  const [dialogTarget, setDialogTarget] = useState<CustomerResponse | 'new' | null>(
+    searchParams.get('new') === '1' ? 'new' : null,
+  );
   const [dirty, setDirty] = useState(false);
   const [confirmingClose, setConfirmingClose] = useState(false);
   const [deactivating, setDeactivating] = useState<CustomerSummaryResponse | null>(null);

@@ -63,6 +63,32 @@ export default async function run() {
         }
       }
 
+      // BUG-FE-038. The profile page's four-tab strip was an inline-flex box as
+      // wide as its labels - 388px on a 375px phone - and the sweep above had
+      // not caught it because the fixture renders fewer tabs than a real
+      // account. Pin the shared TabsList contract directly: the strip never
+      // exceeds its viewport, and the LAST tab is still reachable by scrolling
+      // the strip, not the page.
+      if (vp.mobile) {
+        await page.goto(BASE + '/profile', { waitUntil: 'networkidle', timeout: 20000 });
+        const strip = page.locator('[role=tablist]').first();
+        if (await strip.count()) {
+          const m = await strip.evaluate((el) => ({
+            width: el.getBoundingClientRect().width,
+            viewport: document.documentElement.clientWidth,
+            scrollable: el.scrollWidth > el.clientWidth,
+          }));
+          s.check(`${vp.name} ${vp.width}px: the profile tab strip fits the viewport`,
+            m.width <= m.viewport, `strip ${Math.round(m.width)}px in ${m.viewport}px`);
+          const last = page.locator('[role=tablist] [role=tab]').last();
+          await last.scrollIntoViewIfNeeded();
+          await last.click();
+          s.check(`${vp.name} ${vp.width}px: the last profile tab is reachable`,
+            (await last.getAttribute('aria-selected')) === 'true',
+            m.scrollable ? 'strip scrolls to it' : 'strip fits without scrolling');
+        }
+      }
+
       s.check(`${vp.name} ${vp.width}px: every route renders`,
         broken.length === 0, broken.join(', '));
       s.check(`${vp.name} ${vp.width}px: no horizontal page scroll anywhere`,

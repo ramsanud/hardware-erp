@@ -21,6 +21,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "app.notifications.sms.twilio")
 public record TwilioProperties(
+        /**
+         * CR-077 - the master switch, false by default. SMS costs money per
+         * message and needs DLT registration in India, so it is opt-in even
+         * when credentials are present: a deployment that inherited a
+         * TWILIO_* set from somewhere must not start paying by accident.
+         */
+        boolean enabled,
         String apiBaseUrl,
         String accountSid,
         String authToken,
@@ -35,11 +42,13 @@ public record TwilioProperties(
 ) {
 
     /**
-     * A send needs the account pair AND some sender. Checked here rather than
-     * in the provider so "is Twilio set up" has exactly one definition.
+     * A send needs the switch on, the account pair AND some sender. Checked
+     * here rather than in the provider so "can SMS send" has exactly one
+     * definition - every caller that already asked isConfigured() got the
+     * CR-077 switch for free.
      */
     public boolean isConfigured() {
-        return notBlank(accountSid) && notBlank(authToken)
+        return enabled && notBlank(accountSid) && notBlank(authToken)
                 && (notBlank(messagingServiceSid) || notBlank(fromNumber));
     }
 

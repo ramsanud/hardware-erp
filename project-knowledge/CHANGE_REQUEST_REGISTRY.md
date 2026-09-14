@@ -83,7 +83,12 @@ Nothing is implemented from conversation memory.
 | CR-071 | 2026-09-09 | Claude | Documentation only. Rebuild `FEATURE_REGISTRY.md` and `MODULE_DEPENDENCY_MAP.md` against the real source tree; both had drifted far enough to mislead — they named MySQL as the database and listed shipped modules as "planned". Records the `product` ↔ `invoice` package cycle rather than hiding it. No code change. | **APPLIED, 2026-09-09** |
 | CR-074 | 2026-09-09 | User | SMS goes real over Twilio; email can move to SendGrid with `EMAIL_PROVIDER=sendgrid`. Credentials are app-wide, not per tenant (unlike CR-056 WhatsApp). Collapses the three divergent direct-`JavaMailSender` paths — password reset, invoice PDF, Settings test button — onto one `EmailTransport`, so a SendGrid deployment cannot silently drop password-reset mail. | **APPLIED, 2026-09-09** |
 | CR-075 | 2026-09-09 | User | A first-visit guided tour that explains the application, built from the permissions the signed-in person actually holds, so an owner, accountant, storekeeper and auditor each get their own walkthrough. Skippable at every step and replayable from the header. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-09** |
+| CR-076 | 2026-09-12 | User | Choose an address on a map (Leaflet + OpenStreetMap, no API key). | **APPLIED, 2026-09-12** |
+| CR-077 | 2026-09-12 | User | Email over **Resend** (`EMAIL_PROVIDER=resend`, free tier), and SMS made **opt-in** with `SMS_ENABLED=false` as the default even when `TWILIO_*` is set. First of three auth-stack CRs (077 Resend + SMS off, 078 Email OTP, 079 Passkeys) chosen because SMS has no free tier. | **APPLIED 2026-09-12** |
+| CR-080 | 2026-09-12 | User | Manual WhatsApp: a `wa.me` link opens the customer's own chat with the invoice / quotation / receipt / reminder / greeting already typed; the owner taps Send. Free, no credential, nothing stored, nothing sent by the app. One `PhoneNumberNormalizer` replaces the two near-copies in the Meta and Twilio providers. | **APPLIED, 2026-09-12** |
 | CR-081 | 2026-09-12 | User | The approved sign-in design, implemented: a 50/50 split with a forest-green hero over a shop interior, a new post-and-lintel H brand mark (also the favicon and the sidebar fallback), and one `AuthCard` shell for all six auth screens. Default colour theme becomes Emerald so a first-time visitor sees the brand. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-12** |
+| CR-082 | 2026-09-13 | User | The approved dashboard design and app shell, implemented on tokens: shop identity card and grouped rail with a user footer, greeting eyebrow and live shop-time chip, eight KPI cards with real-series sparklines and week-over-week deltas, Quick actions and Recent actions cards. Widget titles renamed to counter-staff language. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-13** |
+| CR-083 | 2026-09-14 | User | Quotations list upgraded: four KPI cards from a new `GET /v1/quotations/stats`, status pills, date-range presets, CSV export, a row action menu (PDF, WhatsApp, convert, edit, delete), an illustrated empty state with CTAs. `DELETE /v1/quotations/{id}` for drafts only. The `status=EXPIRED` filter, which could never match (EXPIRED is computed, never stored), now works — BUG-BE-005. `SCOPE: BOTH`. | **APPLIED, 2026-09-14** |
 ---
 
 
@@ -4650,6 +4655,93 @@ screen still shown → dismissed stays dismissed → Turn off silences all →
 replay restores), nested-route matching, and the phone: the tour fits 390px,
 Skip is visible without scrolling, and works.
 
+## CR-080 — Manual WhatsApp: one click opens the customer's chat with the message already typed (APPLIED 2026-09-12)
+
+**Raised by:** User. **Type:** new capability; no schema change, no new
+provider credentials.
+
+### Why
+
+CR-056 made WhatsApp *automatic* — but only for a shop that has connected its
+own WhatsApp Business account through Meta, which needs a Business Manager, a
+verified number and (for anything outside a 24-hour customer session) approved
+message templates. Most hardware shops have none of that. They have the
+owner's phone with WhatsApp on it. For them every "Send WhatsApp" button in
+the application has answered `LOGGED_ONLY` since it shipped — an honest state,
+and a useless one.
+
+This CR gives every shop the free path: the button opens WhatsApp itself —
+the app on a phone, WhatsApp Web on a desktop — **on the right customer's
+chat, with the message already typed**. The owner reads it and taps Send.
+Nothing is sent by the application, nothing is stored, no credential exists.
+
+### What it is, precisely — and what it is not
+
+It is a `https://wa.me/<number>?text=<encoded message>` link, generated
+server-side and opened by the browser. That is the whole mechanism.
+
+It is **not** the WhatsApp Cloud API (that is CR-056, unchanged), not Twilio,
+not WhatsApp Web automation, not an unofficial library, not a QR-code
+session, and it cannot send in bulk — each message is one chat, one human tap.
+That last point is a property of the design, not a limitation to work around:
+it is exactly what keeps this free of Meta's registration, templates and
+per-message pricing.
+
+### Shape
+
+| Piece | Decision |
+|---|---|
+| Link generation | **Server-side**, per entity: `GET /v1/whatsapp/links/{invoices/{id} \| invoices/{id}/reminder \| invoices/{id}/payments/{pid} \| quotations/{id} \| customers/{id}}` → `{url, toMobileNo, message}`. Built on the existing tenant-scoped `InvoiceService.get` / `QuotationService.get` / `CustomerService.get`, so a foreign tenant's id is a 404 exactly as it is everywhere else — no new repository access, no new isolation code to get wrong. A pure `{phone, message} → url` endpoint was rejected as a network round-trip for a string concatenation; per-entity links are what actually needed the server (the tenant check and one source of message text) |
+| Abstraction | `WhatsAppService.generateChatUrl(phone, message)` with `ManualWhatsAppService` as the only implementation. The automatic path already exists as `WhatsAppBusinessProvider` behind `NotificationProvider`; the two contracts genuinely differ (open a link vs. send a message), so they are two small interfaces rather than one forced one |
+| Phone normalisation | **One** utility, `common/util/PhoneNumberNormalizer`, replacing the two near-copies that CR-056 and CR-074 had grown (`WhatsAppBusinessProvider.toIndianE164`, `SmsNotificationProvider.toE164`). `9876543210`, `+91 98765 43210`, `+91-98765-43210`, `919876543210`, `09876543210` all become `+919876543210`; `0044…` becomes `+44…`; an already-international number is kept; anything else is refused with a clear message rather than guessed at |
+| Encoding | `URLEncoder` with `+` rewritten to `%20`, so the text is RFC 3986 percent-encoded and survives Tamil, emoji, `&`, `?`, `/`, `#` and apostrophes unchanged. Never string-concatenated |
+| Templates | `WhatsAppMessageTemplates` — invoice, quotation, payment receipt, payment reminder, customer greeting. Plain text, built from the DTOs' own `…Display` money strings, so the amounts a customer reads are the amounts the invoice page shows |
+| Frontend | One `WhatsAppButton` (shared), used on Invoice (message, reminder, per-payment receipt), Quotation, Customer. Fetches the link on click and opens it in a new tab with `noopener,noreferrer`; pre-warms the fetch on hover/focus so the click's own user-activation is what opens the window |
+| Confirmation | None — one click, by the user's explicit instruction. The recipient is visible in the page header beside the button, and WhatsApp itself is the review step |
+| Storage / logging | Nothing stored. Phone numbers, message text and generated URLs are never logged — a wa.me URL *is* the customer's number and the message |
+
+### The one UI relocation
+
+The Invoice page's toolbar button labelled "WhatsApp reminder" was the CR-056
+*automatic* send. It is now the manual link — the thing that works for every
+shop — and the automatic send moved into the Share menu as "Send reminder via
+WhatsApp Business", beside the automatic invoice send (renamed from "Send
+WhatsApp" to say what it is). Nothing was removed. The Customer page's
+per-invoice "Send WhatsApp Reminder" (CR-056 §9) is unchanged; the manual
+reminder for that invoice is one click away on its detail page.
+
+### Deliberately not built
+
+- **Bulk / multi-select sending.** wa.me opens one chat per click by
+  design; a loop opening 50 tabs is not a feature. The request's own sketch
+  ("Customer 1 → WhatsApp → Send → back → Customer 2") is what the per-row
+  buttons already give.
+- **Low-stock and daily-summary "to owner" links.** A wa.me link opens a
+  chat *with someone else*; the owner messaging themself is not a workflow.
+  Those alerts already reach the owner through `ReminderSchedulerService`.
+- **A row action on the Payments list page.** Its rows are column-driven
+  (CR-068); receipts are reachable from the invoice's own Payments card.
+- **Consent gating on the manual link.** `whatsapp_opt_in` governs what the
+  *application* sends automatically (CR-056 §16). A human opening a chat
+  and choosing to type is not that, and the flag is still shown on the
+  customer page for the owner to respect.
+
+### Verified
+
+On a clean worktree holding HEAD plus exactly this change (another session had
+`Sidebar.tsx` mid-edit in the main tree): `mvn -o clean verify` exit 0 — **561
+unit tests (0 failures, 2 skipped: the opt-in live-mail pair) and 235
+integration tests (0 failures)**. New: `PhoneNumberNormalizerTest` (28),
+`ManualWhatsAppServiceTest` (16, every message decoded back and compared —
+Tamil, emoji, `&`, `?`, `/`, `#`, apostrophe, a literal `+`, empty),
+`WhatsAppLinkServiceTest` (7), `WhatsAppLinkControllerIT` (4, including the
+cross-tenant 404 whose body names nothing). Frontend: `tsc -b --force` exit 0,
+`vite build` exit 0, Playwright **192/192** with the new `whatsapp` suite on
+desktop and mobile. `eslint` is in `package.json` but not installed — lint
+**not executed**. `registry/static_check.py` **not executed** — python3 is not
+installed on this machine (hard rule 10).
+
+
 ---
 
 ## CR-081 — The approved sign-in design, implemented (APPLIED 2026-09-12)
@@ -4715,3 +4807,329 @@ The other session's uncommitted editorial pass over `AuthLayout`, `LoginPage`
 and `LoginForm` was superseded by this and overwritten. Its diff was read in
 full before that; the copy it carried is this brief's copy, so nothing of
 substance was lost.
+
+
+---
+
+## CR-082 — The approved dashboard and app shell, implemented (APPLIED 2026-09-13)
+
+**Raised by:** User. **Type:** frontend redesign + widget renames. `SCOPE: FRONTEND ONLY`.
+
+### What was asked
+
+Two briefs in one: build the dashboard mockup exactly, and rename every
+widget to counter-staff language. Both done. Where the mockup drew something
+the data cannot support, this entry says so rather than faking it.
+
+### The rail (`Sidebar.tsx`)
+
+| Piece | Decision |
+|---|---|
+| Overview | A direct row, active pill on `/dashboard`, not a section heading over a "Dashboard" item |
+| Groups | Sales · Projects · Purchase · Inventory · Accounting · Administration · Developer, each a **row that folds** with a chevron (`.sidebar-group`). **Every group starts open** (CR-023: folding is a per-viewer choice, never a way to lose a module); the fold is persisted per user via `themeScope`, so the mockup's tidy folded state is something you arrive at |
+| Shop card | Shop name + "Hardware shop" under the brand. The mockup draws a dropdown caret, which would promise a **shop switcher — and there is none** (one login is one shop, CR-016). It opens Shop settings for `SETTINGS_VIEW` holders and is static otherwise; the chevron points right, the way a link does |
+| Utility list | **WhatsApp Reminders** (`SETTINGS_VIEW`) and **Help & Support**, under a divider. "Support" and "My profile" left Administration so nothing is listed twice |
+| Footer | The person signed in — avatar, name, role — opens their profile |
+| Header | Role under the name in the top bar, as drawn |
+
+### The page (`DashboardPage.tsx`)
+
+- Greeting eyebrow (**Good morning / afternoon / evening**, from the clock), title, subtitle; a live **date + Shop Time** chip that ticks on the minute; the two primary actions.
+- **Row 1** — Total Sales · Today's Earnings · Pending Payments · Low Stock Alerts.
+- **Row 2** — Items Catalog · Wholesalers & Dealers · Bills Raised · Customer List, each a door to its list.
+- Charts 2:1, then **Quick actions** (2/3) and **Recent Actions** (1/3, `AUDIT_VIEW`, reads the CR-072 activity log), then the four lists.
+
+**Sparklines and deltas are measured, or absent.** Total Sales and Today's
+Earnings draw from the real 14-day daily series (`/v1/analytics/revenue-trend`,
+`REPORT_VIEW`); "vs last week" is the last 7 buckets against the 7 before,
+"vs yesterday" is the summary's two figures. **Pending Payments and Low Stock
+Alerts have no time series in the API, so they carry no sparkline and no
+delta.** The mockup drew red and orange lines on them; a line drawn from
+nothing is decoration pretending to be data. A previous window of zero shows
+"—", not "0%".
+
+**"Pending Estimates" means it** — `status=SENT`, not the last five of any
+status. Renaming "Recent quotations" to "Pending" and keeping the old query
+would have been a label lying about its list.
+
+**Quick actions open the real forms.** Product and customer creation are
+dialogs on their list pages, not routes, so `?new=1` now opens them
+(`PRODUCT_ROUTES.create`, `CUSTOMER_ROUTES.create`); the buttons no longer
+just land on a list.
+
+**Retired:** the CR-034 §21 Bento hero treatment for the KPI row. Bento's
+grid is three cells with a double-width hero; the approved row is four
+equals. Design styles still govern surfaces, radii and motion everywhere else.
+
+### Every colour is a token
+
+The brief named `bg-emerald-950`, `#059669`, `text-slate-900`,
+`border-gray-200`. None of those appear. Each maps to the token the spec
+table in the same brief already listed — `--sidebar`, `--primary`,
+`--foreground`, `--border` — so the page is the mockup on Emerald and the
+same design in every other shop's colours.
+
+### Widget titles
+
+| Was | Now |
+|---|---|
+| Total sales | Total Sales |
+| Today's sales | Today's Earnings |
+| Outstanding customer balance | Pending Payments |
+| Low stock items / Low stock | Low Stock Alerts |
+| Products | Items Catalog |
+| Suppliers | Wholesalers & Dealers |
+| Invoices | Bills Raised |
+| Customers | Customer List |
+| Recent invoices | Recent Bills |
+| Recent quotations | Pending Estimates (now filtered) |
+| Sales trend | Sales Growth |
+| Sales by category | Top Selling Categories |
+| Recent activity | Recent Actions |
+
+Applied to the page, both chart cards, and the `DASHBOARD_WIDGETS` catalogue
+so the customise-dashboard picker says the same words. Rail labels are
+untouched — the whole point is that a widget and a menu entry never share a
+name.
+
+### Verified
+
+`tsc -b --force` 0, `vite build` 0. Screenshots at 1440 and 390 read against
+the mockup before this was called done — which caught the one real defect:
+**a 26px figure, a 40px tile and a 64px sparkline cannot share a 226px card**,
+and "₹26,100.00" truncated to "₹26,1…". The mockup only gets away with it
+because its figures are ₹0.00. The sparkline now sits on the delta row and the
+figure owns the width. Two smaller finds: the delta's flex layout dropped the
+space between "30.8%" and "vs yesterday" from the DOM text (a screen reader
+heard one word) — it is inline now; and lucide icons are built from
+`<polyline>`, so the sparkline carries `data-sparkline` for anything that
+needs to count them.
+
+New suite `frontend/tests/dashboard/dashboard.spec.mjs`, **38 assertions**:
+every renamed title present and the old label absent; figures render in
+full at 1440 and 390; deltas computed from the stubbed series; **exactly two**
+sparklines with data and **zero** without; quick actions are links and
+"Add product" carries `?new=1`; Overview active; groups fold, the fold
+survives a reload, and unfolds. Full suite **230/230** against a build served
+from its own directory.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this
+machine (hard rule 10).
+
+---
+
+## CR-077 — Email over Resend, and SMS becomes opt-in (APPLIED 2026-09-12)
+
+**Raised by:** User — an auth-stack decision table: Password + BCrypt, Email
+verification and Email OTP over **Resend**, TOTP, Passkey/WebAuthn, JWT access
+token, refresh token in a Secure HttpOnly cookie — with the instruction
+*"comment the SMS functionality … SMS is not in free tier so we not use that"*.
+**Type:** SPECIFICATION CHANGE, backend + configuration. No `.tsx` file, no
+migration, no endpoint. `SCOPE: BACKEND ONLY`.
+
+Split into three CRs because they are three different sizes: **CR-077** (this,
+half a day), **CR-078** Email OTP (one table, one service, four flows) and
+**CR-079** Passkeys (WebAuthn, two to three days). The user chose all three,
+in that order, on 2026-09-12.
+
+### What the table already had
+
+Four of the seven rows were already built and needed nothing: BCrypt strength
+12 (`AuthServiceImpl`), TOTP with backup codes (`/v1/auth/mfa/*`,
+`security/totp/`, CR-054/CR-060), the 15-minute HS256 access token held in
+memory, and the opaque rotating refresh token in a Secure HttpOnly cookie
+(CR-065). This CR is the email transport those flows will ride on, and the
+SMS switch.
+
+### Resend — a third `EmailTransport`, not a rewrite
+
+`ResendEmailProvider` + `ResendProperties`, on the exact shape of the SendGrid
+pair from CR-074: `@ConditionalOnProperty(app.notifications.email.provider =
+resend)`, `implements NotificationProvider, EmailTransport`, `java.net.http`
+with a package-private `HttpClient` seam for tests, LOGGED_ONLY when
+unconfigured, the provider's own error message carried through on a
+rejection. Because every email path already goes through `EmailTransport`
+(the whole point of CR-074), password reset, invoice PDFs, the Settings test
+button and the coming OTP mail all switch with one env var.
+
+Where Resend differs from SendGrid, and the tests pin it:
+
+| | SendGrid v3 | Resend |
+|---|---|---|
+| Endpoint | `POST /v3/mail/send` | `POST /emails` |
+| Sender | `{"email","name"}` object | one RFC 5322 string, `Name <addr>` — a blank name must yield the bare address, not `null <addr>` |
+| Body | nested `personalizations[].to[].email`, `content[]` | flat `to[]`, `text` |
+| Success | 202, empty body, id in `X-Message-Id` | 200, `{"id": …}` in the body |
+| Attachment type key | `type` | `content_type` |
+| Error body | `{"errors":[{"message"}]}` | `{"statusCode","name","message"}` |
+
+Why Resend and not the SMTP account that was already there: Gmail's app
+passwords were rejected during CR-038 and that is why Email OTP was deferred
+then; an HTTP API with a free tier of 3,000 emails a month and an id per
+message is what makes an OTP flow shippable and an "it never arrived" report
+answerable.
+
+### SMS — off by default, by configuration, not by comment
+
+The user's words were "comment the SMS functionality". It was not commented
+out: `SmsNotificationProvider` has eleven passing tests and two callers, and
+dead source that no longer compiles against its tests is how a channel comes
+back broken the day someone does want it. Instead `TwilioProperties` gained
+`enabled` (bound from `SMS_ENABLED`, default `false`), and `isConfigured()` —
+already the single definition of "can SMS send" — now requires it. Every
+caller that asked `isConfigured()` got the switch for free; nothing else
+changed. With the switch off the provider returns LOGGED_ONLY at **debug**
+level rather than info, because with SMS deliberately off it fires on every
+invoice and payment and is not news.
+
+The default is off **even with credentials present** — a deployment that
+inherited a `TWILIO_*` set from an `.env` template must not start paying per
+message by accident. `EmailProviderSelectionTest` pins both directions:
+credentials alone bind but stay unconfigured; credentials plus
+`SMS_ENABLED=true` configure.
+
+### Files
+
+Backend: `ResendEmailProvider`, `ResendProperties` (new);
+`TwilioProperties`, `SmsNotificationProvider`, `application.yml`.
+Tests: `ResendEmailProviderTest` (11, new), `TwilioSmsProviderTest` (+1),
+`EmailProviderSelectionTest` (+2, one Twilio binding test amended to set the
+switch). Configuration: `.env.example`, `.env.cloud.example`,
+`.env.selfhosted.example`, `docker-compose.selfhosted.yml`,
+`docs/DEPLOYMENT.md`.
+
+### Verified
+
+`mvn -o clean test-compile` exit 0; the five notification test classes: 49
+tests, 0 failures. Full `mvn clean verify` is run once per CR before its
+commit — see the commit body. `registry/static_check.py` **not executed**:
+python3 is not installed on this machine (hard rule 10).
+
+
+## CR-083 — The quotations list becomes a working desk, not a register (APPLIED 2026-09-14)
+
+**Raised by:** User. **Type:** list-page upgrade with two small backend additions. `SCOPE: BOTH`.
+
+### What was asked
+
+KPI cards above the filters, a toolbar (combined search, date range with
+presets, status pills, Columns, Export CSV, New quotation), a richer table
+(number + date, customer + mobile, valid-until with an expiring-soon alert,
+amount, colour-coded status, a row menu with View/Print PDF · Send via
+WhatsApp · Convert to Invoice · Edit · Delete), and an illustrated empty
+state with Create and Clear-filters buttons.
+
+### What reaches the backend, and why
+
+| Addition | Reason |
+|---|---|
+| `GET /v1/quotations/stats?search&fromDate&toDate` (`QUOTATION_VIEW`) | The cards need counts and rupee totals over *every* matching quotation, not the 20 on the current page. Paging the whole list to add it up client-side would be wrong at 1,000 quotations and unusable at 10,000. One native aggregate, grouped by status and computed expiry, the same shape as `AnalyticsRepository.summary`. The cards follow the search box and date range but never the status pill — a card that only counted the pill you are on would say nothing. |
+| `DELETE /v1/quotations/{id}` (`QUOTATION_MANAGE`), **DRAFT only** | A draft was never issued: no invoice, no stock movement, no customer-facing number in anyone's hands. Anything past DRAFT is refused with a message that says to reject it instead — a SENT quote is a record of what the shop offered, and rejecting keeps it. Items go with the parent (`ON DELETE CASCADE`, V10); `activity_log` keeps the deletion under the quotation's number. |
+
+### BUG-BE-005 — the Expired filter never matched anything
+
+`QuotationRepository.search` compared `q.status = :status`. `EXPIRED` is
+never stored (CR-022: expiry is computed from `validUntil` at read time, and
+`updateStatus` refuses to set it), so `?status=EXPIRED` was an empty page
+from the day the filter shipped. The badge on every row said "Expired"; the
+filter for it found none of them. Fixed in the query: `EXPIRED` now means
+*validUntil before today and status in DRAFT/SENT/ACCEPTED*, and
+`DRAFT`/`SENT`/`ACCEPTED` now mean the **live** ones — the same rule the
+badge uses, so the pill and the badge always agree. `REJECTED` and
+`CONVERTED` are unaffected. Regression IT `QuotationListFiltersIT`.
+
+### The page
+
+- **KPI cards**: Total (count · ₹ value), Drafts / Pending (DRAFT + SENT, live),
+  Approved / Converted (ACCEPTED live + CONVERTED), Expired / Rejected. Amber /
+  emerald / rose are the `warning` / `success` / `destructive` tokens.
+- **Status colours**: Draft → `secondary`, Sent → new `info` token (blue),
+  Accepted → `success`, Expired/Rejected → `destructive`, Converted → new
+  `complete` token (violet). Both tokens are added, light and dark, rather
+  than raw Tailwind colours so they follow every colour theme like the
+  others. *Second pass, same day:* Sent first shipped on `default`
+  (primary), and on the default Emerald theme primary is green — a Sent
+  badge read the same as Accepted in the screenshot, which is the one
+  distinction the list is scanned for. Fixed blue `--info` (6.06:1 light,
+  5.98:1 dark on its 10% tint, measured) replaces it; the violet that had
+  been called `info` became `complete`, since "info" is blue everywhere
+  else in the industry and the next reader should not have to learn
+  otherwise. The suite's colour assertion now includes Accepted — it
+  checked four hues and left out the pair that collided. Also in that
+  pass: the KPI label wraps instead of truncating ("APPROVED / CONVER…" at
+  375px), and the empty-state Clear-filters check waits for the refetch
+  to settle — the pill sets `filtered` before `loading` flips, so the
+  button paints, hides under the skeleton and returns; the test counted
+  in the gap (1 flake in 272, reproduced 0/3 alone).
+- **Expiring soon**: an amber "3 days left" style badge on Valid until when a
+  live quotation expires within three days.
+- **Date range**: All time / Today / This month / Custom (two `DatePicker`s).
+- **Export CSV**: the current filters, every page (100 a call, capped at
+  5,000 rows with a toast saying so), built client-side; the row's display
+  strings are what the shop sees on screen, so they are what lands in the file.
+- **Row menu**: PDF preview, WhatsApp (CR-080 link, warmed on hover like
+  `WhatsAppButton`), Convert (same confirm copy as the detail page; lands on
+  the new invoice), Edit (loads the quotation and reuses the detail page's
+  edit hand-off), Delete (DRAFT only, confirmed). Convert is gated by
+  `INVOICE_CREATE`, Edit/Delete by `QUOTATION_MANAGE`, exactly as the detail
+  page and the API.
+- **Empty state**: an inline SVG on tokens, "+ Create new quotation" and
+  "Clear filters" — the latter only when a filter is actually set.
+- Phone: cards 2×2, pills scroll, the table stacks (existing `table.tsx`
+  mechanism), the row menu stays reachable.
+
+### Not done, deliberately
+
+- No bulk actions, no saved filters, no server-side CSV — none were asked and
+  each is its own CR.
+- Delete stays DRAFT-only. Widening it to SENT would be a policy change on a
+  document the customer may hold.
+
+### Second pass, 2026-09-14 — the owner's call on the zero state
+
+The first cut left Pending Payments and Low Stock Alerts without a sparkline
+or delta, and replaced both charts with a message when a period was empty.
+The owner reviewed it and asked, explicitly and in detail, for the mockup's
+zero state instead: every card keeps its mini chart and delta row at ₹0.00,
+and both charts keep their canvas. That is a product decision and it is
+implemented as specified — with the measured/placeholder line kept visible
+in the DOM rather than blurred:
+
+| Element | What it shows | Basis |
+|---|---|---|
+| Total Sales sparkline + "vs last week" | 14-day daily revenue; last 7 buckets vs the 7 before | `/v1/analytics/revenue-trend` — **measured** |
+| Today's Earnings sparkline + "vs yesterday" | last 7 buckets; today vs yesterday | trend + summary — **measured** |
+| Pending Payments "vs last week" | outstanding raised this week vs last week, **up shown red** | `/v1/analytics/summary` × 2 — **measured** (new in this pass) |
+| Pending Payments sparkline | flat red baseline | no daily series exists — **placeholder** |
+| Low Stock Alerts sparkline + "→ 0% vs last week" | flat amber baseline, zero delta | no history endpoint — **placeholder** |
+
+A card with no series draws the baseline and marks the SVG
+`data-sparkline-empty`; a comparison whose previous window was zero reads
+**"New"** (not "0%", not infinity) when there is something now, and "0%"
+only when both windows are zero. **To make the two placeholders measured:**
+a weekly low-stock snapshot and a daily outstanding series — one small CR.
+
+Also in this pass:
+
+- **Sales Growth** always renders its axes. An empty period synthesises one
+  ₹0 bucket per day (or month) of the chosen range — real dates, real zero —
+  so the X axis reads `17 Aug … 13 Sept` and the Y axis is fixed
+  `₹0.00 … ₹1.00` in quarters; the "No sales in this period" message floats
+  over the plot instead of replacing it.
+- **Top Selling Categories** always draws the ring: a single `--muted` slice
+  when empty, "No data yet" in the hole, and a legend of the **shop's own
+  categories** at 0% (`/v1/categories`). Only a shop with no categories at
+  all sees the six the mockup drew, as examples of what the list will hold.
+- **WhatsApp Reminders dot** — shown when `/v1/settings/whatsapp` reports
+  `connected`, hidden otherwise. Same `SETTINGS_VIEW` the row already needs.
+- Quick actions card tinted `primary/5` over `primary/20`, as drawn.
+- Sparkline moved to the top-right beside the label — the one short row —
+  after it clipped beside the delta at 1440.
+
+**One regression caught by the responsive sweep, not by the dashboard suite:**
+`data?.points.length` throws when a response has no `points` (the generic
+stub returns a page object; a real backend can 403). White screen on every
+viewport. Fixed to `data?.points?.length`, and the dashboard suite now
+includes the "none of my endpoints answered" case so it cannot rely on its
+own happy-path stub again. Dashboard suite **52** assertions; full suite
+**246/246** on an isolated build.

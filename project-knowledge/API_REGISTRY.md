@@ -101,6 +101,8 @@ for every module; see each module's controller for its actual endpoints).
 | PATCH | `/v1/quotations/{id}/status` | QUOTATION_MANAGE | 200 |
 | POST | `/v1/quotations/{id}/convert` | INVOICE_CREATE | 200 |
 | GET | `/v1/quotations/{id}/pdf` | QUOTATION_VIEW | 200, `application/pdf` (CR-026) |
+| GET | `/v1/quotations/stats` | QUOTATION_VIEW | 200 — CR-083. `search`, `fromDate`, `toDate` (same as the list; no `status`). Counts and rupee totals over every match: `totalCount/totalValueDisplay`, `pendingCount` (DRAFT+SENT still valid), `approvedCount` (ACCEPTED still valid + CONVERTED), `closedCount` (expired DRAFT/SENT/ACCEPTED + REJECTED); the three buckets sum to the total |
+| DELETE | `/v1/quotations/{id}` | QUOTATION_MANAGE | 204 — CR-083. DRAFT only; 422 `BUSINESS_RULE_VIOLATION` for anything later (reject it instead). Items go with it; logged to `activity_log` |
 
 Search parameters on `GET /v1/quotations`: `search`, `status`, `fromDate`,
 `toDate` (ISO date, inclusive), `page`, `size`, sort fixed to
@@ -110,6 +112,11 @@ exact same `InvoiceService.create()` path a normal invoice uses (stock
 decrements, GST recalculated from current product rates). 422
 `PAYMENT_EXCEEDS_TOTAL`-style business errors: converting an expired
 quotation, or one that is `REJECTED`/`CONVERTED` already.
+
+`status` follows the badge, not the stored column (BUG-BE-005, CR-083): `EXPIRED`
+means past `validUntil` while still DRAFT/SENT/ACCEPTED — it is never stored
+(CR-022) — and `DRAFT`/`SENT`/`ACCEPTED` mean the still-valid ones. `REJECTED`
+and `CONVERTED` are the stored values.
 
 ## Invoice PDF + shop settings (CR-022)
 
@@ -515,6 +522,25 @@ Every endpoint below resolves the tenant from
 | POST | `/v1/settings/whatsapp/test-send` | `SETTINGS_MANAGE` | Body: `toMobileNo`. Throws immediately (never a fake success) if not connected. |
 | POST | `/v1/invoices/{id}/share/whatsapp` | `INVOICE_VIEW` | Manual resend of the invoice-created message, distinct from the automatic on-create send. |
 | POST | `/v1/invoices/{id}/payments/{paymentId}/share/whatsapp` | `PAYMENT_MANAGE` | Manual only - no auto-send toggle exists, so "do not automatically send" is satisfied by this never firing on its own. |
+
+### Manual WhatsApp links (CR-080, 2026-09-12)
+
+All GET, all side-effect free. Each returns `{url, toMobileNo, message}` where
+`url` is a `https://wa.me/<e164 digits>?text=<percent-encoded>` link the
+browser opens in a new tab; the person then presses Send inside WhatsApp.
+Nothing is sent or stored by the application. Tenant isolation is the
+underlying document service's own (`InvoiceService.get` etc.), so a foreign
+id is a 404 whose body names nothing. 422 with the reason when the customer
+has no number, the number cannot be normalised, or a reminder is asked for a
+paid/cancelled invoice. See `docs/MANUAL_WHATSAPP.md`.
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/v1/whatsapp/links/invoices/{id}` | `INVOICE_VIEW` | invoice summary: number, total, paid, balance |
+| GET | `/v1/whatsapp/links/invoices/{id}/reminder` | `INVOICE_VIEW` | payment reminder; UNPAID / PARTIALLY_PAID only |
+| GET | `/v1/whatsapp/links/invoices/{id}/payments/{paymentId}` | `PAYMENT_VIEW` | receipt for one payment, reached through its invoice |
+| GET | `/v1/whatsapp/links/quotations/{id}` | `QUOTATION_VIEW` | quotation summary with validity date |
+| GET | `/v1/whatsapp/links/customers/{id}` | `CUSTOMER_VIEW` | greeting |
 | POST | `/v1/invoices/{id}/remind` | `INVOICE_VIEW` | Pre-existing (Task 05 / superseded CR-055) - now sends through the tenant's own connection instead of a shared one. |
 | POST | `/v1/inventory/low-stock/send-alert` | `INVENTORY_VIEW` | Manual trigger for the same digest `ReminderSchedulerService` already sends daily at 8am - to the shop's own contact number, never a customer. |
 | GET | `/v1/notifications/log` | `SETTINGS_VIEW` | Pre-existing, gained an optional `channel` query param for the Message History page. |

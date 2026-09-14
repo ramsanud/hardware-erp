@@ -90,7 +90,7 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   },
   {
     id: 'todays-sales',
-    name: "Today's Sales",
+    name: "Today's Earnings",
     description: 'Revenue invoiced today, against yesterday for comparison.',
     category: 'overview',
     permission: PERMISSIONS.INVOICE_VIEW,
@@ -98,7 +98,7 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   },
   {
     id: 'outstanding-customer-balance',
-    name: 'Customer Receivables',
+    name: 'Pending Payments',
     description: 'Total still owed by customers on unpaid invoices.',
     category: 'overview',
     permission: PERMISSIONS.INVOICE_VIEW,
@@ -106,7 +106,7 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   },
   {
     id: 'products-count',
-    name: 'Total Products',
+    name: 'Items Catalog',
     description: 'Number of products in the catalogue.',
     category: 'overview',
     permission: PERMISSIONS.PRODUCT_VIEW,
@@ -114,7 +114,7 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   },
   {
     id: 'suppliers-count',
-    name: 'Total Suppliers',
+    name: 'Wholesalers & Dealers',
     description: 'Number of active suppliers on record.',
     category: 'overview',
     permission: PERMISSIONS.SUPPLIER_VIEW,
@@ -122,7 +122,7 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   },
   {
     id: 'customers-count',
-    name: 'Total Customers',
+    name: 'Customer List',
     description: 'Number of customers on record.',
     category: 'overview',
     permission: PERMISSIONS.CUSTOMER_VIEW,
@@ -130,7 +130,7 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   },
   {
     id: 'low-stock-count',
-    name: 'Low Stock Items',
+    name: 'Low Stock Alerts',
     description: 'How many products have fallen to or below their reorder level.',
     category: 'overview',
     permission: PERMISSIONS.INVENTORY_VIEW,
@@ -138,7 +138,7 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   },
   {
     id: 'invoices-count',
-    name: 'Total Invoices',
+    name: 'Bills Raised',
     description: 'Number of invoices raised.',
     category: 'overview',
     permission: PERMISSIONS.INVOICE_VIEW,
@@ -148,7 +148,7 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   // -- Sales ---------------------------------------------------------------
   {
     id: 'sales-trend',
-    name: 'Revenue & Sales Trend',
+    name: 'Sales Growth',
     description: 'Revenue over time, bucketed by day, week or month.',
     category: 'sales',
     permission: PERMISSIONS.INVOICE_VIEW,
@@ -156,7 +156,7 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   },
   {
     id: 'sales-by-category',
-    name: 'Category Revenue Breakdown',
+    name: 'Top Selling Categories',
     description: 'Which product categories the revenue came from.',
     category: 'sales',
     permission: PERMISSIONS.INVOICE_VIEW,
@@ -164,7 +164,7 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   },
   {
     id: 'recent-invoices',
-    name: 'Recent Invoices',
+    name: 'Recent Bills',
     description: 'The latest invoices with their payment status.',
     category: 'sales',
     permission: PERMISSIONS.INVOICE_VIEW,

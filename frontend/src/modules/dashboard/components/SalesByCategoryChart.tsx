@@ -6,6 +6,10 @@ import { Skeleton } from '@/shared/components/ui/skeleton';
 import {
   analyticsService, PERIOD_PRESETS, resolvePeriod, type CategorySlice,
 } from '../services/analyticsService';
+import { categoryService } from '@/modules/product/services/categoryService';
+
+/** What a hardware shop's legend will typically hold - shown only when the shop has no categories yet. */
+const MOCKUP_CATEGORIES = ['Tools & Hand Tools', 'Electricals', 'Plumbing', 'Paints & Adhesives', 'Hardware Fittings', 'Others'];
 
 /**
  * Where the revenue came from, by category (CR-048's own DTO comment on
@@ -22,6 +26,7 @@ export function SalesByCategoryChart() {
   const [preset, setPreset] = useState(PERIOD_PRESETS[1]);
   const [slices, setSlices] = useState<CategorySlice[] | null>(null);
   const [summary, setSummary] = useState('');
+  const [shopCategories, setShopCategories] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
@@ -43,13 +48,33 @@ export function SalesByCategoryChart() {
     return () => { cancelled = true; };
   }, [preset]);
 
+  useEffect(() => {
+    let cancelled = false;
+    categoryService.list()
+      .then((rows) => { if (!cancelled) setShopCategories(rows.map((r) => r.categoryName)); })
+      .catch(() => { if (!cancelled) setShopCategories([]); });
+    return () => { cancelled = true; };
+  }, []);
+
   const isEmpty = !loading && !failed && (slices?.length ?? 0) === 0;
+
+  /*
+   * The zero state keeps the ring and the legend on screen, as the owner
+   * asked. The legend names are the SHOP'S categories, each at 0% - true
+   * for a shop that has categories and no sales yet. Only a shop with no
+   * categories at all falls back to the six the mockup drew, and then they
+   * are examples of what the list will hold, not claims about this shop.
+   */
+  const legend = isEmpty
+    ? (shopCategories && shopCategories.length > 0 ? shopCategories.slice(0, 6) : MOCKUP_CATEGORIES)
+        .map((label) => ({ label, sharePercent: 0 }))
+    : (slices ?? []).map((slice) => ({ label: slice.label, sharePercent: slice.sharePercent }));
 
   return (
     <Card>
       <CardHeader className="flex-row items-start justify-between gap-4 space-y-0 pb-2">
         <div>
-          <CardTitle className="text-base">Sales by category</CardTitle>
+          <CardTitle className="text-base">Top Selling Categories</CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">Share of revenue this period</p>
         </div>
 
@@ -78,16 +103,24 @@ export function SalesByCategoryChart() {
         ) : failed ? (
           <State icon={AlertCircle} title="Could not load the category breakdown"
                  detail="The figures could not be fetched. Try another period, or reload the page." />
-        ) : isEmpty ? (
-          <State icon={PieChartIcon} title="No sales in this period"
-                 detail="Raise an invoice, or choose a wider period above." />
         ) : (
           <>
-            <div className="h-[260px] w-full">
+            <div className="relative h-[260px] w-full">
+              {isEmpty ? (
+                <div
+                  className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center px-16 text-center"
+                  role="status"
+                >
+                  <p className="text-sm font-medium">No data yet</p>
+                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">Start selling to see category-wise revenue</p>
+                </div>
+              ) : null}
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={slices ?? []}
+                    // An empty period draws one full slice in the muted token
+                    // - the mockup's grey track - so the ring is always there.
+                    data={isEmpty ? [{ label: 'none', amountPaise: 1, amountDisplay: '0.00', quantity: 0, sharePercent: 0 }] : (slices ?? [])}
                     dataKey="amountPaise"
                     nameKey="label"
                     cx="50%"
@@ -98,13 +131,15 @@ export function SalesByCategoryChart() {
                     stroke="hsl(var(--card))"
                     strokeWidth={2}
                   >
-                    {(slices ?? []).map((slice, index) => (
+                    {isEmpty ? (
+                      <Cell key="none" fill="hsl(var(--muted))" />
+                    ) : (slices ?? []).map((slice, index) => (
                       // Cycles through the same 5 chart tokens every other
                       // chart in the app already uses - no second palette.
                       <Cell key={slice.label} fill={`hsl(var(--chart-${(index % 5) + 1}))`} />
                     ))}
                   </Pie>
-                  <Tooltip
+                  {isEmpty ? null : <Tooltip
                     content={({ active, payload }) => {
                       if (!active || !payload?.length) return null;
                       const slice = payload[0].payload as CategorySlice;
@@ -116,15 +151,15 @@ export function SalesByCategoryChart() {
                         </div>
                       );
                     }}
-                  />
+                  />}
                 </PieChart>
               </ResponsiveContainer>
             </div>
 
             {/* Legend as a real list, not chart-only colour - readable at a
                 glance and the accessible path a screen reader can use. */}
-            <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t pt-3 text-xs sm:grid-cols-3">
-              {(slices ?? []).map((slice, index) => (
+            <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t pt-3 text-xs sm:grid-cols-3" data-category-legend>
+              {legend.map((slice, index) => (
                 <li key={slice.label} className="flex items-center gap-1.5 truncate">
                   <span
                     className="h-2.5 w-2.5 shrink-0 rounded-full"

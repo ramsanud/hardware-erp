@@ -12,6 +12,12 @@ const badgeVariants = cva(
         success: 'border-transparent bg-success/10 text-success',
         warning: 'border-transparent bg-warning/10 text-warning',
         destructive: 'border-transparent bg-destructive/10 text-destructive',
+        /* CR-083. info: with someone else, in progress - a Sent quotation. Blue,
+           and deliberately not primary: on the Emerald theme primary is green
+           and Sent read as Accepted. complete: done and moved on - a converted
+           quotation. Not success (that is Accepted) and not pending. */
+        info: 'border-transparent bg-info/10 text-info',
+        complete: 'border-transparent bg-complete/10 text-complete',
         /*
          * A tinted badge cannot carry two different "bad" states apart on
          * colour alone, and Supplier/User have two: Inactive (switched off)

@@ -1,24 +1,190 @@
 # RESUME POINT
 
+**Updated:** 2026-09-14, late (**release-readiness pass: CR-083 second pass committed, Render blueprint aligned with CR-077, main merged**). `SCOPE: BOTH` (config only on the backend side).
+
+## Release-readiness pass (2026-09-14, evening)
+
+**What was asked**: audit for half-finished code, make both builds green,
+check Render readiness, merge to `main`. **What was found**: no half-written
+code — zero TODO/FIXME markers, no empty files, every provider (Resend,
+SendGrid, Twilio, Meta WhatsApp) is a complete implementation behind the
+`EMAIL_PROVIDER` / tenant-connection switches. The Emerald primary is
+`152 69% 28%` = `#16794B` exactly, `--radius` is 8px; both already held.
+
+**Committed** (this branch, then `--no-ff` into `main`):
+
+- `3f18b7b` — the CR-083 second pass that the previous session left in
+  the working tree (Sent/Accepted collision, KPI label wrap, the
+  Clear-filters flake) plus the CR-083 registry bodies `6ad7d65` missed.
+- The Render blueprint carried Gmail SMTP from before CR-077; it now sets
+  `EMAIL_PROVIDER=resend` with `RESEND_API_KEY` / `RESEND_FROM_EMAIL` /
+  `RESEND_FROM_NAME`, and declares the two app-wide WhatsApp webhook keys
+  (`WHATSAPP_APP_SECRET`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`) that nothing had
+  documented for the hosted deployment. `docs/DEPLOYMENT.md` table updated.
+- `backend/mvnw` + `mvnw.cmd` + `.mvn/wrapper` (Maven 3.9.9, only-script
+  distribution) so `./mvnw clean verify` works on a clone with no Maven.
+- `npm test` is now an alias of `test:e2e` in `frontend/package.json`.
+
+**Verified, isolated** — backend on a detached worktree of `6ad7d65` (the
+backend tree is unchanged since): `mvn -o clean verify` **579 unit (0 F, 2
+skipped) + 238 IT (0 F)**, BUILD SUCCESS 5:25, `target/hardware-erp-1.0.0.jar`
+95 MB. Frontend on a private `--outDir` served on 4197: `tsc -b --force` 0,
+`vite build` 0, no source maps, Playwright **272/272**. `./mvnw -v`
+bootstraps. `static_check.py` **not executed** (no python3).
+
+**Not done, deliberately**: `application-prod.yml` and `.env` are on the
+project's Read deny-list, so the prod profile was checked only through
+`render.yaml`, `application-cloud.yml` and `application.yml`. `develop`
+is 97 commits behind this branch and was not touched — the ask was
+`main`. The three `.tmp` files in `frontend/tests` and
+`frontend/vite.config.audit.ts` belong to another session and stay
+untracked. `vercel.json` still points at `hardware-erp-9j9f.onrender.com`;
+change it if the Render service is recreated.
+
+---
+
+**Previous entry follows.**
+
+**Updated:** 2026-09-14 (**CR-083 — the quotations list becomes a working desk; BUG-BE-005 fixed on the way**). `SCOPE: BOTH`.
+
+## CR-083 second pass, later the same day — `SCOPE: FRONTEND ONLY` (committed as `3f18b7b`)
+
+A review of `6ad7d65` against the brief, done by rendering it (375 / 768 /
+1440 / 1920, light and dark) rather than reading the diff. Two visible
+defects, fixed in the working tree on top of that commit:
+
+- **Sent was green.** It sat on `default` (`--primary`), and the default
+  Emerald theme's primary is green, so Sent and Accepted were the same
+  pill. Now a fixed blue `--info`; the violet formerly named `info` is
+  `--complete` (Converted). Contrast measured, not reasoned: 6.06:1 / 5.98:1
+  light / dark. The suite's colour assertion gained Accepted — it had checked
+  four hues and skipped the pair that collided.
+- **"APPROVED / CONVER…"** truncated at 375px; the KPI label wraps now.
+- One flake: the empty-state "Clear filters" check counted during the
+  skeleton gap between the pill click and the refetch (1/272 in a full run,
+  0/3 alone). It waits for `networkidle` now.
+
+Verified on a private build (`--outDir` in the scratchpad, preview on 4183):
+`tsc -b --force` 0, `vite build` 0, Playwright **272/272**. Backend untouched
+by this pass; the detached-worktree `mvn clean verify` for `6ad7d65` reached
+**579 unit tests, 0 failures** before the session ended mid-ITs — the ITs
+are **not re-verified here**. `static_check.py` not executed (no python3).
+
+Files: `index.css`, `tailwind.config.js`, `ui/badge.tsx`,
+`QuotationStatusBadge.tsx`, `QuotationKpiCards.tsx`,
+`tests/quotations/list.spec.mjs`, plus the CR-083 body. Stage those
+explicitly — the tree also carries another session's registry edits.
+
+## CR-083 — quotations list: KPI cards, pills, row menu, CSV, empty state (2026-09-14)
+
+**Frontend** (`quotation/pages/QuotationListPage.tsx` rewritten; three new
+components in `quotation/components/`): four KPI cards fed by a new
+`/v1/quotations/stats`; combined search + date presets (All time / Today /
+This month / Custom); status pills on Radix Tabs; Columns · Export CSV · New
+quotation; number + date, customer + `+91` mobile, Valid until with an amber
+"N days left" badge inside 3 days, amount, colour-coded status (Converted is a
+**new `info` violet token** — `index.css`, `tailwind.config`, `badge.tsx`);
+a `...` row menu (PDF preview, WhatsApp via the CR-080 link warmed on hover,
+Convert with the detail page's confirm copy, Edit via the same hand-off the
+detail page uses, Delete for drafts); an illustrated empty state with Create
+and — only when a filter is set — Clear filters. `shared/lib/utils.ts` gained
+`formatDate` (a month table, not `Intl`: Chromium's en-IN prints "Sept").
+
+**Backend**: `GET /v1/quotations/stats` (native aggregate, `GROUP BY 1, 2` —
+the same PostgreSQL bind-parameter trap as the analytics trend query) and
+`DELETE /v1/quotations/{id}` (DRAFT only, 422 otherwise, activity-logged).
+
+**BUG-BE-005**: `?status=EXPIRED` had never matched a row — EXPIRED is
+computed, never stored (CR-022). The service now translates the filter into
+the badge's rule (`expiredOnly` / `liveOnly` + `today`), so Draft/Sent/
+Accepted also stop listing expired ones. Regression IT
+`QuotationListFiltersIT` (3 tests) + 4 unit tests in `QuotationServiceImplTest`.
+
+**Verified on the working tree, not a clean worktree** (the work is uncommitted
+and other sessions' edits share the tree): `tsc -b --force` 0, `vite build` 0,
+frontend suite **271/272 on a private build served on 4175** — the one miss is
+a pre-existing timing race in `whatsapp/manual-link.spec.mjs` on the invoice
+page (its own detail printed `count=1`), **40/40 when rerun alone**; the new
+`quotations/list.spec.mjs` is 24/24. Backend: see the commit body for the
+`mvn -o clean verify` figures. `registry/static_check.py` **not executed**
+(no python3).
+
+**The trap this session hit twice**: `vite preview` on 4173 died mid-suite
+because another session rebuilt `dist/`; and the first `mvn clean verify`
+"errored" two context tests only because Docker Desktop was not running.
+Neither was a defect. Private `--outDir` + `E2E_BASE_URL`, and check
+`docker info` before believing a Testcontainers error.
+
+**Not committed.** Stage by pathspec — the tree also carries the other
+session's dashboard/sidebar/customer work. CR-083 files: the six backend
+files under `quotation/` (+ `QuotationStatsResponse`, `QuotationListFiltersIT`),
+`frontend/src/modules/quotation/**`, `shared/lib/utils.ts`, `shared/components/ui/badge.tsx`,
+`index.css` (the `--info` hunk only), `tailwind.config.*`, `tests/quotations/`,
+`tests/run.mjs` (one line), and the four registries + this file.
+
+**Candidate CRs noticed, not built**: server-side CSV export; bulk actions;
+`hasAvatar` on `/me` so the app stops requesting an avatar that 404s on
+every page load (seen during the live smoke on 2026-09-12).
+
+---
+
+**Previous entry follows.**
+
+**Updated:** 2026-09-14 (**CR-082 — the approved dashboard and app shell, both passes**). `SCOPE: FRONTEND ONLY`.
+
+## CR-082 — the approved dashboard and app shell (2026-09-13 → 14)
+
+**Built to the signed-off mockup, in two passes.** Rail: Overview row,
+folding groups (persisted per user, all open by default per CR-023), shop
+card, WhatsApp Reminders + Help & Support, the person at the foot. Page:
+greeting eyebrow, live shop-time chip, eight KPI cards, charts 2:1, Quick
+actions, Recent Actions, the four lists. Thirteen widget titles renamed to
+counter-staff language and never duplicating a rail label. Bento's KPI hero
+retired. `?new=1` opens the product and customer create dialogs.
+
+**The zero state is the owner's explicit call (second pass).** Every card
+keeps a sparkline and a delta row at ₹0.00; both charts keep their canvas.
+Measured where a series exists (Total Sales, Today's Earnings, and Pending
+Payments' "vs last week" from the analytics summary); a flat baseline marked
+`data-sparkline-empty` where it does not (Pending Payments line, Low Stock).
+**To make those two measured: a daily outstanding series and a weekly
+low-stock snapshot — one small CR, not raised yet.** The WhatsApp dot is real
+(`/v1/settings/whatsapp`). The category legend is the shop's own categories at
+0%, the mockup's six only for a shop with none.
+
+**The regression to remember:** `data?.points.length` white-screened the
+dashboard when a response had no `points`. The responsive sweep caught it;
+the dashboard suite could not because its stub answered everything. It now
+carries a "nothing answered" case. Frontend **246/246** on an isolated build;
+`static_check.py` not executed (no python3).
+
+**`main` is behind.** The other session merged up to CR-080; everything
+from `d3db838` on is on the feature branch only.
+
+---
+
+**Updated:** 2026-09-12 (**CR-080 — Manual WhatsApp: one click opens the customer's chat with the message already typed**). `SCOPE: BOTH` — new endpoints, new shared button; no migration, no credential, nothing stored.
+
+**What it is, in one sentence:** a `https://wa.me/<number>?text=<message>` link, built server-side from the customer's stored mobile and one of five templates, opened by the browser in a new tab. The owner reads the pre-filled text in WhatsApp and presses Send. **The application never sends.** It is not the Cloud API (CR-056, unchanged), not Twilio, not automation.
+
+**Why server-side rather than a string in the browser.** Two things needed the server: the tenant check and one source of message text. Both come free from the existing tenant-scoped `InvoiceService.get` / `QuotationService.get` / `CustomerService.get` — `WhatsAppLinkService` has no repository access at all, so there is no new place for a cross-tenant read to be written. A pure `{phone, message} → url` endpoint (the request's suggestion) was rejected as a network round-trip for a concatenation.
+
+**One phone normaliser now, not three.** `common/util/PhoneNumberNormalizer` replaces the near-copies CR-056 and CR-074 had each grown; the Meta and Twilio providers now delegate to it (their tests still pass, unchanged). Bare digits are only ever read as Indian — that is how every mobile is stored — and anything it cannot vouch for is refused with the message the UI shows, never guessed at. Twenty-eight cases pinned in `PhoneNumberNormalizerTest`.
+
+**The one UI relocation, stated plainly.** The Invoice toolbar's "WhatsApp reminder" was the CR-056 *automatic* send, which answers LOGGED_ONLY for every shop without a connected Business account — most of them. It is now the manual link, which works for all of them; the automatic reminder moved into the Share menu as "Send reminder via WhatsApp Business", beside the automatic invoice send (renamed to say what it is). Nothing was removed.
+
+**Verified — actually executed, on a clean worktree holding HEAD + exactly these files** (another session had `Sidebar.tsx` mid-edit and the main tree would not typecheck through no fault of this change): backend `mvn -o clean verify` exit 0 — **561 unit tests (0 failures, 2 skipped: the opt-in live-mail pair) and 235 Testcontainers integration tests (0 failures)**, 51 backend tests new to this CR; frontend `tsc -b --force` exit 0, `vite build` exit 0, Playwright **192/192** (was 133), the new `whatsapp` suite proving on desktop and mobile that one click opens exactly the server's URL with `_blank` + `noopener,noreferrer`, that only a GET was made and nothing was POSTed, that a customer with no number gets a disabled button with the reason as its tooltip, and that a 422 from the server surfaces its own sentence as a toast and opens nothing.
+
+**Deliberately not built:** bulk/multi-select (wa.me is one chat per click by design — the thing that keeps it free); low-stock / daily-summary "to owner" links (a chat with yourself is not a workflow; `ReminderSchedulerService` already covers those); a row action on the Payments list (column-driven rows, CR-068 — receipts are on the invoice's Payments card); consent gating on the manual link (`whatsapp_opt_in` governs what the *app* sends automatically, CR-056 §16). `eslint` is in `package.json` but not installed in `node_modules`, so lint was **not executed**.
+
+**Still open from the email session (2026-09-12, earlier):** `mvn spring-boot:run` does not read `.env`, and the startup banner names MFA/billing/database but not mail — together the reason a dead Gmail app password went unnoticed. Neither was changed; both are one-file fixes worth their own small CR.
+
+**Not executed:** `registry/static_check.py` — python3 is not installed on this machine (hard rule 10).
+
+---
+
+
 **Updated:** 2026-09-12 (**CR-076 — choose an address on a map**). `SCOPE: FRONTEND ONLY` — no entity, no migration, no endpoint, no DTO.
-
-
-## CR-081 — the sign-in page is now the approved design (2026-09-12)
-
-**Built to a canvas the owner approved as a render, not to a brief.** 50/50
-hero over a shop interior, a new post-and-lintel H mark (favicon and sidebar
-fallback too), one `AuthCard` shell on all six auth screens. Every colour is
-a token. **The default colour theme is now `emerald`** — the sign-in page
-renders before a per-user theme exists, so a fresh visitor was going to see
-blue under a green mark. Blur is 6px; a photo dropped at
-`src/assets/auth-hero.{jpg,png,webp}` replaces the drawn scene with no code
-change. Suite 192/192 on an isolated build. The design canvas
-("Hardware ERP Sign In") matches what shipped; a copy lives in
-`Documents/Hardware ERP sign-in design/`.
-
-**If the login ever looks wrong again, read the CR-081 registry entry before
-touching it.** This panel has now been reshaped five times; the one that
-stuck was judged on a render before it was code.
 
 ## Start here
 
