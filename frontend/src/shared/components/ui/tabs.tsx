@@ -11,7 +11,12 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      'inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground',
+      // BUG-FE-038: an inline-flex strip is as wide as its triggers, and four
+      // labelled tabs are wider than a 375px phone - the profile page grew a
+      // horizontal scrollbar. Capping at the parent's width and scrolling the
+      // strip itself keeps every tab reachable without the page moving.
+      'inline-flex h-10 max-w-full items-center justify-start overflow-x-auto rounded-md bg-muted p-1 text-muted-foreground',
+      '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:justify-center',
       className,
     )}
     {...props}
