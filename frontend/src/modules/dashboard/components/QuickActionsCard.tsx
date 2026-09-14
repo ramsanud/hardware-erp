@@ -15,8 +15,10 @@ import { CUSTOMER_ROUTES } from '@/modules/customer/constants';
  * worse than no button - so a storekeeper sees only "Add product".
  */
 export function QuickActionsCard() {
+  // The mockup tints this card faintly in the brand colour (its bg-emerald-50/40
+  // + border-emerald-100), which on tokens is primary at 5% over a 20% border.
   return (
-    <Card>
+    <Card className="border-primary/20 bg-primary/5">
       <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3.5">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">

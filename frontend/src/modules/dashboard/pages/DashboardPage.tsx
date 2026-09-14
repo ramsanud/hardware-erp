@@ -25,7 +25,7 @@ import { invoiceService } from '@/modules/invoice/services/invoiceService';
 import { quotationService } from '@/modules/quotation/services/quotationService';
 import { customerService } from '@/modules/customer/services/customerService';
 import { dashboardService, type SalesSummaryResponse } from '../services/dashboardService';
-import { analyticsService, type TrendPoint } from '../services/analyticsService';
+import { analyticsService, type AnalyticsSummary, type TrendPoint } from '../services/analyticsService';
 import { INVOICE_ROUTES } from '@/modules/invoice/constants';
 import { QUOTATION_ROUTES } from '@/modules/quotation/constants';
 import { CUSTOMER_ROUTES } from '@/modules/customer/constants';
@@ -46,13 +46,15 @@ import type { StockResponse } from '@/modules/inventory/types';
  * the rail - "Bills Raised", not "Invoices" - so a card and a menu entry are
  * never the same words pointing at two different things.
  *
- * What is measured and what is not, because the mockup drew sparklines on
- * every card: Total Sales and Today's Earnings have a real daily revenue
- * series behind them (/v1/analytics/revenue-trend, CR-048) and their
- * sparklines and week-over-week deltas are computed from it. Pending
- * Payments and Low Stock Alerts have no time series in the API, so those
- * cards carry no sparkline and no delta. A line drawn from nothing would
- * be decoration pretending to be data.
+ * What is measured and what is not. Total Sales and Today's Earnings have a
+ * real daily revenue series behind them (/v1/analytics/revenue-trend, CR-048)
+ * and their sparklines and deltas are computed from it. Pending Payments has
+ * a real week-over-week comparison from /v1/analytics/summary but no daily
+ * series. Low Stock Alerts has neither. The owner asked that every card keep
+ * its mini chart and delta row regardless, so a card without a series draws
+ * the flat baseline (Sparkline marks it `data-sparkline-empty`) and a card
+ * without a comparison reads "→ 0%". Nothing is smoothed or invented beyond
+ * that flat line.
  */
 interface Count {
   id: 'products' | 'suppliers' | 'invoices' | 'customers' | 'low-stock';
@@ -68,7 +70,6 @@ const LOOKBACK_DAYS = 14;
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const sum = (points: TrendPoint[]) => points.reduce((total, p) => total + p.revenuePaise, 0);
-const percentChange = (now: number, before: number): number | null => (before > 0 ? ((now - before) / before) * 100 : null);
 
 export function DashboardPage() {
   const { user, hasPermission } = useAuth();
@@ -77,6 +78,7 @@ export function DashboardPage() {
   const [counts, setCounts] = useState<Count[]>([]);
   const [sales, setSales] = useState<SalesSummaryResponse | null>(null);
   const [trend, setTrend] = useState<TrendPoint[] | null>(null);
+  const [outstanding, setOutstanding] = useState<{ now: AnalyticsSummary; before: AnalyticsSummary } | null>(null);
   const [recentInvoices, setRecentInvoices] = useState<InvoiceSummaryResponse[] | null>(null);
   const [pendingQuotations, setPendingQuotations] = useState<QuotationSummaryResponse[] | null>(null);
   const [recentCustomers, setRecentCustomers] = useState<CustomerSummaryResponse[] | null>(null);
@@ -123,6 +125,16 @@ export function DashboardPage() {
       analyticsService.revenueTrend(iso(from), iso(to), 'day')
         .then((series) => setTrend(series?.points ?? []))
         .catch(() => setTrend(null));
+      // Pending Payments "vs last week": outstanding raised this week against
+      // the week before, from the same analytics summary the reports use.
+      const weekAgo = new Date(); weekAgo.setDate(to.getDate() - 6);
+      const twoWeeksAgo = new Date(); twoWeeksAgo.setDate(to.getDate() - 13);
+      const dayBefore = new Date(); dayBefore.setDate(to.getDate() - 7);
+      Promise.all([
+        analyticsService.summary(iso(weekAgo), iso(to)),
+        analyticsService.summary(iso(twoWeeksAgo), iso(dayBefore)),
+      ]).then(([now, before]) => setOutstanding(now && before ? { now, before } : null))
+        .catch(() => setOutstanding(null));
     }
     if (hasPermission(PERMISSIONS.QUOTATION_VIEW)) {
       // "Pending Estimates" means it: quotations sent and not yet answered,
@@ -150,13 +162,11 @@ export function DashboardPage() {
     return {
       series: trend.map((p) => p.revenuePaise),
       thisWeekSeries: thisWeek.map((p) => p.revenuePaise),
-      change: percentChange(sum(thisWeek), sum(lastWeek)),
+      now: sum(thisWeek),
+      before: sum(lastWeek),
     };
   }, [trend]);
 
-  const todayChange = sales
-    ? percentChange(sales.todaySalesPaise, sales.yesterdaySalesPaise)
-    : null;
 
   const lowStockCount = counts.find((c) => c.id === 'low-stock');
   const secondRow = counts.filter((c) => c.id !== 'low-stock');
@@ -201,30 +211,43 @@ export function DashboardPage() {
                 label="Total Sales"
                 value={`₹${sales.totalSalesDisplay}`}
                 icon={Box}
-                delta={weekly ? { percent: weekly.change, against: 'vs last week', upIsGood: true } : undefined}
+                sparkTone="success"
+                delta={weekly ? { now: weekly.now, before: weekly.before, against: 'vs last week', upIsGood: true } : undefined}
+                against="vs last week"
                 series={weekly?.series}
               />
               <KpiCard
                 label="Today's Earnings"
                 value={`₹${sales.todaySalesDisplay}`}
                 icon={IndianRupee}
-                delta={{ percent: todayChange, against: 'vs yesterday', upIsGood: true }}
+                sparkTone="success"
+                delta={{ now: sales.todaySalesPaise, before: sales.yesterdaySalesPaise, against: 'vs yesterday', upIsGood: true }}
                 series={weekly?.thisWeekSeries}
               />
               <KpiCard
                 label="Pending Payments"
                 value={`₹${sales.outstandingCustomerBalanceDisplay}`}
                 icon={UserRound}
+                sparkTone="destructive"
+                delta={outstanding
+                  ? { now: outstanding.now.outstandingPaise, before: outstanding.before.outstandingPaise, against: 'vs last week', upIsGood: false }
+                  : undefined}
+                against="vs last week"
                 to={INVOICE_ROUTES.list}
               />
             </>
           ) : null}
+          {/* No history endpoint for the low-stock count yet, so its row is the
+              owner-specified zero state: flat amber baseline, "→ 0% vs last
+              week". A weekly snapshot would make it measured - see CR-082. */}
           {lowStockCount ? (
             <KpiCard
               label={lowStockCount.label}
               value={String(lowStockCount.value ?? '—')}
               icon={AlertTriangle}
               tone="warning"
+              sparkTone="warning"
+              against="vs last week"
               to={lowStockCount.to}
             />
           ) : null}

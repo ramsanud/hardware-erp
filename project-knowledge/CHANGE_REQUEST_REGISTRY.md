@@ -88,6 +88,7 @@ Nothing is implemented from conversation memory.
 | CR-080 | 2026-09-12 | User | Manual WhatsApp: a `wa.me` link opens the customer's own chat with the invoice / quotation / receipt / reminder / greeting already typed; the owner taps Send. Free, no credential, nothing stored, nothing sent by the app. One `PhoneNumberNormalizer` replaces the two near-copies in the Meta and Twilio providers. | **APPLIED, 2026-09-12** |
 | CR-081 | 2026-09-12 | User | The approved sign-in design, implemented: a 50/50 split with a forest-green hero over a shop interior, a new post-and-lintel H brand mark (also the favicon and the sidebar fallback), and one `AuthCard` shell for all six auth screens. Default colour theme becomes Emerald so a first-time visitor sees the brand. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-12** |
 | CR-082 | 2026-09-13 | User | The approved dashboard design and app shell, implemented on tokens: shop identity card and grouped rail with a user footer, greeting eyebrow and live shop-time chip, eight KPI cards with real-series sparklines and week-over-week deltas, Quick actions and Recent actions cards. Widget titles renamed to counter-staff language. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-13** |
+| CR-083 | 2026-09-14 | User | Quotations list upgraded: four KPI cards from a new `GET /v1/quotations/stats`, status pills, date-range presets, CSV export, a row action menu (PDF, WhatsApp, convert, edit, delete), an illustrated empty state with CTAs. `DELETE /v1/quotations/{id}` for drafts only. The `status=EXPIRED` filter, which could never match (EXPIRED is computed, never stored), now works — BUG-BE-005. `SCOPE: BOTH`. | **APPLIED, 2026-09-14** |
 ---
 
 
@@ -5003,3 +5004,118 @@ switch). Configuration: `.env.example`, `.env.cloud.example`,
 tests, 0 failures. Full `mvn clean verify` is run once per CR before its
 commit — see the commit body. `registry/static_check.py` **not executed**:
 python3 is not installed on this machine (hard rule 10).
+
+
+## CR-083 — The quotations list becomes a working desk, not a register (APPLIED 2026-09-14)
+
+**Raised by:** User. **Type:** list-page upgrade with two small backend additions. `SCOPE: BOTH`.
+
+### What was asked
+
+KPI cards above the filters, a toolbar (combined search, date range with
+presets, status pills, Columns, Export CSV, New quotation), a richer table
+(number + date, customer + mobile, valid-until with an expiring-soon alert,
+amount, colour-coded status, a row menu with View/Print PDF · Send via
+WhatsApp · Convert to Invoice · Edit · Delete), and an illustrated empty
+state with Create and Clear-filters buttons.
+
+### What reaches the backend, and why
+
+| Addition | Reason |
+|---|---|
+| `GET /v1/quotations/stats?search&fromDate&toDate` (`QUOTATION_VIEW`) | The cards need counts and rupee totals over *every* matching quotation, not the 20 on the current page. Paging the whole list to add it up client-side would be wrong at 1,000 quotations and unusable at 10,000. One native aggregate, grouped by status and computed expiry, the same shape as `AnalyticsRepository.summary`. The cards follow the search box and date range but never the status pill — a card that only counted the pill you are on would say nothing. |
+| `DELETE /v1/quotations/{id}` (`QUOTATION_MANAGE`), **DRAFT only** | A draft was never issued: no invoice, no stock movement, no customer-facing number in anyone's hands. Anything past DRAFT is refused with a message that says to reject it instead — a SENT quote is a record of what the shop offered, and rejecting keeps it. Items go with the parent (`ON DELETE CASCADE`, V10); `activity_log` keeps the deletion under the quotation's number. |
+
+### BUG-BE-005 — the Expired filter never matched anything
+
+`QuotationRepository.search` compared `q.status = :status`. `EXPIRED` is
+never stored (CR-022: expiry is computed from `validUntil` at read time, and
+`updateStatus` refuses to set it), so `?status=EXPIRED` was an empty page
+from the day the filter shipped. The badge on every row said "Expired"; the
+filter for it found none of them. Fixed in the query: `EXPIRED` now means
+*validUntil before today and status in DRAFT/SENT/ACCEPTED*, and
+`DRAFT`/`SENT`/`ACCEPTED` now mean the **live** ones — the same rule the
+badge uses, so the pill and the badge always agree. `REJECTED` and
+`CONVERTED` are unaffected. Regression IT `QuotationListFiltersIT`.
+
+### The page
+
+- **KPI cards**: Total (count · ₹ value), Drafts / Pending (DRAFT + SENT, live),
+  Approved / Converted (ACCEPTED live + CONVERTED), Expired / Rejected. Amber /
+  emerald / rose are the `warning` / `success` / `destructive` tokens.
+- **Status colours**: Draft → `secondary`, Sent → `default` (primary), Accepted →
+  `success`, Expired/Rejected → `destructive`, Converted → new `info` token
+  (violet, light and dark). The token is added rather than a raw Tailwind
+  purple so it follows every colour theme like the others.
+- **Expiring soon**: an amber "3 days left" style badge on Valid until when a
+  live quotation expires within three days.
+- **Date range**: All time / Today / This month / Custom (two `DatePicker`s).
+- **Export CSV**: the current filters, every page (100 a call, capped at
+  5,000 rows with a toast saying so), built client-side; the row's display
+  strings are what the shop sees on screen, so they are what lands in the file.
+- **Row menu**: PDF preview, WhatsApp (CR-080 link, warmed on hover like
+  `WhatsAppButton`), Convert (same confirm copy as the detail page; lands on
+  the new invoice), Edit (loads the quotation and reuses the detail page's
+  edit hand-off), Delete (DRAFT only, confirmed). Convert is gated by
+  `INVOICE_CREATE`, Edit/Delete by `QUOTATION_MANAGE`, exactly as the detail
+  page and the API.
+- **Empty state**: an inline SVG on tokens, "+ Create new quotation" and
+  "Clear filters" — the latter only when a filter is actually set.
+- Phone: cards 2×2, pills scroll, the table stacks (existing `table.tsx`
+  mechanism), the row menu stays reachable.
+
+### Not done, deliberately
+
+- No bulk actions, no saved filters, no server-side CSV — none were asked and
+  each is its own CR.
+- Delete stays DRAFT-only. Widening it to SENT would be a policy change on a
+  document the customer may hold.
+
+### Second pass, 2026-09-14 — the owner's call on the zero state
+
+The first cut left Pending Payments and Low Stock Alerts without a sparkline
+or delta, and replaced both charts with a message when a period was empty.
+The owner reviewed it and asked, explicitly and in detail, for the mockup's
+zero state instead: every card keeps its mini chart and delta row at ₹0.00,
+and both charts keep their canvas. That is a product decision and it is
+implemented as specified — with the measured/placeholder line kept visible
+in the DOM rather than blurred:
+
+| Element | What it shows | Basis |
+|---|---|---|
+| Total Sales sparkline + "vs last week" | 14-day daily revenue; last 7 buckets vs the 7 before | `/v1/analytics/revenue-trend` — **measured** |
+| Today's Earnings sparkline + "vs yesterday" | last 7 buckets; today vs yesterday | trend + summary — **measured** |
+| Pending Payments "vs last week" | outstanding raised this week vs last week, **up shown red** | `/v1/analytics/summary` × 2 — **measured** (new in this pass) |
+| Pending Payments sparkline | flat red baseline | no daily series exists — **placeholder** |
+| Low Stock Alerts sparkline + "→ 0% vs last week" | flat amber baseline, zero delta | no history endpoint — **placeholder** |
+
+A card with no series draws the baseline and marks the SVG
+`data-sparkline-empty`; a comparison whose previous window was zero reads
+**"New"** (not "0%", not infinity) when there is something now, and "0%"
+only when both windows are zero. **To make the two placeholders measured:**
+a weekly low-stock snapshot and a daily outstanding series — one small CR.
+
+Also in this pass:
+
+- **Sales Growth** always renders its axes. An empty period synthesises one
+  ₹0 bucket per day (or month) of the chosen range — real dates, real zero —
+  so the X axis reads `17 Aug … 13 Sept` and the Y axis is fixed
+  `₹0.00 … ₹1.00` in quarters; the "No sales in this period" message floats
+  over the plot instead of replacing it.
+- **Top Selling Categories** always draws the ring: a single `--muted` slice
+  when empty, "No data yet" in the hole, and a legend of the **shop's own
+  categories** at 0% (`/v1/categories`). Only a shop with no categories at
+  all sees the six the mockup drew, as examples of what the list will hold.
+- **WhatsApp Reminders dot** — shown when `/v1/settings/whatsapp` reports
+  `connected`, hidden otherwise. Same `SETTINGS_VIEW` the row already needs.
+- Quick actions card tinted `primary/5` over `primary/20`, as drawn.
+- Sparkline moved to the top-right beside the label — the one short row —
+  after it clipped beside the delta at 1440.
+
+**One regression caught by the responsive sweep, not by the dashboard suite:**
+`data?.points.length` throws when a response has no `points` (the generic
+stub returns a page object; a real backend can 403). White screen on every
+viewport. Fixed to `data?.points?.length`, and the dashboard suite now
+includes the "none of my endpoints answered" case so it cannot rely on its
+own happy-path stub again. Dashboard suite **52** assertions; full suite
+**246/246** on an isolated build.

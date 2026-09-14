@@ -8,7 +8,7 @@ import { Skeleton } from '@/shared/components/ui/skeleton';
 import { cn } from '@/shared/lib/utils';
 import {
   analyticsService, PERIOD_PRESETS, resolvePeriod,
-  type PeriodPreset, type TrendSeries,
+  type PeriodPreset, type TrendPoint, type TrendSeries,
 } from '../services/analyticsService';
 
 /**
@@ -46,13 +46,23 @@ export function SalesTrendChart() {
    * tooltip still shows the server's formatted string, so the precise figure
    * is never the browser's arithmetic.
    */
-  const points = useMemo(() => (data?.points ?? []).map((p) => ({
-    ...p,
-    rupees: p.revenuePaise / 100,
-    label: formatBucket(p.bucket, preset.granularity),
-  })), [data, preset.granularity]);
+  const isEmpty = !loading && !failed && (data?.points?.length ?? 0) === 0;
 
-  const isEmpty = !loading && !failed && points.length === 0;
+  /*
+   * An empty period still draws its axes and a baseline at ₹0 rather than
+   * swapping the whole canvas for a message: the owner wants the chart to be
+   * visibly *there* on day one. The zero buckets are real dates in the chosen
+   * period with a real revenue of nothing - not sample data - and the message
+   * floats over the plot instead of replacing it.
+   */
+  const points = useMemo(() => {
+    const source = data?.points?.length ? data.points : zeroBuckets(preset);
+    return source.map((p) => ({
+      ...p,
+      rupees: p.revenuePaise / 100,
+      label: formatBucket(p.bucket, preset.granularity),
+    }));
+  }, [data, preset]);
 
   return (
     <Card>
@@ -89,16 +99,24 @@ export function SalesTrendChart() {
           <State icon={AlertCircle}
                  title="Could not load the sales trend"
                  detail="The figures could not be fetched. Try another period, or reload the page." />
-        ) : isEmpty ? (
-          <State icon={TrendingUp}
-                 title="No sales in this period"
-                 detail="Raise an invoice, or choose a wider period above." />
         ) : (
           <>
             {/* h-[260px] on the wrapper, not the chart: ResponsiveContainer
                 measures its parent, and a percentage height inside an
                 auto-height parent collapses to zero. */}
-            <div className="h-[260px] w-full">
+            <div className="relative h-[260px] w-full">
+              {isEmpty ? (
+                <div
+                  className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 text-center"
+                  role="status"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <TrendingUp className="h-5 w-5" aria-hidden />
+                  </span>
+                  <p className="mt-1 text-sm font-medium">No sales in this period</p>
+                  <p className="text-xs text-muted-foreground">Sales will appear here once you start creating invoices.</p>
+                </div>
+              ) : null}
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={points} margin={{ top: 6, right: 6, left: -12, bottom: 0 }}>
                   <defs>
@@ -123,7 +141,9 @@ export function SalesTrendChart() {
                     tickLine={false}
                     axisLine={false}
                     width={64}
-                    tickFormatter={compactRupees}
+                    domain={isEmpty ? [0, 1] : [0, 'auto']}
+                    ticks={isEmpty ? [0, 0.25, 0.5, 0.75, 1] : undefined}
+                    tickFormatter={isEmpty ? (v: number) => `₹${v.toFixed(2)}` : compactRupees}
                   />
                   <Tooltip
                     cursor={{ stroke: 'hsl(var(--border))' }}
@@ -186,6 +206,25 @@ function compactRupees(value: number): string {
   if (value >= 100_000) return `₹${(value / 100_000).toFixed(1)}L`;
   if (value >= 1_000) return `₹${Math.round(value / 1_000)}K`;
   return `₹${value}`;
+}
+
+/**
+ * The buckets a period would have had, each at ₹0 - so an empty chart still
+ * has an X axis of real dates. Daily presets get one point per day, monthly
+ * ones one per month, matching what the server returns when there is data.
+ */
+function zeroBuckets(preset: PeriodPreset): TrendPoint[] {
+  const { from, to } = resolvePeriod(preset);
+  const out: TrendPoint[] = [];
+  const cursor = new Date(`${from}T00:00:00`);
+  const end = new Date(`${to}T00:00:00`);
+  if (preset.granularity === 'month') cursor.setDate(1);
+  while (cursor <= end && out.length < 400) {
+    out.push({ bucket: cursor.toISOString().slice(0, 10), revenuePaise: 0, revenueDisplay: '0.00', invoiceCount: 0 });
+    if (preset.granularity === 'month') cursor.setMonth(cursor.getMonth() + 1);
+    else cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
 }
 
 /** Day buckets read as "12 Aug"; month buckets as "Aug 26". */

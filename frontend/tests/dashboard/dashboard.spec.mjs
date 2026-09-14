@@ -3,8 +3,8 @@
  *
  * Asserts the things a person would notice if they regressed: the counter-
  * staff titles (a card that says "Invoices" again is a menu entry, not a
- * widget), the eight-card grid, the sparklines drawn ONLY where a real series
- * exists, and the rail's new shape - one Overview row, groups that fold, the
+ * widget), the eight-card grid, sparklines on every card - measured where a
+ * series exists, the flat baseline where not - and the rail: Overview row, groups that fold, the
  * shop card, the person at the bottom.
  */
 import { BASE, suite, withBrowser, newPage, envelope } from '../support/harness.mjs';
@@ -15,7 +15,7 @@ const SERIES = [0, 0, 1200, 800, 0, 2500, 1800, 900, 3100, 0, 4200, 2600, 3900, 
   .map((v, i) => ({ bucket: day(i), revenuePaise: v * 100, revenueDisplay: v.toFixed(2), invoiceCount: v ? 1 : 0 }));
 
 /** The signed-in stub plus the dashboard's own endpoints, with figures and a real 14-day series. */
-function dashboardApi({ trend = true } = {}) {
+function dashboardApi({ trend = true, categories = [{ id: 1, categoryName: 'Pipes & Fittings' }, { id: 2, categoryName: 'Paints' }], whatsapp = true } = {}) {
   const base = signedInApi();
   return (url, route) => {
     if (url.includes('/v1/dashboard/sales-summary')) {
@@ -28,6 +28,15 @@ function dashboardApi({ trend = true } = {}) {
       return envelope({ period: { from: day(0), to: day(13), granularity: 'day' }, points: trend ? SERIES : [], summary: 'stub' });
     }
     if (url.includes('/v1/analytics/sales-by-category')) return envelope({ period: {}, slices: [], summary: '' });
+    if (url.includes('/v1/analytics/summary')) {
+      // The earlier window (starts on day 0) owes less than this week.
+      const before = url.includes(day(0));
+      return envelope({ period: {}, revenuePaise: 0, revenueDisplay: '0.00', invoiceCount: 0,
+        averageOrderValuePaise: 0, averageOrderValueDisplay: '0.00',
+        outstandingPaise: before ? 600000 : 845000, outstandingDisplay: '0.00' });
+    }
+    if (url.includes('/v1/categories')) return envelope(categories);
+    if (url.includes('/v1/settings/whatsapp')) return envelope({ connected: whatsapp, status: whatsapp ? 'CONNECTED' : 'NOT_CONNECTED' });
     if (url.includes('/v1/activity-log')) {
       return envelope({ content: [], page: 0, size: 5, totalElements: 0, totalPages: 0, first: true, last: true });
     }
@@ -65,14 +74,33 @@ export default async function run() {
     s.check('the total-sales figure renders in full', text.includes('₹26,100.00'), '₹26,100.00');
     s.check("today's figure renders in full", text.includes('₹5,100.00'), '₹5,100.00');
 
-    // ---- Deltas and sparklines only where a real series exists --------------
+    // ---- Deltas and sparklines: measured where a series exists ----------------
     s.check('week-over-week delta is computed from the series',
       /\d+(\.\d)?% vs last week/.test(text), (text.match(/[\d.]+% vs last week/) || ['none'])[0]);
     s.check('day-over-day delta is computed from the summary',
       text.includes('30.8% vs yesterday'), '30.8%');
+    s.check('Pending Payments compares outstanding against last week, and up is bad',
+      text.includes('40.8% vs last week')
+        && await page.evaluate(() => [...document.querySelectorAll('p')].some((el) => el.innerText.includes('40.8%') && el.className.includes('text-destructive'))),
+      '40.8% in red');
+    s.check('Low Stock Alerts shows the zero-state delta row', text.includes('0% vs last week'), '→ 0%');
     const sparklines = await page.locator('svg[data-sparkline]').count();
-    s.check('exactly two sparklines: Total Sales and Today\'s Earnings, none invented for the other two',
-      sparklines === 2, `${sparklines} sparklines`);
+    const baselines = await page.locator('svg[data-sparkline-empty]').count();
+    s.check('all four KPI cards carry a sparkline', sparklines === 4, `${sparklines} sparklines`);
+    s.check('two are measured series and two are the flat baseline, marked as such in the DOM',
+      baselines === 2, `${baselines} baselines`);
+
+    // ---- Charts render their canvas even when empty -------------------------
+    const legend = await page.evaluate(() => [...document.querySelectorAll('[data-category-legend] li')].map((li) => li.innerText.replace(/\s+/g, ' ').trim()));
+    s.check("the category legend lists the shop's own categories at 0% when there are no sales",
+      legend.length === 2 && legend[0].startsWith('Pipes & Fittings') && legend.every((l) => l.endsWith('0%')), legend.join(' | '));
+    s.check('the donut ring is drawn in the empty state',
+      (await page.locator('.recharts-pie-sector').count()) >= 1, 'ring present');
+    s.check('the empty-state centre label sits inside the ring', text.includes('No data yet'), 'present');
+
+    // ---- WhatsApp dot means connected -------------------------------------
+    s.check('the WhatsApp Reminders row shows a dot when the shop is connected',
+      (await page.locator('aside [data-whatsapp-dot]').count()) === 1, 'dot present');
 
     // ---- Quick actions ------------------------------------------------------
     for (const label of ['New quotation', 'New invoice', 'Add product', 'Add customer']) {
@@ -119,13 +147,38 @@ export default async function run() {
 
     await page.context().close();
 
-    // ---- With no series at all, no sparkline and an honest "—" delta --------
-    const bare = await newPage(browser, { viewport: { width: 1440, height: 900 }, api: dashboardApi({ trend: false }) });
+    // ---- With no series at all: baselines, axes and the fallback legend ------
+    const bare = await newPage(browser, { viewport: { width: 1440, height: 900 }, api: dashboardApi({ trend: false, categories: [], whatsapp: false }) });
     await bare.goto(BASE + '/dashboard', { waitUntil: 'networkidle', timeout: 20000 });
     await bare.waitForTimeout(600);
-    const bareSparklines = await bare.locator('svg[data-sparkline]').count();
-    s.check('an empty series draws no sparkline', bareSparklines === 0, `${bareSparklines} sparklines`);
+    const bareBaselines = await bare.locator('svg[data-sparkline-empty]').count();
+    s.check('with no series every card draws the flat baseline', bareBaselines === 4, `${bareBaselines} baselines`);
+    const bareText = await bare.evaluate(() => document.body.innerText);
+    s.check('the empty Sales Growth chart still draws its ₹0.00–₹1.00 axis',
+      bareText.includes('₹1.00') && bareText.includes('₹0.25'), 'ticks present');
+    s.check('the empty chart still draws real dates on the X axis',
+      (await bare.locator('.recharts-xAxis .recharts-cartesian-axis-tick').count()) >= 5, 'date ticks present');
+    s.check('the empty-state message floats over the chart, not instead of it',
+      bareText.includes('No sales in this period') && (await bare.locator('.recharts-area-curve').count()) === 1, 'overlay + curve');
+    const fallbackLegend = await bare.evaluate(() => document.querySelectorAll('[data-category-legend] li').length);
+    s.check('a shop with no categories gets the six example categories', fallbackLegend === 6, `${fallbackLegend} rows`);
+    s.check('no WhatsApp dot when the shop is not connected',
+      (await bare.locator('aside [data-whatsapp-dot]').count()) === 0, 'no dot');
     await bare.context().close();
+
+    // ---- Nothing answered: the page must still render, never white-screen ----
+    // The generic stub returns a page object for anything with a query string,
+    // so the trend arrives as {content: []} with no points - the shape that
+    // crashed the first cut (data.points.length). A real backend can 403 or
+    // 500 any of these; the dashboard degrades, it does not disappear.
+    const raw = await newPage(browser, { viewport: { width: 1280, height: 800 }, api: signedInApi() });
+    await raw.goto(BASE + '/dashboard', { waitUntil: 'networkidle', timeout: 20000 });
+    await raw.waitForTimeout(600);
+    const rawText = await raw.evaluate(() => document.body.innerText);
+    s.check('with none of its endpoints answered the dashboard still renders',
+      rawText.includes('Welcome back') && rawText.includes('Sales Growth'), 'rendered');
+    s.check('and throws nothing', raw.__errors.length === 0, [...new Set(raw.__errors)].slice(0, 1).join('') || 'clean');
+    await raw.context().close();
 
     // ---- Phone: one column, nothing clipped ----------------------------------
     const phone = await newPage(browser, { viewport: { width: 390, height: 844 }, mobile: true, api: dashboardApi() });

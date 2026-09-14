@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import {
   Boxes, Calculator, CalendarCheck, ChevronDown, ChevronRight, ClipboardList, Coins, FileClock, FileDown, FileText,
@@ -14,6 +14,7 @@ import { SUPPORT_ROUTES } from '@/modules/support/constants';
 import { SETTINGS_ROUTES } from '@/modules/settings/constants';
 import { brandService } from '@/modules/settings/services/brandService';
 import { avatarService } from '@/modules/auth/services/avatarService';
+import { whatsAppConnectionService } from '@/modules/settings/services/whatsAppConnectionService';
 import { useAuthenticatedImage } from '@/shared/hooks/useAuthenticatedImage';
 import { APP_NAME } from '@/shared/constants';
 import { cn, initials } from '@/shared/lib/utils';
@@ -186,6 +187,22 @@ interface SidebarNavProps {
 export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
   const { hasPermission } = useAuth();
   const [folded, setFolded] = useState<Set<string>>(readFolded);
+  /*
+   * The green dot beside "WhatsApp Reminders" means the shop's WhatsApp is
+   * actually connected - read from /v1/settings/whatsapp, which the same
+   * SETTINGS_VIEW that shows the row already permits. Not connected, or the
+   * call fails: no dot. A dot that is always green would be decoration.
+   */
+  const [whatsAppConnected, setWhatsAppConnected] = useState(false);
+  const canSeeWhatsApp = hasPermission(PERMISSIONS.SETTINGS_VIEW);
+  useEffect(() => {
+    if (!canSeeWhatsApp) return;
+    let cancelled = false;
+    whatsAppConnectionService.getStatus()
+      .then((status) => { if (!cancelled) setWhatsAppConnected(Boolean(status?.connected)); })
+      .catch(() => { if (!cancelled) setWhatsAppConnected(false); });
+    return () => { cancelled = true; };
+  }, [canSeeWhatsApp]);
 
   const groups = NAV_GROUPS
     .map((group) => ({ ...group, items: visible(group.items, hasPermission) }))
@@ -220,6 +237,14 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
     >
       <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
       {collapsed ? null : <span className="truncate">{label}</span>}
+      {to === SETTINGS_ROUTES.whatsapp && whatsAppConnected ? (
+        <span
+          className={cn('h-2 w-2 shrink-0 rounded-full bg-success', collapsed ? 'absolute right-1.5 top-1.5' : 'ml-auto')}
+          role="img"
+          aria-label="WhatsApp connected"
+          data-whatsapp-dot
+        />
+      ) : null}
     </NavLink>
   );
 
