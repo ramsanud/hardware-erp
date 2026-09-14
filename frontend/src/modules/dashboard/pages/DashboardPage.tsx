@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  AlertTriangle, ClipboardList, FileText, IndianRupee, Package, Plus, TrendingUp, Truck, Users, Wallet,
+  AlertTriangle, Box, ClipboardList, FileText, IndianRupee, Package, Plus, Truck, UserRound, Users,
 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -200,7 +200,7 @@ export function DashboardPage() {
               <KpiCard
                 label="Total Sales"
                 value={`₹${sales.totalSalesDisplay}`}
-                icon={TrendingUp}
+                icon={Box}
                 delta={weekly ? { percent: weekly.change, against: 'vs last week', upIsGood: true } : undefined}
                 series={weekly?.series}
               />
@@ -214,7 +214,7 @@ export function DashboardPage() {
               <KpiCard
                 label="Pending Payments"
                 value={`₹${sales.outstandingCustomerBalanceDisplay}`}
-                icon={Wallet}
+                icon={UserRound}
                 to={INVOICE_ROUTES.list}
               />
             </>
