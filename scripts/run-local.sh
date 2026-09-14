@@ -70,15 +70,29 @@ done < "$ENV_FILE"
 export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}"
 
 # Say what mail will do, up front, because this is the thing the log buries.
-if [ -n "${RESEND_API_KEY:-}" ] && [ "${EMAIL_PROVIDER:-smtp}" = "resend" ]; then
-    MAIL_MODE="Resend as ${RESEND_FROM_EMAIL:-?}"
-elif [ -n "${SENDGRID_API_KEY:-}" ] && [ "${EMAIL_PROVIDER:-smtp}" = "sendgrid" ]; then
-    MAIL_MODE="SendGrid as ${SENDGRID_FROM_EMAIL:-?}"
-elif [ -n "${MAIL_USER:-}" ] && [ -n "${MAIL_PASSWORD:-}" ]; then
-    MAIL_MODE="SMTP ${MAIL_HOST:-smtp.gmail.com} as ${MAIL_USER}"
-else
-    MAIL_MODE="NOT CONFIGURED - reset links and codes will be logged, not sent"
-fi
+# Keyed on EMAIL_PROVIDER first: the application constructs exactly one
+# transport for that value, so a blank Resend key with provider=resend means
+# "logged", not "falls back to SMTP" - and the banner must not imply otherwise.
+case "${EMAIL_PROVIDER:-smtp}" in
+    resend)
+        if [ -n "${RESEND_API_KEY:-}" ] && [ -n "${RESEND_FROM_EMAIL:-}" ]; then
+            MAIL_MODE="Resend as ${RESEND_FROM_EMAIL}"
+        else
+            MAIL_MODE="Resend selected but RESEND_API_KEY / RESEND_FROM_EMAIL blank - codes and links will be LOGGED, not sent"
+        fi ;;
+    sendgrid)
+        if [ -n "${SENDGRID_API_KEY:-}" ] && [ -n "${SENDGRID_FROM_EMAIL:-}" ]; then
+            MAIL_MODE="SendGrid as ${SENDGRID_FROM_EMAIL}"
+        else
+            MAIL_MODE="SendGrid selected but SENDGRID_API_KEY / SENDGRID_FROM_EMAIL blank - codes and links will be LOGGED, not sent"
+        fi ;;
+    *)
+        if [ -n "${MAIL_USER:-}" ] && [ -n "${MAIL_PASSWORD:-}" ]; then
+            MAIL_MODE="SMTP ${MAIL_HOST:-smtp.gmail.com} as ${MAIL_USER}"
+        else
+            MAIL_MODE="NOT CONFIGURED - codes and links will be LOGGED, not sent"
+        fi ;;
+esac
 
 echo ""
 echo "Starting Hardware ERP (local)"
