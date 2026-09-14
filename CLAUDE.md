@@ -85,12 +85,12 @@ Plus three that earned their place the hard way:
 cd backend  && mvn -o clean verify                              # needs Docker
 cd frontend && node ./node_modules/typescript/bin/tsc -b --force
 cd frontend && node ./node_modules/vite/bin/vite.js build
-cd frontend && node tests/run.mjs                               # 9 suites, 230 assertions
+cd frontend && node tests/run.mjs                               # 9 suites, 246 assertions
 python3 registry/static_check.py                                # NOT installable here — report "not executed"
 ```
 
-Green as of 2026-09-13: **510 unit + 231 integration tests**, frontend
-**230/230**, verified on the exact commit in a detached worktree.
+Green as of 2026-09-14: **510 unit + 231 integration tests** (backend last
+run 2026-09-13), frontend **246/246**, verified on isolated builds.
 
 ---
 

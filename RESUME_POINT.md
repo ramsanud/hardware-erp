@@ -1,5 +1,38 @@
 # RESUME POINT
 
+**Updated:** 2026-09-14 (**CR-082 — the approved dashboard and app shell, both passes**). `SCOPE: FRONTEND ONLY`.
+
+## CR-082 — the approved dashboard and app shell (2026-09-13 → 14)
+
+**Built to the signed-off mockup, in two passes.** Rail: Overview row,
+folding groups (persisted per user, all open by default per CR-023), shop
+card, WhatsApp Reminders + Help & Support, the person at the foot. Page:
+greeting eyebrow, live shop-time chip, eight KPI cards, charts 2:1, Quick
+actions, Recent Actions, the four lists. Thirteen widget titles renamed to
+counter-staff language and never duplicating a rail label. Bento's KPI hero
+retired. `?new=1` opens the product and customer create dialogs.
+
+**The zero state is the owner's explicit call (second pass).** Every card
+keeps a sparkline and a delta row at ₹0.00; both charts keep their canvas.
+Measured where a series exists (Total Sales, Today's Earnings, and Pending
+Payments' "vs last week" from the analytics summary); a flat baseline marked
+`data-sparkline-empty` where it does not (Pending Payments line, Low Stock).
+**To make those two measured: a daily outstanding series and a weekly
+low-stock snapshot — one small CR, not raised yet.** The WhatsApp dot is real
+(`/v1/settings/whatsapp`). The category legend is the shop's own categories at
+0%, the mockup's six only for a shop with none.
+
+**The regression to remember:** `data?.points.length` white-screened the
+dashboard when a response had no `points`. The responsive sweep caught it;
+the dashboard suite could not because its stub answered everything. It now
+carries a "nothing answered" case. Frontend **246/246** on an isolated build;
+`static_check.py` not executed (no python3).
+
+**`main` is behind.** The other session merged up to CR-080; everything
+from `d3db838` on is on the feature branch only.
+
+---
+
 **Updated:** 2026-09-12 (**CR-080 — Manual WhatsApp: one click opens the customer's chat with the message already typed**). `SCOPE: BOTH` — new endpoints, new shared button; no migration, no credential, nothing stored.
 
 **What it is, in one sentence:** a `https://wa.me/<number>?text=<message>` link, built server-side from the customer's stored mobile and one of five templates, opened by the browser in a new tab. The owner reads the pre-filled text in WhatsApp and presses Send. **The application never sends.** It is not the Cloud API (CR-056, unchanged), not Twilio, not automation.

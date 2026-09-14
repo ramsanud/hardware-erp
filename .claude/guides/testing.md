@@ -63,7 +63,7 @@ E2E_BASE_URL=http://localhost:4199 node tests/run.mjs
 ## Frontend suites (`frontend/tests/`)
 
 Playwright against the **production bundle**, one process, no fixtures
-beyond `support/`. Nine suites, 230 assertions as of CR-082:
+beyond `support/`. Nine suites, 246 assertions as of CR-082's second pass:
 
 | Suite | Covers |
 |---|---|
@@ -75,7 +75,7 @@ beyond `support/`. Nine suites, 230 assertions as of CR-082:
 | onboarding | tour, page tips, pause/resume (CR-075, BUG-FE-037) |
 | address-map | Leaflet picker (CR-076) |
 | whatsapp | manual `wa.me` links (CR-080) |
-| dashboard | titles, figures, sparklines-only-with-data, rail folds (CR-082) |
+| dashboard | titles, figures, sparklines (measured vs baseline), empty-chart canvases, the unanswered-endpoints case, rail folds (CR-082) |
 
 Harness rules that bite:
 
@@ -92,7 +92,13 @@ Harness rules that bite:
   fire before React commits a lazy route; Radix keeps a dialog mounted
   through its exit animation.
 - lucide icons are made of `<polyline>`; count sparklines by
-  `svg[data-sparkline]`, not by element type.
+  `svg[data-sparkline]`, not by element type; `data-sparkline-empty` marks
+  a flat baseline drawn for a figure with no series.
+- A page must render when NONE of its endpoints answer usefully. The
+  generic `signedInApi()` returns a page object for any URL with a query
+  string, so `data.points` is undefined - reading `.length` on it white-
+  screened the dashboard on every viewport. Optional-chain every field of
+  a response, and keep one "nothing answered" case in each page's suite.
 - After a Playwright version bump:
   `node ./node_modules/playwright/cli.js install chromium`.
 
