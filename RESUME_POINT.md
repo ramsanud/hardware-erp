@@ -1,8 +1,53 @@
 # RESUME POINT
 
+**Updated:** 2026-09-14, late (**release-readiness pass: CR-083 second pass committed, Render blueprint aligned with CR-077, main merged**). `SCOPE: BOTH` (config only on the backend side).
+
+## Release-readiness pass (2026-09-14, evening)
+
+**What was asked**: audit for half-finished code, make both builds green,
+check Render readiness, merge to `main`. **What was found**: no half-written
+code — zero TODO/FIXME markers, no empty files, every provider (Resend,
+SendGrid, Twilio, Meta WhatsApp) is a complete implementation behind the
+`EMAIL_PROVIDER` / tenant-connection switches. The Emerald primary is
+`152 69% 28%` = `#16794B` exactly, `--radius` is 8px; both already held.
+
+**Committed** (this branch, then `--no-ff` into `main`):
+
+- `3f18b7b` — the CR-083 second pass that the previous session left in
+  the working tree (Sent/Accepted collision, KPI label wrap, the
+  Clear-filters flake) plus the CR-083 registry bodies `6ad7d65` missed.
+- The Render blueprint carried Gmail SMTP from before CR-077; it now sets
+  `EMAIL_PROVIDER=resend` with `RESEND_API_KEY` / `RESEND_FROM_EMAIL` /
+  `RESEND_FROM_NAME`, and declares the two app-wide WhatsApp webhook keys
+  (`WHATSAPP_APP_SECRET`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`) that nothing had
+  documented for the hosted deployment. `docs/DEPLOYMENT.md` table updated.
+- `backend/mvnw` + `mvnw.cmd` + `.mvn/wrapper` (Maven 3.9.9, only-script
+  distribution) so `./mvnw clean verify` works on a clone with no Maven.
+- `npm test` is now an alias of `test:e2e` in `frontend/package.json`.
+
+**Verified, isolated** — backend on a detached worktree of `6ad7d65` (the
+backend tree is unchanged since): `mvn -o clean verify` **579 unit (0 F, 2
+skipped) + 238 IT (0 F)**, BUILD SUCCESS 5:25, `target/hardware-erp-1.0.0.jar`
+95 MB. Frontend on a private `--outDir` served on 4197: `tsc -b --force` 0,
+`vite build` 0, no source maps, Playwright **272/272**. `./mvnw -v`
+bootstraps. `static_check.py` **not executed** (no python3).
+
+**Not done, deliberately**: `application-prod.yml` and `.env` are on the
+project's Read deny-list, so the prod profile was checked only through
+`render.yaml`, `application-cloud.yml` and `application.yml`. `develop`
+is 97 commits behind this branch and was not touched — the ask was
+`main`. The three `.tmp` files in `frontend/tests` and
+`frontend/vite.config.audit.ts` belong to another session and stay
+untracked. `vercel.json` still points at `hardware-erp-9j9f.onrender.com`;
+change it if the Render service is recreated.
+
+---
+
+**Previous entry follows.**
+
 **Updated:** 2026-09-14 (**CR-083 — the quotations list becomes a working desk; BUG-BE-005 fixed on the way**). `SCOPE: BOTH`.
 
-## CR-083 second pass, later the same day — `SCOPE: FRONTEND ONLY`, NOT committed
+## CR-083 second pass, later the same day — `SCOPE: FRONTEND ONLY` (committed as `3f18b7b`)
 
 A review of `6ad7d65` against the brief, done by rendering it (375 / 768 /
 1440 / 1920, light and dark) rather than reading the diff. Two visible

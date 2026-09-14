@@ -162,17 +162,40 @@ services:
       - key: PLATFORM_ADMIN_BOOTSTRAP_NAME
         sync: false
 
+      # ---- email (Resend, CR-077) ------------------------------------------
+      # Every email - password-reset links, sign-in codes, invoice PDFs and
+      # the Settings test button - goes through one provider. This blueprint
+      # carried Gmail SMTP until 2026-09-14, from before CR-077 built the
+      # email-based auth stack on Resend (3,000 emails a month free, no app
+      # password to rotate). A blank RESEND_API_KEY degrades the same way
+      # blank MAIL_* did: every email is logged with LOGGED_ONLY, not sent,
+      # and the deploy still comes up.
+      #
+      # To stay on SMTP instead, set EMAIL_PROVIDER=smtp here and add
+      # MAIL_HOST / MAIL_PORT / MAIL_USER / MAIL_PASSWORD (docs/DEPLOYMENT.md).
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: RESEND_API_KEY
+        sync: false            # re_... from resend.com -> API Keys
+      - key: RESEND_FROM_EMAIL
+        sync: false            # on a domain verified at Resend, or it answers 403
+      - key: RESEND_FROM_NAME
+        value: Hardware ERP
+
+      # ---- WhatsApp (Meta Cloud API, CR-056) -------------------------------
+      # Each shop's own access token and phone_number_id live in the database
+      # (Settings > WhatsApp Business), never here. These two are the only
+      # app-wide values: they back the inbound webhook at
+      # /api/v1/webhooks/whatsapp - the verify token answers Meta's one-time
+      # subscription handshake, the app secret checks X-Hub-Signature-256 on
+      # every event. Both optional: sending works without them, only
+      # delivery-status updates need the webhook.
+      - key: WHATSAPP_APP_SECRET
+        sync: false            # Meta app dashboard -> App settings -> Basic
+      - key: WHATSAPP_WEBHOOK_VERIFY_TOKEN
+        generateValue: true    # paste the generated value into Meta's webhook config
+
       # ---- optional --------------------------------------------------------
-      # Email is off unless MAIL_USER/MAIL_PASSWORD are set. Password reset
-      # then logs the link instead of sending it, which is fine for a demo.
-      - key: MAIL_HOST
-        value: smtp.gmail.com
-      - key: MAIL_PORT
-        value: "587"
-      - key: MAIL_USER
-        sync: false
-      - key: MAIL_PASSWORD
-        sync: false            # Gmail app password, not the account password
 
       # Free Postgres tiers cap connections tightly and this app is one
       # instance - 20 (the application-prod.yml default) is more than the

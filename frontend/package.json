@@ -9,6 +9,7 @@
     "typecheck": "tsc -b --force",
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx",
+    "test": "node tests/run.mjs",
     "test:e2e": "node tests/run.mjs"
   },
   "dependencies": {
