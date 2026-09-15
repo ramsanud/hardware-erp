@@ -156,6 +156,10 @@ got set was never, despite the column existing since CR-021.
 | GET / PUT / DELETE | `/v1/settings/upi-qr` | authenticated to view, SETTINGS_MANAGE to change | 200/204 (CR-026) |
 | GET | `/v1/settings/brand` | authenticated (any user) | 200 - `{name, hasLogo, subscriptionTier}` only, unlike `GET /v1/settings` which needs SETTINGS_VIEW (subscriptionTier added CR-027, so any staff member - not only SETTINGS_VIEW holders - can tell whether a tier-gated feature is available) |
 | GET | `/v1/dashboard/sales-summary` | INVOICE_VIEW | 200 |
+| GET | `/v1/analytics/summary?from&to` | REPORT_VIEW | 200 - period revenue, invoice count, average order value, outstanding (CR-048; row added to this registry under CR-084 — the tenant analytics endpoints were never listed) |
+| GET | `/v1/analytics/revenue-trend?from&to&granularity=day|week|month` | REPORT_VIEW | 200 - one point per bucket: `revenuePaise`, `invoiceCount`, and since CR-084 `outstandingPaise` (balance still due on that bucket's invoices). Drives the dashboard's Total Sales, Today's Earnings and Pending Payments sparklines |
+| GET | `/v1/analytics/sales-by-category?from&to` | REPORT_VIEW | 200 - slices with `sharePercent` computed server-side (CR-048) |
+| GET | `/v1/analytics/low-stock-trend?days=14` | **INVENTORY_VIEW** | 200 - `{points: [{date, lowStockCount}], summary}`, oldest first, only days with a snapshot; takes today's snapshot lazily if missing. `days` outside 2–90 → 400. Gated on INVENTORY_VIEW, not REPORT_VIEW: the card that draws it is (CR-084) |
 
 `PUT` image endpoints are `multipart/form-data`, field name `file`, 2MB cap
 (`ImageValidation`). `TenantSettingsRequest` gained a required `name` field

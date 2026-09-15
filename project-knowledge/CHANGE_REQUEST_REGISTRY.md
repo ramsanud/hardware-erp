@@ -89,6 +89,7 @@ Nothing is implemented from conversation memory.
 | CR-081 | 2026-09-12 | User | The approved sign-in design, implemented: a 50/50 split with a forest-green hero over a shop interior, a new post-and-lintel H brand mark (also the favicon and the sidebar fallback), and one `AuthCard` shell for all six auth screens. Default colour theme becomes Emerald so a first-time visitor sees the brand. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-12** |
 | CR-082 | 2026-09-13 | User | The approved dashboard design and app shell, implemented on tokens: shop identity card and grouped rail with a user footer, greeting eyebrow and live shop-time chip, eight KPI cards with real-series sparklines and week-over-week deltas, Quick actions and Recent actions cards. Widget titles renamed to counter-staff language. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-13** |
 | CR-083 | 2026-09-14 | User | Quotations list upgraded: four KPI cards from a new `GET /v1/quotations/stats`, status pills, date-range presets, CSV export, a row action menu (PDF, WhatsApp, convert, edit, delete), an illustrated empty state with CTAs. `DELETE /v1/quotations/{id}` for drafts only. The `status=EXPIRED` filter, which could never match (EXPIRED is computed, never stored), now works — BUG-BE-005. `SCOPE: BOTH`. | **APPLIED, 2026-09-14** |
+| CR-084 | 2026-09-15 | User | The two placeholder sparklines become measured. Pending Payments: `outstandingPaise` per bucket on the existing revenue-trend response (same invoices, `sum(balance_paise)`). Low Stock Alerts: a daily `low_stock_snapshot` per tenant (V56, scheduled job, lazily taken on first read) behind `GET /v1/analytics/low-stock-trend`. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
 ---
 
 
@@ -5133,3 +5134,69 @@ viewport. Fixed to `data?.points?.length`, and the dashboard suite now
 includes the "none of my endpoints answered" case so it cannot rely on its
 own happy-path stub again. Dashboard suite **52** assertions; full suite
 **246/246** on an isolated build.
+
+
+---
+
+## CR-084 — The two placeholder sparklines become measured (APPLIED 2026-09-15)
+
+**Raised by:** User (the follow-up CR-082 offered). **Type:** small backend
+feature + frontend wiring. `SCOPE: BOTH`. Migration **V56**.
+
+### What was placeholder, and what it is now
+
+| Card | Before | Now | Basis |
+|---|---|---|---|
+| Pending Payments line | flat baseline | daily balance-still-due | `outstandingPaise` on every `revenue-trend` bucket — same invoices, same "not cancelled" rule, one more `sum(balance_paise)` column |
+| Low Stock Alerts line | flat baseline | daily low-stock count | `low_stock_snapshot`, one row per tenant per day |
+| Low Stock Alerts "vs last week" | "→ 0%" | today's snapshot vs the one 7 days earlier (or the oldest, for a shop under a week old); **down is good**, so a falling count is green | same table |
+
+Total Sales, Today's Earnings and Pending Payments' week-over-week were
+already measured (CR-082). With this, **every sparkline and delta on the
+dashboard is a measurement.** A shop too young for two snapshots still draws
+the flat baseline — real, not placeholder: one point cannot have a slope.
+
+### Decisions
+
+- **No new endpoint for outstanding.** The trend already groups the right
+  invoices by day; an extra column costs nothing and cannot disagree with the
+  revenue beside it.
+- **A snapshot, because the past cannot be reconstructed.** `stock_movement`
+  records quantities, not the moment a product crossed its reorder level;
+  "how many were low on a Tuesday" exists only if something wrote it down.
+  `LowStockSnapshotJob` writes it at 00:15 IST for every ACTIVE tenant using
+  the same `countLowStock` the Stock list's filter and the reminder job use.
+- **Lazily taken on first read.** A shop reading its trend before the job
+  has ever run gets today's real count immediately — one point on day one
+  rather than a fortnight of nothing. Idempotent with the job (upsert on
+  `(tenant, day)`).
+- **`INVENTORY_VIEW`, not `REPORT_VIEW`,** on `/v1/analytics/low-stock-trend`:
+  it is the history of a stock figure and the card that draws it is gated the
+  same way; a storekeeper with no report permission still owns the shelf.
+- **The job's transaction boundary is the repository upsert.** The first
+  draft put `REQUIRES_NEW` on the per-tenant method and called it from the
+  loop in the same class — self-invocation, never crosses the proxy, exactly
+  BUG-BE-002. Moved before it could ship.
+- **`lowStockTrend()` is read-write** in an otherwise `readOnly` service.
+  The IT found this: "cannot execute INSERT in a read-only transaction".
+
+### Verified
+
+`mvn -o clean compile` 0. `LowStockSnapshotJobTest` 2/2 (one shop's failure
+does not cost the others their point; the summary reads as a sentence).
+`LowStockTrendIT` 4/4: first read snapshots today; the upsert is idempotent
+per day; `days` outside 2–90 is a 400; every revenue-trend bucket carries
+`outstandingPaise` ≤ `revenuePaise`. Docker Desktop had to be started first —
+the machine had rebooted. Frontend `tsc` 0, `vite build` 0, suite **272/272**
+on an isolated build; the dashboard suite now asserts **zero** baselines when
+data exists and a green "50% vs last week" for a falling low-stock count.
+
+`registry/static_check.py` **not executed** — python3 is not installed on this
+machine (hard rule 10). Full `mvn clean verify` **not run** this pass; the two
+targeted test classes were.
+
+### Also fixed on the way
+
+`API_REGISTRY.md` had **no rows at all** for the tenant analytics endpoints
+(`/v1/analytics/*`, CR-048). Added summary, revenue-trend and
+sales-by-category alongside the new one.

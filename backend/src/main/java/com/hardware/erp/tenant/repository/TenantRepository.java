@@ -24,6 +24,9 @@ public interface TenantRepository extends JpaRepository<Tenant, Long> {
             + "and (t.paymentDueReminderEnabled = true or t.lowStockAlertEnabled = true)")
     List<Tenant> findActiveWithAnyReminderEnabled();
 
+    /** CR-084. Every live shop, for the nightly low-stock snapshot - a count is taken whether or not alerts are switched on. */
+    List<Tenant> findByStatus(TenantStatus status);
+
     // ---------------------------------------------------------------
     // Platform Admin Console (CR-054 phase 2) - Tenant Management.
     // ---------------------------------------------------------------

@@ -2,6 +2,7 @@ package com.hardware.erp.analytics.service;
 
 import com.hardware.erp.analytics.dto.AnalyticsDtos.ActivityMatrix;
 import com.hardware.erp.analytics.dto.AnalyticsDtos.CategoryBreakdown;
+import com.hardware.erp.analytics.dto.AnalyticsDtos.LowStockTrend;
 import com.hardware.erp.analytics.dto.AnalyticsDtos.ProductPerformanceList;
 import com.hardware.erp.analytics.dto.AnalyticsDtos.Summary;
 import com.hardware.erp.analytics.dto.AnalyticsDtos.TrendSeries;
@@ -23,6 +24,13 @@ public interface AnalyticsService {
 
     /** granularity: day | week | month. Anything else is rejected. */
     TrendSeries revenueTrend(LocalDate from, LocalDate to, String granularity);
+
+    /**
+     * CR-084. The last {@code days} daily low-stock counts for the caller's
+     * tenant. Takes today's snapshot first if none exists yet, so the series
+     * always ends on a real point for today.
+     */
+    LowStockTrend lowStockTrend(int days);
 
     CategoryBreakdown salesByCategory(LocalDate from, LocalDate to);
 

@@ -2,6 +2,9 @@ package com.hardware.erp.analytics.service.impl;
 
 import com.hardware.erp.analytics.dto.AnalyticsDtos.*;
 import com.hardware.erp.analytics.repository.AnalyticsRepository;
+import com.hardware.erp.inventory.job.LowStockSnapshotJob;
+import com.hardware.erp.inventory.repository.LowStockSnapshotRepository;
+
 import com.hardware.erp.analytics.service.AnalyticsService;
 import com.hardware.erp.common.exception.BusinessException;
 import com.hardware.erp.common.util.IndianCurrencyFormat;
@@ -35,6 +38,8 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     private static final int MAX_BUCKETS = 30;
 
     private final AnalyticsRepository repository;
+    private final LowStockSnapshotRepository lowStockSnapshotRepository;
+    private final LowStockSnapshotJob lowStockSnapshotJob;
 
     // ------------------------------------------------------------- helpers
 
@@ -95,10 +100,52 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         List<TrendPoint> points = repository.revenueTrend(tenantId, from, to, period.granularity())
                 .stream()
                 .map(r -> new TrendPoint(r.getBucket(), r.getRevenuePaise(),
-                        rupees(r.getRevenuePaise()), r.getInvoiceCount()))
+                        rupees(r.getRevenuePaise()), r.getInvoiceCount(),
+                        r.getOutstandingPaise(), rupees(r.getOutstandingPaise())))
                 .toList();
 
         return new TrendSeries(period, points, trendSummary(points));
+    }
+
+    /*
+     * Read-write, unlike the rest of this class: the lazy first-day snapshot
+     * is an INSERT, and the class-level readOnly transaction would have the
+     * database refuse it ("cannot execute INSERT in a read-only transaction"
+     * - which is exactly what the IT saw before this annotation existed).
+     */
+    @Override
+    @Transactional
+    public LowStockTrend lowStockTrend(int days) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        if (days < 2 || days > 90) {
+            throw new BusinessException("days must be between 2 and 90");
+        }
+        LocalDate today = LocalDate.now(LowStockSnapshotJob.SHOP_ZONE);
+        // A shop reading its trend before the job has ever run for it gets
+        // today's real count, not an empty chart. Idempotent with the job.
+        if (lowStockSnapshotRepository.findByTenantIdAndTakenOn(tenantId, today).isEmpty()) {
+            lowStockSnapshotJob.snapshot(tenantId, today);
+        }
+        LocalDate from = today.minusDays(days - 1L);
+        List<LowStockPoint> points = lowStockSnapshotRepository
+                .findByTenantIdAndTakenOnBetweenOrderByTakenOnAsc(tenantId, from, today)
+                .stream()
+                .map(row -> new LowStockPoint(row.getTakenOn(), row.getLowStockCount()))
+                .toList();
+        return new LowStockTrend(points, lowStockSummary(points));
+    }
+
+    /** The accessible sentence for the low-stock sparkline: what it shows and which way it moved. */
+    public static String lowStockSummary(List<LowStockPoint> points) {
+        if (points.isEmpty()) return "No low-stock history yet.";
+        LowStockPoint last = points.get(points.size() - 1);
+        if (points.size() == 1) {
+            return last.lowStockCount() + " product" + (last.lowStockCount() == 1 ? "" : "s") + " low on stock today; history starts here.";
+        }
+        LowStockPoint first = points.get(0);
+        int change = last.lowStockCount() - first.lowStockCount();
+        String direction = change > 0 ? "up " + change : change < 0 ? "down " + (-change) : "unchanged";
+        return last.lowStockCount() + " low on stock today, " + direction + " over " + points.size() + " days.";
     }
 
     /**

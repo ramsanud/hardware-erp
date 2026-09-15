@@ -25,7 +25,7 @@ import { invoiceService } from '@/modules/invoice/services/invoiceService';
 import { quotationService } from '@/modules/quotation/services/quotationService';
 import { customerService } from '@/modules/customer/services/customerService';
 import { dashboardService, type SalesSummaryResponse } from '../services/dashboardService';
-import { analyticsService, type AnalyticsSummary, type TrendPoint } from '../services/analyticsService';
+import { analyticsService, type AnalyticsSummary, type LowStockPoint, type TrendPoint } from '../services/analyticsService';
 import { INVOICE_ROUTES } from '@/modules/invoice/constants';
 import { QUOTATION_ROUTES } from '@/modules/quotation/constants';
 import { CUSTOMER_ROUTES } from '@/modules/customer/constants';
@@ -46,15 +46,14 @@ import type { StockResponse } from '@/modules/inventory/types';
  * the rail - "Bills Raised", not "Invoices" - so a card and a menu entry are
  * never the same words pointing at two different things.
  *
- * What is measured and what is not. Total Sales and Today's Earnings have a
- * real daily revenue series behind them (/v1/analytics/revenue-trend, CR-048)
- * and their sparklines and deltas are computed from it. Pending Payments has
- * a real week-over-week comparison from /v1/analytics/summary but no daily
- * series. Low Stock Alerts has neither. The owner asked that every card keep
- * its mini chart and delta row regardless, so a card without a series draws
- * the flat baseline (Sparkline marks it `data-sparkline-empty`) and a card
- * without a comparison reads "→ 0%". Nothing is smoothed or invented beyond
- * that flat line.
+ * Every sparkline and delta is measured (CR-084 closed the last two gaps):
+ * Total Sales, Today's Earnings and Pending Payments draw from the daily
+ * revenue-trend series (revenue and balance-still-due per bucket, CR-048 +
+ * CR-084), Pending Payments' week-over-week from two analytics summaries,
+ * and Low Stock Alerts from the daily low_stock_snapshot series. A shop too
+ * young to have two points draws Sparkline's flat baseline (marked
+ * `data-sparkline-empty`) and reads "→ 0%" - the owner's chosen zero state
+ * - until the second day.
  */
 interface Count {
   id: 'products' | 'suppliers' | 'invoices' | 'customers' | 'low-stock';
@@ -79,6 +78,7 @@ export function DashboardPage() {
   const [sales, setSales] = useState<SalesSummaryResponse | null>(null);
   const [trend, setTrend] = useState<TrendPoint[] | null>(null);
   const [outstanding, setOutstanding] = useState<{ now: AnalyticsSummary; before: AnalyticsSummary } | null>(null);
+  const [lowStockTrend, setLowStockTrend] = useState<LowStockPoint[] | null>(null);
   const [recentInvoices, setRecentInvoices] = useState<InvoiceSummaryResponse[] | null>(null);
   const [pendingQuotations, setPendingQuotations] = useState<QuotationSummaryResponse[] | null>(null);
   const [recentCustomers, setRecentCustomers] = useState<CustomerSummaryResponse[] | null>(null);
@@ -146,6 +146,10 @@ export function DashboardPage() {
     }
     if (hasPermission(PERMISSIONS.INVENTORY_VIEW)) {
       stockService.search({ lowStockOnly: true, size: 5 }).then((page) => setLowStock(page.content)).catch(() => setLowStock([]));
+      // CR-084: the daily snapshot series behind the Low Stock Alerts sparkline.
+      analyticsService.lowStockTrend(LOOKBACK_DAYS)
+        .then((trend) => setLowStockTrend(trend?.points ?? []))
+        .catch(() => setLowStockTrend(null));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -162,6 +166,8 @@ export function DashboardPage() {
     return {
       series: trend.map((p) => p.revenuePaise),
       thisWeekSeries: thisWeek.map((p) => p.revenuePaise),
+      // CR-084: the same buckets, balance still due - Pending Payments' line.
+      outstandingSeries: trend.map((p) => p.outstandingPaise ?? 0),
       now: sum(thisWeek),
       before: sum(lastWeek),
     };
@@ -169,6 +175,19 @@ export function DashboardPage() {
 
 
   const lowStockCount = counts.find((c) => c.id === 'low-stock');
+  /*
+   * CR-084. "vs last week" for low stock compares today's snapshot with the
+   * one seven days earlier. A shop younger than a week compares with its
+   * oldest snapshot instead - an honest "since we started" rather than a
+   * comparison against a day that has no row.
+   */
+  const lowStockDelta = useMemo(() => {
+    if (!lowStockTrend || lowStockTrend.length < 2) return undefined;
+    const today = lowStockTrend[lowStockTrend.length - 1];
+    const weekAgoIso = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    const before = lowStockTrend.find((p) => p.date === weekAgoIso) ?? lowStockTrend[0];
+    return { now: today.lowStockCount, before: before.lowStockCount, against: 'vs last week', upIsGood: false };
+  }, [lowStockTrend]);
   const secondRow = counts.filter((c) => c.id !== 'low-stock');
   const firstName = user?.fullName?.split(' ')[0];
 
@@ -233,13 +252,14 @@ export function DashboardPage() {
                   ? { now: outstanding.now.outstandingPaise, before: outstanding.before.outstandingPaise, against: 'vs last week', upIsGood: false }
                   : undefined}
                 against="vs last week"
+                series={weekly?.outstandingSeries}
                 to={INVOICE_ROUTES.list}
               />
             </>
           ) : null}
-          {/* No history endpoint for the low-stock count yet, so its row is the
-              owner-specified zero state: flat amber baseline, "→ 0% vs last
-              week". A weekly snapshot would make it measured - see CR-082. */}
+          {/* CR-084: the low-stock line and delta come from the daily snapshot
+              series. A brand-new shop has one point, which draws the flat
+              baseline until the second day - real, not placeholder. */}
           {lowStockCount ? (
             <KpiCard
               label={lowStockCount.label}
@@ -247,7 +267,9 @@ export function DashboardPage() {
               icon={AlertTriangle}
               tone="warning"
               sparkTone="warning"
+              delta={lowStockDelta}
               against="vs last week"
+              series={lowStockTrend?.map((p) => p.lowStockCount)}
               to={lowStockCount.to}
             />
           ) : null}

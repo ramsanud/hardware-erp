@@ -1190,3 +1190,37 @@ Stamped in exactly one place, `ActivityLogServiceImpl.write(...)`, from
 `SecurityUtils.currentTenantId()` — the JWT, never a request parameter. CR-070
 had estimated ten call sites; there is one, because every module reaches the
 table through `created`/`updated`/`deleted`/`action`, which all funnel there.
+
+## V56 — `low_stock_snapshot` (CR-084, 2026-09-15)
+
+### `low_stock_snapshot`
+One row per (tenant, calendar day): how many products were at or below their
+reorder level that day. The dashboard's Low Stock Alerts sparkline and its
+"vs last week" delta read this; nothing else does.
+
+| Column | Type | Notes |
+|---|---|---|
+| `low_stock_snapshot_id` | BIGSERIAL PK | |
+| `tenant_id` | BIGINT NOT NULL → `tenant` | |
+| `taken_on` | DATE NOT NULL | a calendar fact in Asia/Kolkata, never a timestamp |
+| `low_stock_count` | INTEGER NOT NULL, CHECK ≥ 0 | same predicate as the Stock list's low-stock filter and the reminder job: `quantity_on_hand <= reorder_level` |
+| `created_at` | TIMESTAMP(3) NOT NULL DEFAULT now | |
+
+`UNIQUE (tenant_id, taken_on)` is what makes the write an upsert
+(`INSERT … ON CONFLICT DO UPDATE`), so the nightly job and the lazy first
+read cannot leave two rows for one day. Index on `(tenant_id, taken_on)` for
+the only read there is: this tenant, this range, in order.
+
+**Not a `BaseEntity`.** The row is written by a scheduled job with no
+signed-in user, so `created_by` / `updated_*` would only ever be null and
+the table does not carry them — `ddl-auto: validate` requires the entity to
+say exactly that.
+
+### Write path
+`LowStockSnapshotJob` at 00:15 IST for every ACTIVE tenant, and
+`AnalyticsServiceImpl.lowStockTrend()` takes today's row lazily when a shop
+reads the trend before the job has run for it. The transaction boundary is
+the repository's `upsert` (`@Transactional` on the interface method), not
+the job — a `REQUIRES_NEW` on the job would be self-invoked from its own
+loop and never cross the proxy (BUG-BE-002). `lowStockTrend()` is the one
+read-write method in an otherwise `readOnly` service, for that INSERT.

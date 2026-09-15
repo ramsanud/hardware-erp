@@ -60,6 +60,8 @@ public interface AnalyticsRepository extends JpaRepository<Invoice, Long> {
         String getBucket();
         Long getRevenuePaise();
         Long getInvoiceCount();
+        /** CR-084. Balance still due on this bucket's invoices. */
+        Long getOutstandingPaise();
     }
 
     /**
@@ -78,7 +80,8 @@ public interface AnalyticsRepository extends JpaRepository<Invoice, Long> {
     @Query(value = """
            select to_char(date_trunc(cast(:granularity as text), cast(invoice_date as timestamp)), 'YYYY-MM-DD') as "bucket",
                   coalesce(sum(total_paise), 0) as "revenuePaise",
-                  count(*) as "invoiceCount"
+                  count(*) as "invoiceCount",
+                  coalesce(sum(balance_paise), 0) as "outstandingPaise"
            from invoice
            where tenant_id = :tenantId
              and status <> 'CANCELLED'
