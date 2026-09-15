@@ -90,6 +90,9 @@ Nothing is implemented from conversation memory.
 | CR-082 | 2026-09-13 | User | The approved dashboard design and app shell, implemented on tokens: shop identity card and grouped rail with a user footer, greeting eyebrow and live shop-time chip, eight KPI cards with real-series sparklines and week-over-week deltas, Quick actions and Recent actions cards. Widget titles renamed to counter-staff language. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-13** |
 | CR-083 | 2026-09-14 | User | Quotations list upgraded: four KPI cards from a new `GET /v1/quotations/stats`, status pills, date-range presets, CSV export, a row action menu (PDF, WhatsApp, convert, edit, delete), an illustrated empty state with CTAs. `DELETE /v1/quotations/{id}` for drafts only. The `status=EXPIRED` filter, which could never match (EXPIRED is computed, never stored), now works — BUG-BE-005. `SCOPE: BOTH`. | **APPLIED, 2026-09-14** |
 | CR-084 | 2026-09-15 | User | The two placeholder sparklines become measured. Pending Payments: `outstandingPaise` per bucket on the existing revenue-trend response (same invoices, `sum(balance_paise)`). Low Stock Alerts: a daily `low_stock_snapshot` per tenant (V56, scheduled job, lazily taken on first read) behind `GET /v1/analytics/low-stock-trend`. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
+| CR-085 | 2026-09-15 | User | *(claimed by the concurrent session on feature/cr-085-erp-completion — Test-SMS endpoint, DeliveryStatusService, Twilio/SendGrid status webhooks.)* | **IN PROGRESS** |
+| CR-086 | 2026-09-15 | User | Reports module: Day Book, Receivables Ageing, Stock Valuation, Purchase Register and GST Summary as tenant-scoped SQL aggregations under `GET /v1/reports/*`, each downloadable as PDF or Excel from the same figures the screen shows. Gated on `REPORT_VIEW`. Sidebar "Reports" goes live. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
+| CR-087 | 2026-09-15 | User | GSTR-1 offline-tool JSON (`b2b`, `b2cl`, `b2cs`, `cdnr`, `cdnur`, `hsn`) for a return period, and Modulo-36 GSTIN checksum validation shared by customer, supplier and shop settings on both layers. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
 ---
 
 
@@ -5200,3 +5203,129 @@ targeted test classes were.
 `API_REGISTRY.md` had **no rows at all** for the tenant analytics endpoints
 (`/v1/analytics/*`, CR-048). Added summary, revenue-trend and
 sales-by-category alongside the new one.
+
+---
+
+## CR-086 — Reports module: Day Book, Receivables Ageing, Stock Valuation, Purchase Register, GST Summary (APPLIED 2026-09-15)
+
+**Raised by:** User (the "Senior Lead Engineer" completion brief, item
+"Reports module"). **Type:** new module, both layers. `SCOPE: BOTH`. No
+migration — every report is a read over tables that already exist.
+
+### What it is
+
+The sidebar's greyed-out "Reports" entry (REPORT_VIEW, waiting since V1) goes
+live at `/reports/:report`. Five reports, each JSON for the screen and a
+PDF or XLSX download built from the very same record:
+
+| Report | Source | Basis stated on screen |
+|---|---|---|
+| Day Book | invoice, payment, credit_note, purchase, business_expense | "Net cash is receipts minus expenses - purchases sit on supplier credit until they are paid" |
+| Receivables Ageing | invoice (UNPAID/PARTIALLY_PAID, balance > 0) | "Age is counted from the invoice date - bills carry no separate due date" |
+| Stock Valuation | stock × product | "today's shelf at today's purchase rate, not what it was bought for" |
+| Purchase Register | purchase (not DRAFT/CANCELLED) | CGST/SGST vs IGST by supplier state vs shop state |
+| GST Summary | invoice_item, credit_note_item, purchase_item | "Input credit is shown as booked - whether it can be claimed depends on the supplier having filed" |
+
+### Decisions
+
+- **Every sum is a `GROUP BY` in PostgreSQL** (`ReportRepository`, native,
+  the AnalyticsRepository discipline). Child tables carry no `tenant_id`;
+  every one is scoped by joining its parent and filtering the parent's.
+- **The CGST/SGST split is InvoicePdfService's** (half rounded down to
+  CGST, remainder to SGST) and lives in one method, `ReportServiceImpl.split`.
+  A report that disagreed with the invoice it summarises would be worse than
+  none.
+- **One document shape for every export.** `ReportDocument` (title,
+  captions, tables of already-formatted strings, totals row) is all
+  `ReportExporter` knows; PDF via openhtmltopdf, XLSX via POI with money
+  cells written as numbers so a column can still be summed. A sixth report
+  costs one mapping method in `ReportDocuments`. No new dependency.
+- **Display strings come from the server** (`IndianCurrencyFormat`), the
+  AnalyticsDtos rule; the browser prefixes ₹ and nothing else.
+- **REPORT_VIEW on the five reports, REPORT_FINANCIAL on GSTR-1** — the
+  operational/filing line V1's role seeds already draw (MANAGER holds the
+  first, not the second). `ReportControllerIT.permissionGate` proves both.
+- **A range is at most 366 days**; longer is a data export, not a report.
+- **Stock valuation has no history** — there is no cost-history table, so
+  "as of" is always today and the note says so rather than pretending.
+- **Frontend:** the report is in the URL (bookmarkable, sendable), tabs
+  filtered by permission (a manager never sees GSTR-1 and a deep link to it
+  lands on the day book), presets Today / This month / Last month / This
+  quarter / This FY (April–March), downloads carry the table's own filters,
+  a totals row, an honest note per report, `data-report-*` hooks for tests.
+
+### Verified
+
+Backend: `GstinTest` 13, `ReportExporterTest` 3 (escaped markup, empty
+table copy, numeric Excel money), `ReportServiceImplTest` 2 (split never
+loses a paisa; slabs fold by rate), `ReportControllerIT` 9 (one sale
+through the API: ₹1,100 taxable, ₹198 GST, ₹1,298 total, ₹300 paid — day
+book kinds and totals, ageing bucket, stock totals, purchase register
+reversed-range 400, GST 18 % slab split evenly, every export as PDF and
+XLSX, STAFF 403 / MANAGER 200 / MANAGER on GSTR-1 403, GSTR-1 b2b + HSN,
+checksum refused on invoice and customer). Frontend `tsc` 0, `vite build`
+0, Playwright **297/297** on an isolated build (`reports` suite 25).
+Screens reviewed at 1440 and 390. Full `mvn -o clean verify` on a detached
+worktree at `ebafec6`: **599 unit + 251 integration, 0 failures, BUILD SUCCESS**.
+`registry/static_check.py` **not executed** — no python3 on this machine.
+
+### Also on the way
+
+`CreditNoteRepository.findForExport(tenantId, from, to)` — the same shape
+InvoiceRepository already had, for GSTR-1's credit notes.
+
+---
+
+## CR-087 — GSTR-1 offline JSON and Modulo-36 GSTIN validation (APPLIED 2026-09-15)
+
+**Raised by:** User (the same brief: "GSTR-1 offline JSON + Modulo-36 GSTIN
+validation"). `SCOPE: BOTH`. Two commits: `a9082f7` (checksum) and
+`ebafec6` (GSTR-1, with CR-086).
+
+### GSTIN checksum
+
+The fifteenth character of a GSTIN is a Modulo-36 checksum over the first
+fourteen (alternate weights 1 and 2, quotient + remainder by 36, complement).
+Every GSTIN field in the app checked only the shape, so a single wrong
+keystroke was accepted at the counter and would surface months later as a
+portal rejection. Now:
+
+- `common/util/Gstin` — `isValid`, `isValidOrBlank`, `checkCharacter`;
+  `@ValidGstin` (`common/validation`) replaces the seven regex copies on
+  CustomerRequest, SupplierRequest, TenantSettingsRequest, InvoiceRequest,
+  QuotationRequest, SalesOrderRequest, DeliveryChallanRequest. Blank passes —
+  the fields are optional.
+- `frontend/src/shared/lib/gstin.ts` — the same algorithm for zod (customer,
+  supplier, shop settings, invoice and quotation customer blocks), so the
+  field goes red before submit.
+- Verified against two publicly listed GSTINs (Uber India
+  `27AAPFU0939F1ZV`, Reliance Retail `27AAACR5055K1Z7`). **Every fabricated
+  GSTIN in the repo failed the checksum** — the supplier Swagger examples and
+  the one posted by `SupplierControllerIT` are now checksum-valid; the seed
+  rows (`V901`) are left alone (applied migrations; they never pass through
+  validation). `SupplierWizard.tsx`'s placeholder is owned by the concurrent
+  session's branch and was not touched.
+
+### GSTR-1
+
+`GET /v1/reports/gstr1?period=MMYYYY` (preview, enveloped) and
+`/download` (bare `GSTR1-MMYYYY.json`), REPORT_FINANCIAL. Built by
+`report/gst/Gstr1Service` from `InvoiceRepository.findForExport` and the
+new `CreditNoteRepository.findForExport`:
+
+| Section | Rule |
+|---|---|
+| `b2b` | buyer's GSTIN passes the checksum; invoice-wise, items by rate, `rchrg N`, `inv_typ R` |
+| `b2cl` | unregistered, inter-state, invoice value > ₹1,00,000 (the threshold since 1 Aug 2024) |
+| `b2cs` | every other unregistered sale, summed by place of supply × rate × INTRA/INTER; unregistered credit notes below the B2CL line are **netted here** |
+| `cdnr` / `cdnur` | credit notes to registered buyers / B2CL reversals |
+| `hsn` | by HSN × rate × UQC; UQC mapped from the shop's free-text unit (`pcs` → `NOS-NUMBERS`, unknown → `OTH-OTHERS`) |
+
+Place of supply is the customer's state, else the state in the buyer's
+GSTIN, else the shop's (intra-state, the InvoicePdfService rule). Taxable
+value and tax are the line snapshots; `val` is the stored invoice total, so
+an invoice-level coupon discount (CR-047) can make `val` less than
+`txval + tax` — the portal accepts that. No `nil`/`exp`/`at`/`txpd`: the app
+has no such flows. **Not round-tripped through the offline tool** (none is
+installed here); the layout follows the published spec and the IT checks it
+structurally. The screen says so.
