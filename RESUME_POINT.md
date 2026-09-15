@@ -1,5 +1,75 @@
 # RESUME POINT
 
+**Updated:** 2026-09-15, early (**branch consolidation audit: every branch is on `main`; the CR-078 WIP is not mergeable yet**). `SCOPE: BOTH` (no code change to `main`).
+
+## Branch consolidation audit (2026-09-15)
+
+**Asked**: merge every unmerged branch, stash and outgoing change into
+`main`. **Found**, after `git fetch --all --prune`: no stashes; 17 of the 18
+local branches and all 17 remote branches were already ancestors of `main`
+(0 commits ahead). The one exception, `feature/cr-077-079-auth-stack`, is one
+commit (`a8debb2`) whose **code is byte-identical** to `4e6be60` already on
+`main` — the same CR-077 committed twice on two bases; the interdiff is
+registry/RESUME_POINT context only. Merged with `-s ours` (`893f1b1`) so it
+reads as merged without a content-free conflict on the registries. The tree
+of `main` is unchanged from `ef33e37`.
+
+**The CR-078 work in `E:/Project/hardware-erp-auth` (uncommitted, last touched
+2026-09-14 05:50) was NOT taken.** It is a feature mid-flight, not finished
+work: 30 modified + 14 new backend files (email OTP, step-up, MFA email
+fallback, registration email verification, `V56__email_otp.sql`, a new
+rate-limit rule, a BUG-SEC-007 fix). Applied onto `main` in a temp worktree it
+**does not compile**, and once it does:
+
+- `TenantRegistrationServiceImpl` refuses to register a shop without an
+  `emailCode` (`registration-email-verification: true` in prod) and
+  `UserServiceImpl` requires a `stepUpToken` to change a verified email —
+  **no frontend sends either**, so merging would break "Register your shop"
+  on the live site.
+- `TenantRegistrationServiceImplTest` does not mock `EmailOtpService` /
+  `SecurityProperties` (NPE); `AuthControllerIT`, `UserServiceImplTest`,
+  `WhatsAppConnectionSecurityIT`, `WhatsAppLinkControllerIT`, `DataResetIT`
+  still call the old record constructors; `EmailOtpService` has no tests.
+- Nothing is registered: no CR-078 body, no BUG-SEC-007 row, no V56 in
+  `DATABASE_REGISTRY`, no API rows.
+
+**For whoever resumes CR-078 — the six syntax fixes it needs first** (each
+verified to compile in the temp worktree):
+
+1. `auth/service/EmailOtpService.java` — the interface is missing its closing `}`.
+2. `tenant/service/TenantRegistrationService.java` — same, missing closing `}`.
+3. `auth/dto/MfaSetupConfirmRequest.java:12`, `auth/dto/StepUpVerifyRequest.java:12`,
+   `auth/dto/ResetPasswordWithCodeRequest.java:23` and `:29`,
+   `tenant/dto/TenantRegistrationRequest.java:51` — `"^\d{6}$"` and `(?=.*\d)`
+   are illegal Java escapes; write `\\d` (the two older patterns in
+   `TenantRegistrationRequest` at lines 15/19 already do).
+
+Then the test call sites above need the new trailing argument, and the auth
+screens need the OTP steps — an approved render first (hard rule 13).
+
+**Migration number collision, seen 2026-09-15 06:20**: the CR-078 worktree
+carries `V56__email_otp.sql`, and a session in the main checkout has just
+created `V56__low_stock_snapshot.sql` (uncommitted, analytics/low-stock
+work). Flyway will refuse two V56s. Whichever lands second must renumber to
+V57 — check `git log --all -- 'backend/src/main/resources/db/migration/V56*'`
+before committing either.
+
+**`develop`** was 105 commits behind `main` with nothing of its own; see the
+commit log for whether the fast-forward went through.
+
+**Verified on `main`'s exact tree (`893f1b1` == `ef33e37`)**: `./mvnw -o clean
+package` in a detached worktree — **579 tests, 0 failures, 2 skipped, BUILD
+SUCCESS**, `hardware-erp-1.0.0.jar`; frontend `tsc -b` 0 and `vite build` 0
+(the literal `npm run build` fails under Git Bash on this machine with
+`'"node"' is not recognized` — the documented shim quirk, not a build error).
+Full `mvn clean verify` (579 + 238 IT), Playwright 272/272, `docker build` and
+a `prod,cloud` boot to `health: UP` were all run on this same tree on
+2026-09-14 (previous entry). `static_check.py` **not executed** (no python3).
+
+---
+
+**Previous entry follows.**
+
 **Updated:** 2026-09-14, late (**release-readiness pass: CR-083 second pass committed, Render blueprint aligned with CR-077, main merged**). `SCOPE: BOTH` (config only on the backend side).
 
 ## Release-readiness pass (2026-09-14, evening)
