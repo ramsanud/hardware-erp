@@ -16,7 +16,7 @@ public record SupplierResponse(
         @Schema(example = "9842011223") String mobileNo,
         @Schema(example = "9842011224") String alternateMobileNo,
         @Schema(example = "sales@sribalajihardware.in") String email,
-        @Schema(example = "33AABCS1429B1ZP") String gstNo,
+        @Schema(example = "33AABCS1429B1Z1") String gstNo,
         @Schema(example = "AABCS1429B") String panNo,
 
         @Schema(example = "144 Big Bazaar Street") String addressLine1,

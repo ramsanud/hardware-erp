@@ -19,7 +19,7 @@ public record SupplierSummaryResponse(
         @Schema(example = "Ramesh Kumar") String contactPerson,
         @Schema(example = "9842011223") String mobileNo,
         @Schema(example = "Madurai") String city,
-        @Schema(example = "33AABCS1429B1ZP") String gstNo,
+        @Schema(example = "33AABCS1429B1Z1") String gstNo,
         @Schema(example = "30") Integer paymentTermsDays,
         @Schema(example = "5,00,000.00") String creditLimitDisplay,
         @Schema(example = "ACTIVE") SupplierStatus status

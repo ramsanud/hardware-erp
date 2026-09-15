@@ -1,6 +1,7 @@
 package com.hardware.erp.customer.dto;
 
 import com.hardware.erp.customer.entity.CustomerStatus;
+import com.hardware.erp.common.validation.ValidGstin;
 import jakarta.validation.constraints.*;
 
 /**
@@ -21,8 +22,7 @@ public record CustomerRequest(
         @NotBlank @Pattern(regexp = "^[6-9][0-9]{9}$", message = "Enter a valid 10-digit mobile number")
         String mobileNo,
         @Email @Size(max = 255) String email,
-        @Pattern(regexp = "^$|^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$",
-                message = "Enter a valid 15-character GSTIN")
+        @ValidGstin
         String gstNo,
         @Size(max = 255) String addressLine1,
         @Size(max = 255) String addressLine2,

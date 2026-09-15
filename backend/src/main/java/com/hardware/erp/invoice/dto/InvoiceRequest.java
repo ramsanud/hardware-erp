@@ -1,6 +1,7 @@
 package com.hardware.erp.invoice.dto;
 
 import com.hardware.erp.invoice.entity.PaymentMethod;
+import com.hardware.erp.common.validation.ValidGstin;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 
@@ -16,8 +17,7 @@ public record InvoiceRequest(
         @NotBlank @Pattern(regexp = "^[6-9][0-9]{9}$", message = "Enter a valid 10-digit mobile number")
         String customerMobile,
         @Email @Size(max = 255) String customerEmail,
-        @Pattern(regexp = "^$|^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$",
-                message = "Enter a valid 15-character GSTIN")
+        @ValidGstin
         String customerGstNo,
         @Pattern(regexp = "^$|^[0-9]{2}$", message = "State code is the 2-digit GST state code")
         String customerStateCode,

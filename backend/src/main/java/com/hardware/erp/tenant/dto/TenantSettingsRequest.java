@@ -2,6 +2,7 @@ package com.hardware.erp.tenant.dto;
 
 import com.hardware.erp.tenant.entity.InvoiceTheme;
 import com.hardware.erp.tenant.entity.SubscriptionTier;
+import com.hardware.erp.common.validation.ValidGstin;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -23,8 +24,7 @@ import jakarta.validation.constraints.Size;
  */
 public record TenantSettingsRequest(
         @NotBlank @Size(max = 200) String name,
-        @Pattern(regexp = "^$|^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$",
-                message = "Enter a valid 15-character GSTIN")
+        @ValidGstin
         String gstNo,
         @Size(max = 255) String addressLine1,
         @Size(max = 255) String addressLine2,

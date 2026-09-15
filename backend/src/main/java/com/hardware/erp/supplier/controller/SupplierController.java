@@ -72,7 +72,7 @@ public class SupplierController {
                             "id": 7, "supplierCode": "SUP-0007",
                             "supplierName": "Sri Balaji Hardware Agencies",
                             "contactPerson": "Ramesh Kumar", "mobileNo": "9842011223",
-                            "city": "Madurai", "gstNo": "33AABCS1429B1ZP",
+                            "city": "Madurai", "gstNo": "33AABCS1429B1Z1",
                             "paymentTermsDays": 30, "creditLimitDisplay": "5,00,000.00",
                             "status": "ACTIVE"
                           }

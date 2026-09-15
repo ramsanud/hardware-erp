@@ -118,7 +118,7 @@ class SupplierControllerIT extends AbstractIntegrationTest {
         mockMvc.perform(post("/v1/suppliers").header("Authorization", owner())
                         .contentType(APPLICATION_JSON)
                         .content(json(supplier("SUP-9002", "Mismatch Traders",
-                                "9811100203", "29AABCS1429B1ZP", "33"))))
+                                "9811100203", "29AABCS1429B1ZQ", "33"))))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.message")
                         .value(org.hamcrest.Matchers.containsString("state code")));
