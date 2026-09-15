@@ -68,6 +68,8 @@ import { DeveloperInspectionPage } from '@/modules/developer/pages/DeveloperInsp
 import { TOOLS_ROUTES } from '@/modules/tools/constants';
 import { GstCalculatorPage } from '@/modules/tools/pages/GstCalculatorPage';
 import { TallyExportPage } from '@/modules/tools/pages/TallyExportPage';
+import { REPORT_ROUTES } from '@/modules/report/constants';
+import { ReportsPage } from '@/modules/report/pages/ReportsPage';
 import { NotFoundPage } from '@/shared/components/NotFoundPage';
 import { PlatformAdminAuthProvider } from '@/modules/platform-admin/hooks/PlatformAdminAuthProvider';
 import { PlatformAdminLoginPage } from '@/modules/platform-admin/pages/PlatformAdminLoginPage';
@@ -285,6 +287,12 @@ export function AppRoutes() {
 
           <Route element={<RequirePermission permission={PERMISSIONS.REPORT_FINANCIAL} />}>
             <Route path={TOOLS_ROUTES.tallyExport} element={<TallyExportPage />} />
+          </Route>
+
+          {/* CR-086 / CR-087 - the report is in the URL; GSTR-1 is gated again inside the page. */}
+          <Route element={<RequirePermission permission={PERMISSIONS.REPORT_VIEW} />}>
+            <Route path={REPORT_ROUTES.list} element={<ReportsPage />} />
+            <Route path={`${REPORT_ROUTES.list}/:report`} element={<ReportsPage />} />
           </Route>
 
           {/* Every role can reach the dashboard - it only renders the cards

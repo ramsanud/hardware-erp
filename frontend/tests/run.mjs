@@ -21,6 +21,7 @@ const SPECS = [
   ['whatsapp', './whatsapp/manual-link.spec.mjs'],
   ['quotations', './quotations/list.spec.mjs'],
   ['dashboard', './dashboard/dashboard.spec.mjs'],
+  ['reports', './reports/reports.spec.mjs'],
 ];
 
 const external = Boolean(process.env.E2E_BASE_URL);
