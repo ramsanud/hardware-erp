@@ -9,7 +9,6 @@ import com.hardware.erp.common.dto.PageResponse;
 import com.hardware.erp.common.exception.BusinessException;
 import com.hardware.erp.common.exception.DuplicateResourceException;
 import com.hardware.erp.common.exception.ResourceNotFoundException;
-import com.hardware.erp.invoice.entity.InvoiceStatus;
 import com.hardware.erp.product.dto.ProductDeletedResponse;
 import com.hardware.erp.product.dto.ProductPriceHistoryResponse;
 import com.hardware.erp.product.dto.ProductRequest;
@@ -24,13 +23,13 @@ import com.hardware.erp.product.repository.BrandRepository;
 import com.hardware.erp.product.repository.CategoryRepository;
 import com.hardware.erp.product.repository.ProductImageRepository;
 import com.hardware.erp.product.repository.ProductRepository;
+import com.hardware.erp.product.service.ProductSaleHistoryProvider;
 import com.hardware.erp.product.service.ProductService;
 import com.hardware.erp.security.SecurityUtils;
 import com.hardware.erp.tenant.repository.TenantRepository;
 import com.hardware.erp.tenant.service.EntitlementService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,7 +67,8 @@ public class ProductServiceImpl implements ProductService {
     private final ActivityLogService activityLog;
     private final TenantRepository tenantRepository;
     private final EntitlementService entitlementService;
-    private final com.hardware.erp.invoice.repository.InvoiceItemRepository invoiceItemRepository;
+    /** BUG-BE-006 - implemented by the invoice module; product never imports it. */
+    private final ProductSaleHistoryProvider saleHistoryProvider;
 
     @Override
     @Transactional
@@ -188,16 +188,7 @@ public class ProductServiceImpl implements ProductService {
     public List<ProductPriceHistoryResponse> priceHistory(Long id) {
         Long tenantId = SecurityUtils.requireCurrentTenantId();
         require(id, tenantId);
-        return invoiceItemRepository.findRecentForProduct(id, tenantId, InvoiceStatus.CANCELLED,
-                        PageRequest.of(0, PRICE_HISTORY_LIMIT))
-                .stream()
-                .map(item -> new ProductPriceHistoryResponse(
-                        item.getInvoice().getInvoiceDate(),
-                        item.getInvoice().getInvoiceNumber(),
-                        item.getInvoice().getCustomer().getCustomerName(),
-                        item.getQuantity(),
-                        productMapper.rupees(item.getUnitPricePaise())))
-                .toList();
+        return saleHistoryProvider.recentSales(id, tenantId, PRICE_HISTORY_LIMIT);
     }
 
     @Override
