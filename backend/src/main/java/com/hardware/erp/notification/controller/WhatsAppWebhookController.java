@@ -2,10 +2,9 @@ package com.hardware.erp.notification.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hardware.erp.notification.entity.NotificationLog;
 import com.hardware.erp.notification.entity.NotificationStatus;
 import com.hardware.erp.notification.entity.TenantWhatsAppConnection;
-import com.hardware.erp.notification.repository.NotificationLogRepository;
+import com.hardware.erp.notification.service.DeliveryStatusService;
 import com.hardware.erp.notification.repository.TenantWhatsAppConnectionRepository;
 import com.hardware.erp.notification.service.impl.WhatsAppProperties;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -52,7 +51,7 @@ public class WhatsAppWebhookController {
 
     private final WhatsAppProperties properties;
     private final TenantWhatsAppConnectionRepository connectionRepository;
-    private final NotificationLogRepository notificationLogRepository;
+    private final DeliveryStatusService deliveryStatusService;
     private final ObjectMapper objectMapper;
 
     /** Meta's one-time subscription handshake - answer with the challenge only if our shared verify token matches. */
@@ -136,30 +135,9 @@ public class WhatsAppWebhookController {
             return;
         }
 
-        notificationLogRepository.findByTenantIdAndProviderMessageId(tenantId, providerMessageId).ifPresent(logRow -> {
-            if (isForwardProgress(logRow.getStatus(), newStatus)) {
-                logRow.setStatus(newStatus);
-                notificationLogRepository.save(logRow);
-            }
-        });
-    }
-
-    private boolean isForwardProgress(NotificationStatus current, NotificationStatus incoming) {
-        if (incoming == NotificationStatus.FAILED) {
-            return current == NotificationStatus.SENT;
-        }
-        int currentRank = rank(current);
-        int incomingRank = rank(incoming);
-        return incomingRank > currentRank;
-    }
-
-    private int rank(NotificationStatus status) {
-        return switch (status) {
-            case LOGGED_ONLY, FAILED -> -1;
-            case SENT -> 0;
-            case DELIVERED -> 1;
-            case READ -> 2;
-        };
+        // CR-085 - the forward-only rule lives in DeliveryStatusService now,
+        // shared with the Twilio and SendGrid callbacks.
+        deliveryStatusService.apply(tenantId, providerMessageId, newStatus);
     }
 
     private boolean signatureValid(String rawBody, String signatureHeader) {

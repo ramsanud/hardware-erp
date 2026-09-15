@@ -59,6 +59,12 @@ public class SmsNotificationProvider implements NotificationProvider {
     private final TwilioProperties properties;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    /**
+     * CR-085 - optional and setter-injected on purpose: the constructors are
+     * called from three test classes, and a callback URL is capability the
+     * send gains, not a new thing every caller must supply.
+     */
+    private NotificationWebhookProperties webhookProperties;
 
     @Autowired
     public SmsNotificationProvider(TwilioProperties properties, ObjectMapper objectMapper) {
@@ -70,6 +76,11 @@ public class SmsNotificationProvider implements NotificationProvider {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
+    }
+
+    @Autowired(required = false)
+    public void setWebhookProperties(NotificationWebhookProperties webhookProperties) {
+        this.webhookProperties = webhookProperties;
     }
 
     @Override
@@ -161,6 +172,12 @@ public class SmsNotificationProvider implements NotificationProvider {
             fields.put("From", properties.fromNumber());
         }
         fields.put("Body", body);
+        // CR-085 - ask Twilio to report delivery to the status webhook, but only
+        // when this deployment has a public address for it to call. Without
+        // one the row stays SENT, exactly as before.
+        if (webhookProperties != null && webhookProperties.callbacksEnabled()) {
+            fields.put("StatusCallback", webhookProperties.twilioStatusCallbackUrl());
+        }
 
         return fields.entrySet().stream()
                 .map(entry -> URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8)

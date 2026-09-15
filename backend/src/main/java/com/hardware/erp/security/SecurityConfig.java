@@ -134,7 +134,12 @@ public class SecurityConfig {
                             // Razorpay calls this with no JWT of ours either -
                             // authenticity is the X-Razorpay-Signature HMAC check
                             // inside SubscriptionBillingService.handleWebhook().
-                            "/v1/webhooks/razorpay").permitAll()
+                            "/v1/webhooks/razorpay",
+                            // CR-085 - Twilio and SendGrid delivery callbacks; each
+                            // verifies the provider's own signature and refuses
+                            // everything while its secret is unconfigured.
+                            "/v1/webhooks/twilio/status",
+                            "/v1/webhooks/sendgrid/events").permitAll()
                     // /actuator/health is the hosting platform's liveness probe
                     // and must answer before anyone signs in. The API browser is
                     // public only where it is served at all - application-prod.yml

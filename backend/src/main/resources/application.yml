@@ -259,6 +259,15 @@ app:
         auth-token: ${TWILIO_AUTH_TOKEN:}
         from-number: ${TWILIO_FROM_NUMBER:}
         messaging-service-sid: ${TWILIO_MESSAGING_SERVICE_SID:}
+    # CR-085 - delivery-status callbacks from the app-wide providers.
+    # public-base-url is the address Twilio can reach this application at
+    # (https://erp.example.in); blank means Twilio is never asked to call
+    # back and SMS rows stay SENT, exactly as before CR-085. The SendGrid
+    # key is the base64 verification key shown when its Signed Event Webhook
+    # is enabled; blank means every SendGrid event is refused (fail closed).
+    webhooks:
+      public-base-url: ${APP_PUBLIC_BASE_URL:}
+      sendgrid-public-key: ${SENDGRID_WEBHOOK_PUBLIC_KEY:}
     # WhatsApp (CR-056): app-wide config only - every tenant's own access
     # token/phone number id live in tenant_whatsapp_connection, connected
     # from Settings > WhatsApp Business, never here. app-secret/

@@ -89,6 +89,7 @@ Nothing is implemented from conversation memory.
 | CR-081 | 2026-09-12 | User | The approved sign-in design, implemented: a 50/50 split with a forest-green hero over a shop interior, a new post-and-lintel H brand mark (also the favicon and the sidebar fallback), and one `AuthCard` shell for all six auth screens. Default colour theme becomes Emerald so a first-time visitor sees the brand. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-12** |
 | CR-082 | 2026-09-13 | User | The approved dashboard design and app shell, implemented on tokens: shop identity card and grouped rail with a user footer, greeting eyebrow and live shop-time chip, eight KPI cards with real-series sparklines and week-over-week deltas, Quick actions and Recent actions cards. Widget titles renamed to counter-staff language. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-13** |
 | CR-083 | 2026-09-14 | User | Quotations list upgraded: four KPI cards from a new `GET /v1/quotations/stats`, status pills, date-range presets, CSV export, a row action menu (PDF, WhatsApp, convert, edit, delete), an illustrated empty state with CTAs. `DELETE /v1/quotations/{id}` for drafts only. The `status=EXPIRED` filter, which could never match (EXPIRED is computed, never stored), now works — BUG-BE-005. `SCOPE: BOTH`. | **APPLIED, 2026-09-14** |
+| CR-085 | 2026-09-16 | User | Notification hygiene from the "missing modules" brief: a **Test SMS** endpoint and a Settings card that finally puts both `mail/test` and `sms/test` on screen; **Twilio status** and **SendGrid event** webhooks so `DELIVERED` / `READ` / `FAILED` are set for the app-wide channels, not only Meta's; one `DeliveryStatusService` holding the forward-only rule for all three. Rode along: BUG-FE-039, BUG-FE-040, BUG-BE-006. `SCOPE: BOTH`. | **APPLIED, 2026-09-16** |
 ---
 
 
@@ -5133,3 +5134,88 @@ viewport. Fixed to `data?.points?.length`, and the dashboard suite now
 includes the "none of my endpoints answered" case so it cannot rely on its
 own happy-path stub again. Dashboard suite **52** assertions; full suite
 **246/246** on an isolated build.
+
+---
+
+## CR-085 — Every outgoing channel can be tested from Settings, and every provider reports delivery (APPLIED 2026-09-16)
+
+**Raised by:** User — the "Senior Lead Engineer" brief, Phase 1 item 4:
+*"Add a Test SMS button in Settings and wire up delivery-status webhooks for
+Twilio/SendGrid."* **Type:** SPECIFICATION CHANGE, backend + frontend. No
+migration: `notification_log` already had `provider_message_id` and the
+`DELIVERED` / `READ` statuses since CR-056; nothing ever set them for SMS or
+email.
+
+### What was actually missing
+
+The brief assumed email had a Test button and SMS did not. Neither did:
+`POST /v1/settings/mail/test` has existed since CR-038 and **no frontend
+code ever called it**. So the card built here carries both.
+
+### Test SMS
+
+`POST /v1/settings/sms/test?toMobileNo=` → `SmsDiagnosticResponse`
+(`status`, `toMobileNo`, `providerMessageId`, `detail`). Goes through the
+real `SmsNotificationProvider`, so it answers about the path real messages
+take: LOGGED_ONLY names whether `SMS_ENABLED=false` (CR-077) or missing
+`TWILIO_*` is the reason; FAILED carries Twilio's own text ("21608 -
+unverified trial number"). Synchronous and never throws, like the mail one.
+
+`MessagingDiagnosticsCard` in Settings (behind `SETTINGS_MANAGE`): an email
+field and a mobile field, each with its own button and a verdict line —
+badge in the status's tone, the provider's words verbatim.
+
+### Delivery-status webhooks
+
+| Provider | Endpoint | Authenticity | Maps |
+|---|---|---|---|
+| Twilio | `POST /v1/webhooks/twilio/status` (form) | `X-Twilio-Signature` = base64(HMAC-SHA1(auth token, public URL + sorted fields)) | delivered → DELIVERED, read → READ, failed / undelivered → FAILED |
+| SendGrid | `POST /v1/webhooks/sendgrid/events` (JSON array) | Signed Event Webhook: ECDSA P-256 over timestamp + body, `SENDGRID_WEBHOOK_PUBLIC_KEY` | delivered → DELIVERED, open → READ, bounce / dropped → FAILED |
+
+Both **fail closed**: a blank secret refuses every event, the rule
+`WhatsAppWebhookController` set. Both are `permitAll` in `SecurityConfig`
+for the reason the Meta and Razorpay webhooks are.
+
+Twilio only calls back if asked: `SmsNotificationProvider` adds
+`StatusCallback` to each send when `APP_PUBLIC_BASE_URL` is set. Blank
+means no callback and rows stay SENT — every existing deployment behaves
+as before. The property is setter-injected so the provider's constructors
+(used by three test classes) did not change.
+
+Twilio and SendGrid are app-wide (CR-074), so their callbacks carry no
+tenant; rows are found by **channel + provider message id**
+(`findByChannelAndProviderMessageId`). The id space is the provider's, so a
+guessed id cannot cross tenants. SendGrid's `sg_message_id` is
+`<X-Message-Id>.filter…`; the prefix before the first dot is the id the
+send recorded.
+
+### One rule, three providers
+
+`DeliveryStatusService` now holds the forward-only progression (SENT →
+DELIVERED → READ; FAILED only from SENT; a late DELIVERED never regresses a
+READ). It moved out of `WhatsAppWebhookController`, which had it inline and
+— it turned out — **untested**; `DeliveryStatusServiceImplTest` pins it for
+all three.
+
+### Hygiene that rode along (same brief, Phase 1)
+
+- **BUG-FE-039** `hasAvatar` on `/me`; no more avatar 404 per page load.
+- **BUG-FE-040** the supplier wizard's double spinner.
+- **BUG-BE-006** the `product ↔ invoice` cycle, broken with
+  `ProductSaleHistoryProvider` and kept broken by `PackageCycleTest`.
+
+### Files
+
+Backend: `DeliveryStatusService(+Impl)`, `NotificationWebhookProperties`,
+`TwilioStatusWebhookController`, `SendGridEventWebhookController`,
+`SmsDiagnosticController/Service(+Impl)/Response`, `SmsNotificationProvider`,
+`WhatsAppWebhookController`, `NotificationLogRepository`, `SecurityConfig`,
+`application.yml`. Frontend: `MessagingDiagnosticsCard`,
+`messagingDiagnosticService`, `ShopSettingsPage`. Tests:
+`ProviderWebhookSignatureTest` (7), `DeliveryStatusServiceImplTest` (4).
+
+### Verified
+
+See the commit bodies; the branch's `mvn clean verify` runs once in a
+detached worktree before the merge to `main`. `registry/static_check.py`
+**not executed** (no python3).

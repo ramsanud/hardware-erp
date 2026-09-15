@@ -96,9 +96,12 @@ generating new code; never reintroduce a listed bug.
 | BUG-FE-036 | Frontend | Medium | Fixed 2026-09-09 |
 | BUG-FE-037 | Frontend | Medium | Fixed 2026-09-12 |
 | BUG-FE-038 | Frontend | Medium | Fixed 2026-09-14 |
+| BUG-FE-039 | Frontend | Low | Fixed 2026-09-16 |
+| BUG-FE-040 | Frontend | Low | Fixed 2026-09-16 |
 | BUG-BE-003 | Backend / Inventory | High | Fixed 2026-09-09 |
 | BUG-BE-004 | Backend / Common | Medium | Fixed 2026-09-09 |
 | BUG-BE-005 | Backend / Quotation | Medium | Fixed 2026-09-14 |
+| BUG-BE-006 | Backend / Architecture | Medium | Fixed 2026-09-16 |
 
 **This index is complete and covers every entry in this file (verified
 2026-09-08).** It previously stopped at `BUG-ENV-003`, omitting 33 later
@@ -3723,3 +3726,67 @@ creates a live and an expired draft and asserts each filter returns only its
 own — against the real query, since a mocked repository has no opinion about
 JPQL. `QuotationServiceImplTest.searchTranslatesExpiredIntoComputedExpiry`
 pins the translation one level down.
+
+---
+
+## BUG-FE-039 — every page load asked for an avatar that did not exist (FIXED, 2026-09-16)
+
+| | |
+|---|---|
+| **Severity** | Low — a 404 per navigation in the network log and the server log, for most accounts, forever |
+| **Layer** | BOTH — the response needed a field the client could act on |
+| **Found** | Live smoke on 2026-09-12 (recorded in RESUME_POINT as a candidate CR); fixed under the CR-085 hygiene pass |
+| **Symptom** | `GET /v1/auth/me/avatar` → 404 on the rail footer, the top bar and the profile page, on every route change, for any user who never uploaded a picture — which is nearly all of them |
+
+**Root cause.** `useAuthenticatedImage(avatarService.url, …)` fetched
+unconditionally; nothing on `/me` said whether there was anything to fetch.
+
+**Fix.** `UserResponse.hasAvatar`, computed only on the current-user paths
+(login, refresh, `/me` — `UserAvatarRepository.existsById`), false from the
+plain mapper so a user list never pays a query per row for a picture it does
+not draw. The three consumers pass `null` to the hook unless `hasAvatar`; the
+profile page refreshes `/me` after an upload or removal before bumping the
+cache-busting version, so the flag is never stale.
+
+**Regression test.** `navigation/sidebar.spec.mjs`: with the fixture user
+(`hasAvatar: false`), three routes produce zero requests to `/me/avatar`.
+
+---
+
+## BUG-FE-040 — two spinners on the supplier wizard's save button (FIXED, 2026-09-16)
+
+| | |
+|---|---|
+| **Severity** | Low — cosmetic, but it is the button every supplier is created with |
+| **Layer** | FRONTEND ONLY |
+| **Found** | Noticed during CR-053 phase 2 and recorded as "worth a one-line fix"; fixed under the CR-085 hygiene pass |
+
+**Root cause.** `SupplierWizard` passed `loading={submitting}` to `Button`,
+which renders its own spinner, *and* rendered a second `<Loader2>` inside the
+button's children. `RegisterPage`'s wizard, written later, did not repeat it.
+
+**Fix.** The hand-rolled spinner and its import are gone; `Button`'s `loading`
+prop is the one source of the spinner, as everywhere else.
+
+---
+
+## BUG-BE-006 — the product module depended on the invoice module that depends on it (FIXED, 2026-09-16)
+
+| | |
+|---|---|
+| **Severity** | Medium — a package cycle; neither module could be compiled, tested or reasoned about alone |
+| **Layer** | BACKEND ONLY |
+| **Found** | The 2026-09-02 architecture audit named it; nothing was done until the CR-085 hygiene pass |
+| **Symptom** | `ProductServiceImpl` injected `InvoiceItemRepository` and imported `InvoiceStatus` for one method, `priceHistory()`, while `invoice` imports `product` for every line item |
+
+**Fix.** Dependency inversion: `product.service.ProductSaleHistoryProvider`
+declares what product needs to know ("the most recent non-cancelled sales
+of this product"); `invoice.service.impl.InvoiceProductSaleHistoryProvider`
+implements it with the same query and the same exclusion of cancelled
+invoices. `product` now imports nothing from `invoice`; the endpoint, the
+DTO and the behaviour are unchanged.
+
+**Regression test.** `architecture/PackageCycleTest` scans the product
+sources and fails on any import from `invoice`, `quotation`, `salesorder`,
+`deliverychallan`, `creditnote` or `payment` — the modules that all point at
+product. No library; runs in the unit tier.
