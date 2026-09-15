@@ -1,5 +1,22 @@
 # RESUME POINT
 
+**Updated:** 2026-09-15 (**CR-084 — every dashboard sparkline is now a measurement**). `SCOPE: BOTH`, migration **V56**.
+
+## CR-084 — the last two placeholders became measured (2026-09-15)
+
+Pending Payments' line reads `outstandingPaise` now carried on every
+revenue-trend bucket (no new endpoint). Low Stock Alerts' line and delta
+read `low_stock_snapshot` — one row per tenant per day, written at 00:15
+IST by `LowStockSnapshotJob` and taken lazily on first read — via
+`GET /v1/analytics/low-stock-trend` (`INVENTORY_VIEW`). Two traps avoided
+on the way: a self-invoked `REQUIRES_NEW` (BUG-BE-002 again) and an INSERT
+inside the analytics service's class-level `readOnly` transaction.
+`LowStockTrendIT` 4/4, `LowStockSnapshotJobTest` 2/2, frontend 272/272.
+**Full `mvn clean verify` not run this pass** — run it before tagging.
+`API_REGISTRY` gained the tenant analytics rows it never had.
+
+---
+
 **Updated:** 2026-09-15, early (**branch consolidation audit: every branch is on `main`; the CR-078 WIP is not mergeable yet**). `SCOPE: BOTH` (no code change to `main`).
 
 ## Branch consolidation audit (2026-09-15)
