@@ -95,6 +95,8 @@ export interface UserResponse {
   permissions: string[];
   status: UserStatus;
   mustChangePassword: boolean;
+  /** BUG-FE-039. True only when /me/avatar would answer 200; the shell asks for the image only then. */
+  hasAvatar: boolean;
   lastLoginAt?: string | null;
   createdAt?: string | null;
 }

@@ -52,6 +52,7 @@ class AuthServiceImplTest {
 
     @Mock private UserRepository userRepository;
     @Mock private RefreshTokenRepository refreshTokenRepository;
+    @Mock private com.hardware.erp.auth.repository.UserAvatarRepository avatarRepository;
     @Mock private PasswordResetTokenRepository resetTokenRepository;
     @Mock private MailService mailService;
     @Mock private SecurityAuditService auditService;

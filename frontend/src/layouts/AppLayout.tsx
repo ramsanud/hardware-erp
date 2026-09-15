@@ -41,7 +41,9 @@ function AppLayoutInner() {
   const tour = useOnboardingTour();
   const pageTips = usePageTips();
   const { avatarVersion, brandName } = useAppChrome();
-  const avatarSrc = useAuthenticatedImage(avatarService.url, avatarVersion);
+  // BUG-FE-039: only ask for the image when /me says one exists - every page
+  // load used to fire a GET that 404ed for the majority of accounts.
+  const avatarSrc = useAuthenticatedImage(user?.hasAvatar ? avatarService.url : null, avatarVersion);
   const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);

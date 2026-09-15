@@ -5,6 +5,7 @@ import com.hardware.erp.auth.entity.*;
 import com.hardware.erp.auth.mapper.UserMapper;
 import com.hardware.erp.auth.repository.PasswordResetTokenRepository;
 import com.hardware.erp.auth.repository.RefreshTokenRepository;
+import com.hardware.erp.auth.repository.UserAvatarRepository;
 import com.hardware.erp.auth.repository.UserRepository;
 import com.hardware.erp.auth.service.AuthService;
 import com.hardware.erp.auth.service.MailService;
@@ -45,6 +46,7 @@ public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserAvatarRepository avatarRepository;
     private final PasswordResetTokenRepository resetTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -250,7 +252,7 @@ public class AuthServiceImpl implements AuthService {
                 "Bearer",
                 jwtService.accessTokenSeconds(),
                 user.isMustChangePassword(),
-                userMapper.toUserResponse(user));
+                userMapper.toUserResponse(user, avatarRepository.existsById(user.getId())));
     }
 
     // =================================================================
@@ -354,7 +356,7 @@ public class AuthServiceImpl implements AuthService {
                 "Bearer",
                 jwtService.accessTokenSeconds(),
                 user.isMustChangePassword(),
-                userMapper.toUserResponse(user));
+                userMapper.toUserResponse(user, avatarRepository.existsById(user.getId())));
     }
 
     // =================================================================
@@ -534,7 +536,7 @@ public class AuthServiceImpl implements AuthService {
     @Transactional(readOnly = true)
     public UserResponse currentUser(Long userId) {
         return userRepository.findById(userId)
-                .map(userMapper::toUserResponse)
+                .map(user -> userMapper.toUserResponse(user, avatarRepository.existsById(userId)))
                 .orElseThrow(() -> new ResourceNotFoundException("User", userId));
     }
 

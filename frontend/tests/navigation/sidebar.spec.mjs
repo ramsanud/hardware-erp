@@ -89,6 +89,22 @@ export default async function run() {
     }
 
     await page.context().close();
+
+    // BUG-FE-039. The fixture user has no avatar (hasAvatar: false on /me),
+    // so no view of the shell - rail footer, top bar, profile page - may ask
+    // /me/avatar for one. Before the fix every page load fired that GET and
+    // took a 404 for it.
+    {
+      const avatarPage = await newPage(browser, { viewport: { width: 1440, height: 900 }, api: signedInApi() });
+      const avatarRequests = [];
+      avatarPage.on('request', (r) => { if (r.url().includes('/v1/auth/me/avatar')) avatarRequests.push(r.method()); });
+      for (const route of ['/dashboard', '/products', '/profile']) {
+        await avatarPage.goto(BASE + route, { waitUntil: 'networkidle', timeout: 20000 });
+      }
+      s.check('no avatar request is made for an account that has no avatar',
+        avatarRequests.length === 0, `${avatarRequests.length} request(s) to /me/avatar`);
+      await avatarPage.context().close();
+    }
   });
 
   return s;

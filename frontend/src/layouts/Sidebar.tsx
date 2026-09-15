@@ -380,7 +380,7 @@ export function SidebarBrand({ collapsed = false, onToggleCollapsed }: SidebarBr
 export function SidebarFooter({ collapsed = false }: { collapsed?: boolean }) {
   const { user } = useAuth();
   const { avatarVersion } = useAppChrome();
-  const avatarSrc = useAuthenticatedImage(user ? avatarService.url : null, avatarVersion);
+  const avatarSrc = useAuthenticatedImage(user?.hasAvatar ? avatarService.url : null, avatarVersion);
 
   return (
     <div className={cn('border-t border-sidebar-border', collapsed ? 'p-2' : 'p-3')}>
