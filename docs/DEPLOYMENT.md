@@ -193,8 +193,23 @@ giving up early.
 
 ## 4. Keep-alive and health monitoring
 
-Two independent pingers, because free-tier sleep is what will make the app
+Three independent pingers, because free-tier sleep is what will make the app
 look broken in front of a client.
+
+### Built in — the app pings itself (CR-096, nothing to set up)
+
+On Render the backend pings its own `/api/actuator/health` every 10 minutes
+(`RenderKeepAliveTask`, configured from the `RENDER_EXTERNAL_URL` Render
+injects). While the instance is up it therefore never idles out, and each
+ping runs the database health check, which is what keeps Supabase from
+pausing too.
+
+**What it cannot do is wake a sleeping instance** — the scheduler is inside
+the container that is asleep. After a failed deploy, a Render-side restart,
+or the month's free instance-hours running out, only an outside request
+brings it back. That is why the two external monitors below are still
+required, not optional. `KEEP_ALIVE_ENABLED=false` in the Render dashboard
+switches the self-ping off.
 
 ### Primary — UptimeRobot (recommended)
 

@@ -89,6 +89,7 @@ Nothing is implemented from conversation memory.
 | CR-081 | 2026-09-12 | User | The approved sign-in design, implemented: a 50/50 split with a forest-green hero over a shop interior, a new post-and-lintel H brand mark (also the favicon and the sidebar fallback), and one `AuthCard` shell for all six auth screens. Default colour theme becomes Emerald so a first-time visitor sees the brand. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-12** |
 | CR-082 | 2026-09-13 | User | The approved dashboard design and app shell, implemented on tokens: shop identity card and grouped rail with a user footer, greeting eyebrow and live shop-time chip, eight KPI cards with real-series sparklines and week-over-week deltas, Quick actions and Recent actions cards. Widget titles renamed to counter-staff language. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-13** |
 | CR-083 | 2026-09-14 | User | Quotations list upgraded: four KPI cards from a new `GET /v1/quotations/stats`, status pills, date-range presets, CSV export, a row action menu (PDF, WhatsApp, convert, edit, delete), an illustrated empty state with CTAs. `DELETE /v1/quotations/{id}` for drafts only. The `status=EXPIRED` filter, which could never match (EXPIRED is computed, never stored), now works — BUG-BE-005. `SCOPE: BOTH`. | **APPLIED, 2026-09-14** |
+| CR-096 | 2026-09-16 | User | Render free-tier keep-alive from inside the app: a scheduled self-ping of `/api/actuator/health` every 10 minutes, auto-configured from the `RENDER_EXTERNAL_URL` Render injects, off everywhere else. Complements — cannot replace — the external pingers in `docs/DEPLOYMENT.md` §4, because a scheduler inside a sleeping container cannot wake it. | **APPLIED, 2026-09-16** |
 ---
 
 
@@ -5133,3 +5134,71 @@ viewport. Fixed to `data?.points?.length`, and the dashboard suite now
 includes the "none of my endpoints answered" case so it cannot rely on its
 own happy-path stub again. Dashboard suite **52** assertions; full suite
 **246/246** on an isolated build.
+
+
+## CR-096 — Render free-tier keep-alive from inside the app (APPLIED 2026-09-16)
+
+**Raised by:** User, with a draft `RenderKeepAliveTask` and the complaint
+that the Render service keeps going to sleep and has to be woken by hand.
+**Type:** operational, backend + configuration. No `.tsx`, no migration, no
+endpoint. `SCOPE: BACKEND ONLY`.
+
+### What the draft got right and what it could not do
+
+The idea is sound: a request to the service's own public URL every 10
+minutes is inbound traffic to Render's edge, so an awake free instance never
+reaches the 15-minute idle mark. What no in-process scheduler can do is
+**wake** the instance: it is asleep in the same container. The existing
+answer to that — UptimeRobot as primary, `keepalive.yml` on GitHub Actions
+as backup (`docs/DEPLOYMENT.md` §4) — needs one-time manual setup, and on
+2026-09-14 the live service was observed cold-starting for 3½ minutes, so
+that setup has evidently never been done. Both halves are needed; this CR
+ships the half that needs nothing configured.
+
+### What was built
+
+- `config/KeepAliveProperties` (`app.keep-alive.*`): `enabled` (default
+  true), `base-url` — `${KEEP_ALIVE_BASE_URL:${RENDER_EXTERNAL_URL:}}`, so on
+  Render it is the origin Render injects and everywhere else it is blank —
+  and `interval-ms` (600 000). `healthUrl()` is the **only** place a URL is
+  formed: a bare `https` origin plus the fixed `/api/actuator/health`.
+  `http`, a path, userinfo, a query, a fragment, no scheme, or garbage all
+  yield "not configured" rather than a best guess.
+- `config/RenderKeepAliveTask`: `@ConditionalOnExpression` on a non-blank
+  base URL and `enabled`, so dev, test, docker-compose and self-hosted never
+  construct it. `java.net.http` with a 10 s connect and 30 s request
+  timeout, no redirects, `fixedDelay` (never overlapping) with a 120 s
+  initial delay so a cold start finishes first. Failures log a WARN and are
+  swallowed — the next tick is the retry and the external monitors are what
+  report outages. Success is DEBUG.
+- `render.yaml` comment block and `docs/DEPLOYMENT.md` §4 rewritten as
+  three pingers, stating plainly what the built-in one cannot do.
+
+### Why the draft was not used as written
+
+`new RestTemplate()` has no timeouts, and `@Scheduled` runs on Spring's
+single scheduler thread — a hung ping would have stalled `TokenCleanupJob`
+behind it indefinitely. `@EnableScheduling` on a component duplicates the
+one on `HardwareErpApplication`. The URL was a hard-coded placeholder to a
+path that does not exist (`/api/health`; the real one is
+`/api/actuator/health`). It would have run in every profile, including the
+test suite. `System.out` bypasses the log pattern that carries the request
+id.
+
+### Not hackable — what that means here
+
+There is no endpoint, no request parameter and no tenant row involved; the
+target comes from an environment variable set by the platform, is validated
+to be an https origin, and the path is a constant. The health endpoint it
+hits is already public and answers `{"status":"UP"}` with `show-details:
+never`. Redirects are not followed, so a compromised DNS answer cannot
+steer the client anywhere else. `KEEP_ALIVE_ENABLED=false` turns it off
+without needing to unset a variable Render owns.
+
+### Verified
+
+Unit: `KeepAlivePropertiesTest` (15) and `RenderKeepAliveTaskTest` (5).
+Full `mvn -o clean verify` on the branch worktree: **599 unit (0 F, 2
+skipped) + 238 IT (0 F)**, BUILD SUCCESS. The built jar booted under
+`prod,cloud` four ways — see `RESUME_POINT.md` for the observed log lines.
+`static_check.py` not executed (no python3).
