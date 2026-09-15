@@ -1,5 +1,49 @@
 # RESUME POINT
 
+**Updated:** 2026-09-16 (**CR-096 — Render free-tier keep-alive from inside the app**). `SCOPE: BACKEND ONLY`.
+
+## CR-096 — the app pings itself so Render does not idle it out (2026-09-16)
+
+The user brought a draft `RenderKeepAliveTask` (RestTemplate, hard-coded
+URL, `@EnableScheduling` on the component) with the complaint that the
+Render service sleeps and has to be woken by hand. Built properly on
+branch `feature/cr-096-render-keep-alive` in worktree
+`E:/Project/hardware-erp-keepalive` (this checkout had been switched to
+`feature/cr-086-reports` by another session):
+
+- `config/KeepAliveProperties` + `config/RenderKeepAliveTask`: constructed
+  only when `app.keep-alive.base-url` is non-blank, which on Render is the
+  injected `RENDER_EXTERNAL_URL` and nowhere else is anything. Only a bare
+  `https` origin is accepted; the path is the constant
+  `/api/actuator/health`. 10 s connect / 30 s request timeouts, no
+  redirects, `fixedDelay` 10 min, 120 s initial delay, failures WARN and
+  swallowed. `KEEP_ALIVE_ENABLED=false` switches it off.
+- **It cannot wake a sleeping instance** — the scheduler sleeps with it.
+  UptimeRobot / `keepalive.yml` (DEPLOYMENT.md §4) remain required and, as
+  far as the 3½-minute cold start seen on 2026-09-14 shows, have never been
+  set up. That is the single most useful thing the owner can still do.
+
+**Verified**: `KeepAlivePropertiesTest` 15 + `RenderKeepAliveTaskTest` 5;
+full `mvn -o clean verify` on the branch worktree **599 unit (0 F, 2
+skipped) + 238 IT (0 F)**, BUILD SUCCESS. The jar booted under `prod,cloud`
+against PostgreSQL 16 four ways: 
+  - `RENDER_EXTERNAL_URL=https://…` → "Keep-alive self-ping active: GET …/api/actuator/health every 600s", and 120 s later the first tick: "answered HTTP 404" — Render's edge answering for a host that does not exist, i.e. the request really left over https;
+  - variable absent → no keep-alive line at all (bean not constructed);
+  - `KEEP_ALIVE_ENABLED=false` → none;
+  - `http://…` → "is not a plain https origin … No self-ping will be sent."
+
+`static_check.py` not executed (no python3).
+
+**Number allocation note**: CR-085 (erp-completion), 086/087 (reports),
+088–092 (saas-platform) and 093–095 (reserved for erp-completion by a
+cross-session message) were all taken on branches that are not on `main`;
+CR-096 was the first number free across every ref and worktree. Grep all
+of `E:/Project/hardware-erp*` before claiming the next one.
+
+---
+
+**Previous entry follows.**
+
 **Updated:** 2026-09-15, early (**branch consolidation audit: every branch is on `main`; the CR-078 WIP is not mergeable yet**). `SCOPE: BOTH` (no code change to `main`).
 
 ## Branch consolidation audit (2026-09-15)

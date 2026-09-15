@@ -290,6 +290,19 @@ app:
   support:
     admin-email: ${SUPPORT_ADMIN_EMAIL:}
 
+  # CR-096 - self-ping so a Render free-tier instance does not idle out.
+  # base-url is the service's own public https origin. Render injects
+  # RENDER_EXTERNAL_URL into every web service, so on Render this is on with
+  # nothing to set; dev, test, docker-compose and a self-hosted box have no
+  # such variable, leave it blank, and the task is never constructed.
+  # KEEP_ALIVE_ENABLED=false switches it off where the variable cannot be
+  # unset (on Render itself, e.g. to spend the free instance-hours elsewhere).
+  # Only an https origin is accepted - see KeepAliveProperties.healthUrl().
+  keep-alive:
+    enabled: ${KEEP_ALIVE_ENABLED:true}
+    base-url: ${KEEP_ALIVE_BASE_URL:${RENDER_EXTERNAL_URL:}}
+    interval-ms: 600000
+
   cleanup:
     cron: "0 0 2 * * *"
     expired-token-grace-days: 7

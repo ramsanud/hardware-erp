@@ -52,6 +52,15 @@ services:
     healthCheckPath: /api/actuator/health
 
     envVars:
+      # ---- keep-alive (CR-096) -------------------------------------------
+      # Nothing to set. Render injects RENDER_EXTERNAL_URL into this service
+      # and application.yml reads it as app.keep-alive.base-url, so the app
+      # pings its own /api/actuator/health every 10 minutes and never idles
+      # out while it is up. It cannot wake itself once asleep (after a
+      # deploy failure, a Render restart, or exhausted free hours), which is
+      # what the external monitor in docs/DEPLOYMENT.md section 4 is for -
+      # set that up too. KEEP_ALIVE_ENABLED=false turns the self-ping off.
+
       # 'prod' owns the security posture; 'cloud' adds what is specific to a
       # managed database (CR-059): sslmode=require, pooler-shaped connection
       # defaults, a Hikari pool sized for a pooler rather than for a local
