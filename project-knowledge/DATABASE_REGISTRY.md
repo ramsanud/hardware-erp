@@ -1224,3 +1224,53 @@ the repository's `upsert` (`@Transactional` on the interface method), not
 the job — a `REQUIRES_NEW` on the job would be self-invoked from its own
 loop and never cross the proxy (BUG-BE-002). `lowStockTrend()` is the one
 read-write method in an otherwise `readOnly` service, for that INSERT.
+
+## V59 — subscription plans, feature catalogue, tenant subscription state (CR-088, 2026-09-16)
+
+Seven tables. `tenant.subscription_tier` (V15, FREE/PRO/MAX, locked) is
+unchanged in shape; these tables layer price, feature membership, status
+and metered usage around it rather than replacing it.
+
+| Table | Purpose |
+|---|---|
+| `subscription_plan` | BASIC/PRO/PREMIUM — `plan_code`, `tier` (maps 1:1 onto the locked enum), `price_paise`, `billing_period`, `recommended`, `display_order`. Seeded, `UNIQUE(plan_code)`/`UNIQUE(tier)`. |
+| `feature` | The catalogue — `feature_key` (mirrors `FeatureKey.java`), name, description, module, display order. |
+| `plan_feature` | Plan ↔ feature membership. BASIC carries every feature with `display_order < 100`, PRO `< 200`, PREMIUM everything — seeded from that rule, editable afterward as plain rows. |
+| `plan_usage_limit` | Plan ↔ metered channel (`WHATSAPP`/`SMS`/`EMAIL`/`AI_REQUEST`/`STORAGE_MB`) → included count per calendar month. |
+| `subscription_usage` | `UNIQUE(tenant_id, usage_key, period_start)` — one counter per tenant/channel/month, incremented atomically (`INSERT … ON CONFLICT DO UPDATE … WHERE used_count + :units <= :includedCount`) so two concurrent sends cannot both squeeze under the limit. |
+| `tenant_subscription` | One row per tenant — `status` (TRIAL/ACTIVE/PAST_DUE/EXPIRED/CANCELLED/SUSPENDED), `trial_ends_at`, `renewal_at`, `cancelled_at`/`cancellation_reason`, `external_subscription_id`/`payment_status`/`payment_reference` (gateway hooks, never card data). `UNIQUE(tenant_id)`. Backfilled for every existing tenant: ACTIVE on its current tier, or TRIAL if it had a CR-032 coupon trial in progress. |
+| `subscription_history` | Append-only — every plan/status transition, from/to, reason, who. |
+
+`notification_log.status` CHECK gained `QUOTA_EXCEEDED` (a metered channel
+refused before the provider was ever called — a distinct outcome from
+`FAILED`, a real provider error).
+
+**The single writer.** `SubscriptionLifecycleServiceImpl.applyTier()` /
+`startForNewTenant()` are the only code paths that set
+`tenant.subscription_tier` — the CR-027 Shop Settings picker, CR-032's
+coupon redemption, CR-057's Razorpay verification and tenant registration
+all call in rather than touching the tenant row directly, so
+`tenant_subscription` and the locked tier can never drift apart. `applyTier`
+is plain `@Transactional` (not `REQUIRES_NEW`) specifically so a
+newly-registered tenant's very first subscription row commits in the same
+transaction as the tenant insert itself — a `REQUIRES_NEW` there would try
+to FK-reference a tenant row its own suspended transaction cannot yet see.
+`currentFor()` (the lazy TRIAL/PAST_DUE/EXPIRED transition check, mirroring
+CR-032's `SubscriptionServiceImpl.currentTier()`) is the one method that
+does use `REQUIRES_NEW`, because it alone is reached from `readOnly`
+callers (`FeatureAccessServiceImpl.effectivePlan()`).
+
+**A real bug this caught, not just a design intent.** `tenant_subscription
+.plan` is `@ManyToOne(fetch = LAZY)`. `currentFor()`'s `REQUIRES_NEW`
+transaction loaded it and returned the entity to `effectivePlan()`'s own
+(different) transaction — reading the now-orphaned lazy proxy there threw
+`LazyInitializationException`, caught by `SubscriptionControllerIT` (a real
+Postgres session), not by the unit tests (which mock the repository).
+Fixed with `JOIN FETCH ts.plan` in `TenantSubscriptionRepository
+.findByTenantId`.
+
+Seed (`V905`): tenant 1 set to `PREMIUM`/`ACTIVE` so every existing
+integration test that exercises a Premium-only path (quotations, credit
+notes, AI) keeps working now that those are plan-gated; plan-gating itself
+is tested against freshly-registered shops on each tier, never against
+tenant 1.

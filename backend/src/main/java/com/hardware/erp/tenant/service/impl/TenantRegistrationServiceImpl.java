@@ -14,6 +14,7 @@ import com.hardware.erp.legal.LegalDocumentVersions;
 import com.hardware.erp.legal.entity.ConsentType;
 import com.hardware.erp.legal.entity.UserConsent;
 import com.hardware.erp.legal.repository.UserConsentRepository;
+import com.hardware.erp.subscription.service.SubscriptionLifecycleService;
 import org.springframework.http.HttpStatus;
 import com.hardware.erp.tenant.dto.IdentifierAvailabilityResponse;
 import com.hardware.erp.tenant.dto.TenantRegistrationRequest;
@@ -144,6 +145,7 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
     private final UserConsentRepository userConsentRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SubscriptionLifecycleService subscriptionLifecycleService;
 
     @Override
     @Transactional
@@ -165,6 +167,19 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 .status(TenantStatus.ACTIVE)
                 .subscriptionTier(request.subscriptionTier() != null ? request.subscriptionTier() : SubscriptionTier.FREE)
                 .build());
+
+        // CR-088. subscriptionTier on the request is the legacy self-declared
+        // choice (CR-027, predates the plan catalogue) - honoured as an
+        // immediate ACTIVE plan with no trial. Every other new shop gets the
+        // configured trial policy (app.subscription.trial-days/-tier). Either
+        // way this call joins THIS transaction rather than starting its own -
+        // see SubscriptionLifecycleService.startForNewTenant()'s own note on
+        // why: tenant is not committed yet.
+        if (request.subscriptionTier() != null) {
+            subscriptionLifecycleService.startForNewTenant(tenant.getId(), request.subscriptionTier());
+        } else {
+            subscriptionLifecycleService.startForNewTenant(tenant.getId());
+        }
 
         // "OWNER gets every permission that exists" - except the DEVELOPER
         // module, which is not an ERP capability (CR-045). Without this

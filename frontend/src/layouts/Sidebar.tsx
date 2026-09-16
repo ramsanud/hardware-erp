@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import {
-  Boxes, Calculator, CalendarCheck, ChevronDown, ChevronRight, ClipboardList, Coins, FileClock, FileDown, FileText,
-  HardHat, History, KeyRound, Landmark, LayoutDashboard, Layers, LifeBuoy, MessageCircle, Package, PackageSearch,
-  PanelLeftClose, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Store, Tags, TerminalSquare, Ticket, TrendingUp,
-  Truck, UserCheck, Users, Wallet,
+  Boxes, Calculator, CalendarCheck, ChevronDown, ChevronRight, ClipboardList, Coins, CreditCard, FileClock, FileDown,
+  FileText, HardHat, History, KeyRound, Landmark, LayoutDashboard, Layers, LifeBuoy, MessageCircle, Package,
+  PackageSearch, PanelLeftClose, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Store, Tags, TerminalSquare,
+  Ticket, TrendingUp, Truck, UserCheck, Users, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
@@ -12,6 +12,7 @@ import { AUTH_ROUTES, PERMISSIONS } from '@/modules/auth/constants';
 import { DEVELOPER_ROUTES } from '@/modules/developer/constants';
 import { SUPPORT_ROUTES } from '@/modules/support/constants';
 import { SETTINGS_ROUTES } from '@/modules/settings/constants';
+import { SUBSCRIPTION_ROUTES } from '@/modules/subscription/constants';
 import { brandService } from '@/modules/settings/services/brandService';
 import { avatarService } from '@/modules/auth/services/avatarService';
 import { whatsAppConnectionService } from '@/modules/settings/services/whatsAppConnectionService';
@@ -118,6 +119,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: AUTH_ROUTES.auditLog, label: 'Security log', icon: FileClock, permission: PERMISSIONS.AUDIT_VIEW, available: true },
       { to: AUTH_ROUTES.activityLog, label: 'Activity log', icon: History, permission: PERMISSIONS.AUDIT_VIEW, available: true },
       { to: SETTINGS_ROUTES.shop, label: 'Shop settings', icon: Settings, permission: PERMISSIONS.SETTINGS_VIEW, available: true },
+      { to: SUBSCRIPTION_ROUTES.pricing, label: 'Subscription', icon: CreditCard, permission: PERMISSIONS.SETTINGS_VIEW, available: true },
     ],
   },
   {

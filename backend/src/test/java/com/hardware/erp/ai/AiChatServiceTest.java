@@ -6,13 +6,16 @@ import com.hardware.erp.auth.entity.Role;
 import com.hardware.erp.auth.entity.RoleStatus;
 import com.hardware.erp.auth.entity.User;
 import com.hardware.erp.auth.entity.UserStatus;
-import com.hardware.erp.common.exception.BusinessException;
 import com.hardware.erp.security.AppUserDetails;
-import com.hardware.erp.tenant.entity.SubscriptionTier;
+import com.hardware.erp.subscription.entity.FeatureKey;
+import com.hardware.erp.subscription.entity.UsageKey;
+import com.hardware.erp.subscription.exception.FeatureNotAvailableException;
+import com.hardware.erp.subscription.exception.UsageLimitReachedException;
+import com.hardware.erp.subscription.service.FeatureAccessService;
+import com.hardware.erp.subscription.service.UsageTrackingService;
 import com.hardware.erp.tenant.entity.Tenant;
 import com.hardware.erp.tenant.entity.TenantStatus;
 import com.hardware.erp.tenant.repository.TenantRepository;
-import com.hardware.erp.tenant.service.SubscriptionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,7 +26,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -44,7 +46,8 @@ class AiChatServiceTest {
 
     @Mock private ChatCompletionClient chatCompletionClient;
     @Mock private AiToolRegistry toolRegistry;
-    @Mock private SubscriptionService subscriptionService;
+    @Mock private FeatureAccessService featureAccessService;
+    @Mock private UsageTrackingService usageTrackingService;
     @Mock private TenantRepository tenantRepository;
 
     @InjectMocks private AiChatService aiChatService;
@@ -57,6 +60,7 @@ class AiChatServiceTest {
                 .status(TenantStatus.ACTIVE).build();
         when(tenantRepository.findById(1L)).thenReturn(Optional.of(tenant));
         when(toolRegistry.availableTo(any())).thenReturn(List.of());
+        when(usageTrackingService.tryConsume(eq(1L), eq(UsageKey.AI_REQUEST))).thenReturn(true);
 
         Role role = Role.builder().id(1L).code("OWNER").name("Owner").systemRole(true)
                 .status(RoleStatus.ACTIVE).permissions(new LinkedHashSet<>()).build();
@@ -73,15 +77,29 @@ class AiChatServiceTest {
     }
 
     @Test
-    @DisplayName("a tenant below the Max tier is rejected before any AI call is made")
-    void rejectsBelowMaxTier() {
-        doThrow(new BusinessException("Needs Max plan", HttpStatus.PAYMENT_REQUIRED, "SUBSCRIPTION_TIER_REQUIRED"))
-                .when(subscriptionService).requireTier(SubscriptionTier.MAX);
+    @DisplayName("a tenant below the Premium plan is rejected before any AI call is made")
+    void rejectsWithoutAiFeature() {
+        doThrow(new FeatureNotAvailableException(FeatureKey.AI_FEATURES.name(), "AI assistant",
+                "BASIC", "Basic", "PREMIUM", "Premium"))
+                .when(featureAccessService).requireFeature(FeatureKey.AI_FEATURES);
 
         assertThatThrownBy(() -> aiChatService.reply(List.of(), "What's my outstanding balance?"))
-                .isInstanceOf(BusinessException.class);
+                .isInstanceOf(FeatureNotAvailableException.class);
 
         verifyNoInteractions(chatCompletionClient);
+    }
+
+    @Test
+    @DisplayName("a Premium tenant that has used its included AI requests is refused before any call is made")
+    void rejectsWhenUsageLimitReached() {
+        when(chatCompletionClient.isConfigured()).thenReturn(true);
+        doThrow(new UsageLimitReachedException(UsageKey.AI_REQUEST.name(), "AI requests", 50, 50))
+                .when(usageTrackingService).consumeOrThrow(1L, UsageKey.AI_REQUEST);
+
+        assertThatThrownBy(() -> aiChatService.reply(List.of(), "Hello"))
+                .isInstanceOf(UsageLimitReachedException.class);
+
+        verify(chatCompletionClient, never()).chat(any(), any(), any(), any());
     }
 
     @Test
@@ -96,7 +114,7 @@ class AiChatServiceTest {
     }
 
     @Test
-    @DisplayName("a Max-tier tenant with a configured provider gets the model's real answer")
+    @DisplayName("a Premium tenant with a configured provider gets the model's real answer")
     void delegatesToConfiguredProvider() {
         when(chatCompletionClient.isConfigured()).thenReturn(true);
         when(chatCompletionClient.chat(anyString(), any(), eq("Hello"), any()))
@@ -105,7 +123,8 @@ class AiChatServiceTest {
         String reply = aiChatService.reply(List.of(), "Hello");
 
         assertThat(reply).isEqualTo("Hi! How can I help with Default Shop today?");
-        verify(subscriptionService).requireTier(SubscriptionTier.MAX);
+        verify(featureAccessService).requireFeature(FeatureKey.AI_FEATURES);
+        verify(usageTrackingService).consumeOrThrow(1L, UsageKey.AI_REQUEST);
     }
 
     /** Never offered to the LLM at all if the tool would 403 anyway - not just filtered after the fact. */

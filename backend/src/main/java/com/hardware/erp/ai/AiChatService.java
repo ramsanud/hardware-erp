@@ -4,10 +4,12 @@ import com.hardware.erp.ai.tool.AiTool;
 import com.hardware.erp.ai.tool.AiToolRegistry;
 import com.hardware.erp.security.AppUserDetails;
 import com.hardware.erp.security.SecurityUtils;
-import com.hardware.erp.tenant.entity.SubscriptionTier;
+import com.hardware.erp.subscription.entity.FeatureKey;
+import com.hardware.erp.subscription.entity.UsageKey;
+import com.hardware.erp.subscription.service.FeatureAccessService;
+import com.hardware.erp.subscription.service.UsageTrackingService;
 import com.hardware.erp.tenant.entity.Tenant;
 import com.hardware.erp.tenant.repository.TenantRepository;
-import com.hardware.erp.tenant.service.SubscriptionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -27,17 +29,23 @@ public class AiChatService {
 
     private final ChatCompletionClient chatCompletionClient;
     private final AiToolRegistry toolRegistry;
-    private final SubscriptionService subscriptionService;
+    private final FeatureAccessService featureAccessService;
+    private final UsageTrackingService usageTrackingService;
     private final TenantRepository tenantRepository;
 
     public String reply(List<AiChatMessage> history, String message) {
-        subscriptionService.requireTier(SubscriptionTier.MAX);
+        featureAccessService.requireFeature(FeatureKey.AI_FEATURES);
 
         if (!chatCompletionClient.isConfigured()) {
             return "The AI assistant isn't set up yet - ask whoever manages this system to add an AI provider API key.";
         }
 
         AppUserDetails user = SecurityUtils.requireCurrentUser();
+        // CR-088 §15 - every AI request is metered even though it is a real
+        // LLM API call this application pays for; a shop past its included
+        // count is told plainly rather than the platform silently absorbing
+        // more calls.
+        usageTrackingService.consumeOrThrow(user.getTenantId(), UsageKey.AI_REQUEST);
         List<AiTool> availableTools = toolRegistry.availableTo(user::hasPermission);
 
         String shopName = tenantRepository.findById(user.getTenantId())

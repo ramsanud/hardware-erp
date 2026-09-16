@@ -1,5 +1,56 @@
 # RESUME POINT
 
+**Updated:** 2026-09-16 (**CR-088 — SaaS subscription plans & feature gating, applied**). `SCOPE: BOTH`, migration **V59**. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas` (forked from `main`@`d676f6f`, before CR-085/086/087 landed there — this branch does not yet carry those, reconcile at merge time).
+
+## CR-088 done; CR-089/090/091/092 next — see `docs/IMPLEMENTATION_TASKS_CR-088_to_CR-092.md`
+
+The five-CR plan behind this branch is the `hallo.txt` brief (Nearby
+Product Discovery, Smart Substitute, SaaS Subscription Plans, Critical
+Business Logic completion). **CR-088 is fully done and verified**: plan
+catalogue, `FeatureAccessService`, usage metering, lifecycle service, the
+`/v1/subscriptions/*` + `/v1/features/*` API, the pricing page + upgrade
+dialog. `mvn clean verify` on this exact tree: **601 unit + 250
+integration, BUILD SUCCESS**; frontend `tsc -b --force` clean, `vite
+build` clean, `node tests/run.mjs` **272/272** (no dedicated Playwright
+suite yet for the new Subscription page — the existing 9 suites are
+unaffected). Full write-up: `project-knowledge/CHANGE_REQUEST_REGISTRY.md`'s
+CR-088 entry, `docs/SUBSCRIPTION_FEATURE_MATRIX.md`.
+
+**One real bug the integration test caught that the unit tests could not**:
+`TenantSubscription.plan` (lazy `@ManyToOne`) crossed a transaction/session
+boundary from `currentFor()`'s `REQUIRES_NEW` back into
+`effectivePlan()`'s own transaction and threw `LazyInitializationException`
+on the very first real HTTP call. Fixed with `JOIN FETCH` in
+`TenantSubscriptionRepository.findByTenantId`. Lesson: a plan/feature
+service this central needs at least one real `@SpringBootTest` IT, not
+only mocked-repository unit tests, before it is trusted.
+
+**Migration numbering coordination, 2026-09-15/16**: this branch forked
+before CR-086/087 (which used V57/V58 on `feature/cr-086-reports`), so
+V59-V63 are reserved for CR-088-092 here to avoid a collision at merge
+time — confirmed with the concurrent session on that branch. CR-093+ is
+free for whoever picks up CR-085's Collections/barcode/i18n items. CR-096
+(Render keep-alive) is also taken and merged to `main`, unrelated to this
+branch's numbers.
+
+**Node modules**: this worktree's `frontend/node_modules` is a symlink to
+`E:/Project/hardware-erp/frontend/node_modules` (identical `package-lock
+.json`, confirmed by diff) rather than a fresh `npm install` — faster, and
+safe as long as the lockfiles stay identical between the two checkouts.
+Re-run `npm ci` here instead if they ever diverge.
+
+**Next**: CR-089 (Smart Substitute Product Suggestion) — product attribute
+columns, `pg_trgm`, manual mappings, rule-based scoring engine, product
+requests. Then CR-090 (Nearby Discovery), CR-091 (GST split/ledger/profit/
+offline sync — reuse the existing CGST/SGST split and place-of-supply rule
+from `InvoicePdfService`/`Gstr1Service` rather than a second
+implementation, per the concurrent session's note), CR-092 (multi-branch +
+insights + backup). Each follows CR-088's shape: migration, entities,
+service, controller, unit tests, at least one real `@SpringBootTest` IT,
+frontend page, registry body, tick the task-doc checkboxes, commit.
+
+---
+
 **Updated:** 2026-09-15 (**CR-084 — every dashboard sparkline is now a measurement**). `SCOPE: BOTH`, migration **V56**.
 
 ## CR-084 — the last two placeholders became measured (2026-09-15)

@@ -134,7 +134,12 @@ public class SecurityConfig {
                             // Razorpay calls this with no JWT of ours either -
                             // authenticity is the X-Razorpay-Signature HMAC check
                             // inside SubscriptionBillingService.handleWebhook().
-                            "/v1/webhooks/razorpay").permitAll()
+                            "/v1/webhooks/razorpay",
+                            // CR-088. The pricing page is shown before login.
+                            // Prices, names and feature lists only, no tenant
+                            // data. Every other /v1/subscriptions/* and
+                            // /v1/features/* path still requires auth.
+                            "/v1/subscriptions/plans").permitAll()
                     // /actuator/health is the hosting platform's liveness probe
                     // and must answer before anyone signs in. The API browser is
                     // public only where it is served at all - application-prod.yml

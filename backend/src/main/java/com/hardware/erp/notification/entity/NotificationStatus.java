@@ -14,5 +14,7 @@ public enum NotificationStatus {
      */
     DELIVERED,
     /** CR-056 - set only by a real Meta "read" webhook event, same rule as DELIVERED. */
-    READ
+    READ,
+    /** CR-088 §15 - refused before the provider was ever called: the shop's plan-included count for this channel is used up this month. */
+    QUOTA_EXCEEDED
 }

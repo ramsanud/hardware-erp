@@ -155,7 +155,7 @@ public class WhatsAppWebhookController {
 
     private int rank(NotificationStatus status) {
         return switch (status) {
-            case LOGGED_ONLY, FAILED -> -1;
+            case LOGGED_ONLY, FAILED, QUOTA_EXCEEDED -> -1;
             case SENT -> 0;
             case DELIVERED -> 1;
             case READ -> 2;

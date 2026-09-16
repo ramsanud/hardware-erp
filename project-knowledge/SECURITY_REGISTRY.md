@@ -502,3 +502,35 @@ it afterwards.
 frontend's `hasPermission` check only hides a card the server would refuse
 anyway. No endpoint in this feature accepts a tenant id, so the blast radius is
 structurally limited to the caller's own shop.
+Every plan-gated capability is enforced by `FeatureAccessService
+.requireFeature(FeatureKey)` on the backend, inside the service method that
+does the work — never only by hiding a sidebar entry or disabling a button.
+The frontend's lock badges and `useFeatureGate` upgrade dialog are UX only;
+the spec's own hard rule ("frontend hiding is only for user experience and
+is NOT security") is enforced structurally here, not by convention: a Basic
+shop that crafts a raw `POST /v1/ai/chat` gets `403 FEATURE_NOT_AVAILABLE`
+regardless of what the sidebar shows it, proven by `SubscriptionControllerIT`
+calling the API directly with no UI in the loop.
+
+**No tenant id is ever accepted** on `/v1/subscriptions/*` or
+`/v1/features/*` — every read and write resolves the caller's own tenant from
+`SecurityUtils.requireCurrentTenantId()`, the same pattern every other
+tenant-scoped controller in this codebase follows. `SubscriptionControllerIT
+.currentSubscriptionIsTenantIsolated` proves two shops on different plans
+each see only their own.
+
+**Expiry never deletes data.** `EXPIRED`/`CANCELLED`/`SUSPENDED` fall back to
+the Basic feature set (`FeatureAccessServiceImpl.effectivePlan()`), and
+`DATA_EXPORT` is deliberately a Basic-tier feature so an expired shop can
+still take its own records away — matching the project's existing "financial
+records are never hard-deleted" invariant, extended to "a subscription
+lapsing is not a data-loss event."
+
+**Metered usage** (`UsageTrackingService`) is checked and incremented
+atomically in SQL *before* any paid external provider (WhatsApp/SMS/email/AI)
+is ever called — a shop at its plan's included limit is refused
+(`429 USAGE_LIMIT_REACHED` for AI, logged `QUOTA_EXCEEDED` for
+notifications) rather than the platform silently absorbing the extra cost.
+Two concurrent sends cannot both squeeze under the limit: the increment is a
+single `INSERT … ON CONFLICT DO UPDATE … WHERE used_count + :units <=
+:includedCount`, not a read-then-write in Java.

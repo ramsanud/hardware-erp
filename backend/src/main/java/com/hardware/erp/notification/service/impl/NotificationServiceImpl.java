@@ -65,6 +65,7 @@ public class NotificationServiceImpl implements NotificationService {
     private final List<NotificationProvider> providers;
     private final NotificationLogRepository notificationLogRepository;
     private final TenantRepository tenantRepository;
+    private final com.hardware.erp.subscription.service.UsageTrackingService usageTrackingService;
 
     @Value("${app.support.admin-email:}")
     private String adminEmail;
@@ -298,7 +299,14 @@ public class NotificationServiceImpl implements NotificationService {
         NotificationProvider provider = providersByChannel.get(channel);
         NotificationStatus status;
         String providerMessageId = null;
-        if (provider == null) {
+        // CR-088 §15 - metered before the provider is ever called, so a shop
+        // past its plan's included count for this channel is never silently
+        // billed onward.
+        if (provider != null
+                && !usageTrackingService.tryConsume(tenantId, com.hardware.erp.subscription.entity.UsageKey.forChannel(channel))) {
+            log.warn("Usage limit reached for channel {} on tenant {} - message logged, not sent", channel, tenantId);
+            status = NotificationStatus.QUOTA_EXCEEDED;
+        } else if (provider == null) {
             log.warn("No notification provider registered for channel {}", channel);
             status = NotificationStatus.FAILED;
         } else {

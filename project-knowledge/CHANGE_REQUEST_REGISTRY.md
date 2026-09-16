@@ -90,6 +90,14 @@ Nothing is implemented from conversation memory.
 | CR-082 | 2026-09-13 | User | The approved dashboard design and app shell, implemented on tokens: shop identity card and grouped rail with a user footer, greeting eyebrow and live shop-time chip, eight KPI cards with real-series sparklines and week-over-week deltas, Quick actions and Recent actions cards. Widget titles renamed to counter-staff language. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-13** |
 | CR-083 | 2026-09-14 | User | Quotations list upgraded: four KPI cards from a new `GET /v1/quotations/stats`, status pills, date-range presets, CSV export, a row action menu (PDF, WhatsApp, convert, edit, delete), an illustrated empty state with CTAs. `DELETE /v1/quotations/{id}` for drafts only. The `status=EXPIRED` filter, which could never match (EXPIRED is computed, never stored), now works — BUG-BE-005. `SCOPE: BOTH`. | **APPLIED, 2026-09-14** |
 | CR-084 | 2026-09-15 | User | The two placeholder sparklines become measured. Pending Payments: `outstandingPaise` per bucket on the existing revenue-trend response (same invoices, `sum(balance_paise)`). Low Stock Alerts: a daily `low_stock_snapshot` per tenant (V56, scheduled job, lazily taken on first read) behind `GET /v1/analytics/low-stock-trend`. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
+| CR-085 | 2026-09-15 | User | *(claimed by the concurrent session on feature/cr-085-erp-completion — Test-SMS endpoint, DeliveryStatusService, Twilio/SendGrid status webhooks.)* | **IN PROGRESS** |
+| CR-086 | 2026-09-15 | User | Reports module: Day Book, Receivables Ageing, Stock Valuation, Purchase Register and GST Summary as tenant-scoped SQL aggregations under `GET /v1/reports/*`, each downloadable as PDF or Excel from the same figures the screen shows. Gated on `REPORT_VIEW`. Sidebar "Reports" goes live. `SCOPE: BOTH`. | **IN PROGRESS, 2026-09-15** |
+| CR-087 | 2026-09-15 | User | GSTR-1 offline-tool JSON (`b2b`, `b2cl`, `b2cs`, `cdnr`, `cdnur`, `hsn`) for a return period, and Modulo-36 GSTIN checksum validation shared by customer, supplier and shop settings on both layers. `SCOPE: BOTH`. | **IN PROGRESS, 2026-09-15** |
+| CR-088 | 2026-09-15 | User | SaaS subscription plans & feature gating: `subscription_plan` (BASIC ₹299 / PRO ₹599 / PREMIUM ₹999, INR, monthly, prices in the table, mapped onto the locked `SubscriptionTier` FREE/PRO/MAX), `feature` + `plan_feature` catalogue, `tenant_subscription` (TRIAL/ACTIVE/PAST_DUE/EXPIRED/CANCELLED/SUSPENDED, gateway references), `subscription_usage` metering for WhatsApp/SMS/email/AI. Central `FeatureAccessService.requireFeature()` → 403 `FEATURE_NOT_AVAILABLE` with current/required plan. `/v1/subscriptions/*`, `/v1/features/{key}/access`. Pricing page + upgrade dialog + locked sidebar entries. `SCOPE: BOTH`, migration V59. Worktree `hardware-erp-saas`, branch `feature/cr-088-saas-platform`. | **IN PROGRESS, 2026-09-15** |
+| CR-089 | 2026-09-15 | User | Smart Substitute Product Suggestion (PREMIUM): structured product attributes, `product_relationship` manual mappings, `product_request` + `product_request_suggestion` audit, rule-based + manual-mapping strategies behind `RecommendationStrategy`, configurable weights/threshold, pg_trgm fuzzy name match, compare/select flow. `SCOPE: BOTH`, migration V60. | **IN PROGRESS, 2026-09-15** |
+| CR-090 | 2026-09-15 | User | Owner-side Nearby Product Discovery (PREMIUM, opt-in, OFF by default): `shop_discovery_setting` consent flags + coordinates + radius, Haversine radius search over opted-in shops' availability (Available/Likely/Unavailable, never quantities or prices), `product_request_discovery_match`, owner-only notification, Call/WhatsApp contact with only the permitted fields. Consent changes audited. `SCOPE: BOTH`, migration V61. | **IN PROGRESS, 2026-09-15** |
+| CR-091 | 2026-09-15 | User | Critical business logic completion: CGST/SGST/IGST split per line & invoice with place of supply frozen on the invoice; invoice cancellation reason/by/at; `customer_ledger_entry` (invoice, payment, credit note, cancellation) with statement + ageing computed from the ledger; weighted-average cost frozen on each invoice line (`cost_price_paise`) and a revenue/COGS/gross/expenses/net profit endpoint; offline sync (`sync_transaction`, client UUID idempotency, conflict detection) with an IndexedDB outbox on the frontend. `SCOPE: BOTH`, migration V62. | **IN PROGRESS, 2026-09-15** |
+| CR-092 | 2026-09-15 | User | PREMIUM growth pack: multi-branch (`branch`, `branch_stock`, stock transfer, branch-wise sales/purchases/users/reports), smart insights (slow-moving, overstock, reorder, demand trend, frequently-bought-together, pricing insight — all measured), daily business summary notification, tenant backup history + on-demand export snapshot. `SCOPE: BOTH`, migration V63. | **IN PROGRESS, 2026-09-15** |
 ---
 
 
@@ -5200,3 +5208,96 @@ targeted test classes were.
 `API_REGISTRY.md` had **no rows at all** for the tenant analytics endpoints
 (`/v1/analytics/*`, CR-048). Added summary, revenue-trend and
 sales-by-category alongside the new one.
+---
+
+## CR-088 — SaaS subscription plans & feature gating (2026-09-16, APPLIED)
+
+**Raised by:** User (the "Hardware ERP — SaaS Subscription Plans & Feature
+Gating" brief). **Type:** new cross-cutting subsystem, both layers.
+`SCOPE: BOTH`, migration **V59**. Worktree `hardware-erp-saas`, branch
+`feature/cr-088-saas-platform`.
+
+### What it is
+
+BASIC (₹299) / PRO (₹599) / PREMIUM (₹999) as real, database-driven plans —
+price, tagline, feature membership and metered-usage limits are rows
+(`subscription_plan`, `feature`, `plan_feature`, `plan_usage_limit`), not
+constants scattered through the code. `tenant.subscription_tier` (V15,
+locked FREE/PRO/MAX, CR-027) is **unchanged in shape** and maps 1:1 onto the
+three plans; CR-088 layers status (TRIAL/ACTIVE/PAST_DUE/EXPIRED/CANCELLED/
+SUSPENDED), trial/renewal/cancellation dates, gateway references and metered
+usage around it in a new `tenant_subscription` row, plus an append-only
+`subscription_history`.
+
+### Central gate, not a scattered `if`
+
+`FeatureAccessService.requireFeature(FeatureKey)` is the one place any
+backend code checks plan access — `POST /v1/ai/chat` is the first (and only,
+so far) consumer, moved off the old ordinal `SubscriptionService
+.requireTier(MAX)` onto `FeatureKey.AI_FEATURES`. A refusal is `403
+FEATURE_NOT_AVAILABLE` carrying `featureKey`/`currentPlanCode`/
+`requiredPlanCode` in the error body's `errors` map, which the frontend's
+`UpgradeDialog` renders directly — proactively via `GET /v1/features/
+{key}/access` too, so the dialog can appear before a 403 ever happens.
+Frontend hiding (a sidebar lock badge, `useFeatureGate`) is UX only; every
+claim is proven against the raw API in `SubscriptionControllerIT`, not the
+UI.
+
+### Usage metering (spec §15 — "do not promise unlimited usage")
+
+`UsageTrackingService.tryConsume()`/`consumeOrThrow()` atomically increments
+`subscription_usage` in one `INSERT … ON CONFLICT DO UPDATE … WHERE
+used_count + :units <= :includedCount` — two concurrent sends cannot both
+squeeze under the limit, and the counter is never a read-then-write in Java.
+Wired into `NotificationServiceImpl.attempt()` (WhatsApp/SMS/email, logged
+`QUOTA_EXCEEDED` when refused rather than silently retried) and
+`AiChatService.reply()` (AI requests, `429 USAGE_LIMIT_REACHED`) — both
+checked **before** the paid provider is ever called.
+
+### The single writer, kept honest across four call sites
+
+`SubscriptionLifecycleServiceImpl.applyTier()` / `startForNewTenant()` are
+now the only code that sets `tenant.subscription_tier`. Four existing call
+sites that used to write it directly were changed to call in instead:
+the CR-027 Shop Settings picker, CR-032's trial-coupon redemption, CR-057's
+Razorpay payment verification, and tenant registration (both the trial path
+and the legacy explicit-tier field). `applyTier()` is plain `@Transactional`
+(not `REQUIRES_NEW`) precisely so registration's brand-new tenant row and
+its first subscription row commit together — a `REQUIRES_NEW` there would
+try to FK-reference a tenant its own suspended transaction cannot see yet.
+Only `currentFor()`'s lazy TRIAL/PAST_DUE/EXPIRED transition (mirroring
+CR-032's own `SubscriptionServiceImpl.currentTier()` precedent) uses
+`REQUIRES_NEW`, because it alone runs from `readOnly` callers.
+
+### A real bug, caught by the IT and not the unit tests
+
+`TenantSubscription.plan` is lazy; the `REQUIRES_NEW` transition above
+handed a lazy proxy back across a session boundary, throwing
+`LazyInitializationException` on the very first `POST /v1/ai/chat` an
+integration test made. The unit tests (mocked repositories) never exercise
+a real Hibernate session and could not have caught it. Fixed with `JOIN
+FETCH` in `TenantSubscriptionRepository.findByTenantId` — see
+`project-knowledge/DATABASE_REGISTRY.md`'s V59 entry for the write-up.
+
+### Verified
+
+Backend: `FeatureAccessServiceImplTest` (6), `UsageTrackingServiceImplTest`
+(5), `SubscriptionLifecycleServiceImplTest` (8), `SubscriptionControllerIT`
+(8 — Basic/Pro → 403 on a Premium-only API, Premium → 200, tenant isolation,
+public plans catalogue, self-service upgrade, unauthenticated → 401). Full
+`mvn clean verify` on this exact tree: **601 unit + 242 integration, BUILD
+SUCCESS** (2026-09-16). Frontend: `tsc -b --force` clean, `vite build`
+clean, `node tests/run.mjs` **272/272** (all pre-existing suites, no
+regression — the new Subscription page has no dedicated Playwright suite
+yet).
+
+### Deliberately not built in this pass
+
+Per the brief's own §26 ("keep the system compatible with future scaling"),
+several items from the original prompt are architecturally supported but
+not wired end-to-end yet, recorded here rather than silently dropped:
+platform-admin price/feature editing UI (the tables support it; no console
+screen was built), a real payment-gateway-driven `renewal_at` recurrence
+(CR-057's Razorpay integration remains one-off checkout, matching its own
+documented scope), and sidebar lock badges on features that do not exist
+yet (Smart Substitute, Nearby Discovery, Multi-Branch — see CR-089/090/092).

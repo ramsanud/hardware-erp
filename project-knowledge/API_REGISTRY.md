@@ -815,3 +815,38 @@ viewer already answers "who changed what" with it.
 Regression tests: `ActivityLogTenantScopeIT` (6, including a foreign-tenant row
 and a null-tenant row proven invisible, and a `STAFF` caller refused) and
 `ActivityLogWriterPropagationIT` (1, BUG-BE-002).
+
+## CR-088 — SaaS subscription plans & feature gating
+
+Tenant-side endpoints resolve the tenant from `SecurityUtils.requireCurrentTenantId()` only.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/subscriptions/plans` | public | BASIC/PRO/PREMIUM catalogue - price, tagline, feature keys, usage limits. Shown before login (pricing page). |
+| GET | `/v1/subscriptions/current` | authenticated | This tenant's plan, status (TRIAL/ACTIVE/PAST_DUE/EXPIRED/CANCELLED/SUSPENDED), effective plan (falls back to Basic when the status does not grant paid features), usage this month, last 20 history rows. |
+| GET | `/v1/subscriptions/features` | authenticated | Feature keys the caller's *effective* plan carries. |
+| GET | `/v1/subscriptions/usage` | authenticated | Metered WhatsApp/SMS/email/AI usage this calendar month vs the plan's included count. |
+| POST | `/v1/subscriptions/upgrade` | `SETTINGS_MANAGE` | Body: `{planCode, reason?}`. `422 UPGRADE_REQUIRES_CHECKOUT` for an upgrade once a Razorpay gateway is configured (mirrors the existing `PUT /v1/settings` rule) - downgrades are always self-service. |
+| POST | `/v1/subscriptions/cancel` | `SETTINGS_MANAGE` | Body: `{reason}`. Status → CANCELLED, effective plan falls back to Basic, data is never deleted. Refused on Basic itself (nothing to cancel). |
+| GET | `/v1/features/{featureKey}/access` | authenticated | `{allowed, currentPlanCode, requiredPlanCode}` for one `FeatureKey` - lets the frontend show the upgrade dialog proactively. |
+
+`FeatureAccessService.requireFeature(FeatureKey)` is the single backend gate
+every plan-restricted endpoint calls (first consumer: `POST /v1/ai/chat`,
+moved off the old tier-ordinal `SubscriptionService.requireTier(MAX)` onto
+`FeatureKey.AI_FEATURES`, which is also now metered per request via
+`UsageTrackingService`). A refusal is `403 FEATURE_NOT_AVAILABLE` with
+`errors.featureKey/currentPlanCode/requiredPlanCode` in the body - the
+frontend's `UpgradeDialog` renders directly from that shape. A metered
+channel at its plan-included limit is `429 USAGE_LIMIT_REACHED` and the
+provider is never called. New `subscription_plan`/`feature`/`plan_feature`/
+`plan_usage_limit`/`tenant_subscription`/`subscription_usage`/
+`subscription_history` tables (V59); `tenant.subscription_tier` (V15,
+locked) is unchanged in shape and is now written only by
+`SubscriptionLifecycleService.applyTier()` - the Shop Settings picker,
+CR-032's coupon redemption, CR-057's Razorpay verification and registration
+all call it instead of setting the tenant row directly.
+
+Regression tests: `FeatureAccessServiceImplTest`, `UsageTrackingServiceImplTest`,
+`SubscriptionLifecycleServiceImplTest` (unit), `SubscriptionControllerIT` (8,
+Basic/Pro → 403 on `/v1/ai/chat`, Premium → 200, tenant isolation, public
+plans, self-service upgrade). See `docs/SUBSCRIPTION_FEATURE_MATRIX.md`.

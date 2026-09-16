@@ -202,6 +202,13 @@ app:
     password: ${APP_BOOTSTRAP_PASSWORD:}
     full-name: ${APP_BOOTSTRAP_NAME:Shop Owner}
 
+  # CR-088 - trial policy for a newly registered shop. trial-days: 0 turns
+  # trials off entirely (a new shop lands straight on Basic, ACTIVE).
+  subscription:
+    trial-days: ${APP_SUBSCRIPTION_TRIAL_DAYS:14}
+    trial-tier: ${APP_SUBSCRIPTION_TRIAL_TIER:MAX}
+    past-due-grace-days: ${APP_SUBSCRIPTION_PAST_DUE_GRACE_DAYS:7}
+
   mail:
     log-links-when-unconfigured: false
 

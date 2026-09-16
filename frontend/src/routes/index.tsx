@@ -40,6 +40,8 @@ import { ShopSettingsPage } from '@/modules/settings/pages/ShopSettingsPage';
 import { WhatsAppSettingsPage } from '@/modules/settings/pages/WhatsAppSettingsPage';
 import { NotificationHistoryPage } from '@/modules/notification/pages/NotificationHistoryPage';
 import { AppearancePage } from '@/modules/settings/pages/AppearancePage';
+import { SUBSCRIPTION_ROUTES } from '@/modules/subscription/constants';
+import { SubscriptionPage } from '@/modules/subscription/pages/SubscriptionPage';
 import { QUOTATION_ROUTES } from '@/modules/quotation/constants';
 import { QuotationListPage } from '@/modules/quotation/pages/QuotationListPage';
 import { QuotationDetailPage } from '@/modules/quotation/pages/QuotationDetailPage';
@@ -270,6 +272,7 @@ export function AppRoutes() {
             <Route path={SETTINGS_ROUTES.shop} element={<ShopSettingsPage />} />
             <Route path={SETTINGS_ROUTES.whatsapp} element={<WhatsAppSettingsPage />} />
             <Route path={SETTINGS_ROUTES.whatsappHistory} element={<NotificationHistoryPage />} />
+            <Route path={SUBSCRIPTION_ROUTES.pricing} element={<SubscriptionPage />} />
           </Route>
 
           {/* Developer inspection (CR-045). This gate is convenience only:

@@ -52,6 +52,31 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of(code, message, req.getRequestURI(), requestId(req)));
     }
 
+    /**
+     * CR-088. The frontend's upgrade dialog needs the feature/current/required
+     * plan alongside the message, so this is handled before the generic
+     * BusinessException case below (Spring dispatches to the most specific
+     * @ExceptionHandler present, so ordering in the file does not matter,
+     * but the dedicated handler must exist).
+     */
+    @ExceptionHandler(com.hardware.erp.subscription.exception.FeatureNotAvailableException.class)
+    public ResponseEntity<ErrorResponse> handleFeatureNotAvailable(
+            com.hardware.erp.subscription.exception.FeatureNotAvailableException ex, HttpServletRequest req) {
+        log.warn("[{}] FEATURE_NOT_AVAILABLE {} at {}", requestId(req), ex.getFeatureKey(), req.getRequestURI());
+        Map<String, String> details = new LinkedHashMap<>();
+        details.put("featureKey", ex.getFeatureKey());
+        details.put("featureName", ex.getFeatureName());
+        details.put("currentPlanCode", ex.getCurrentPlanCode());
+        details.put("currentPlanName", ex.getCurrentPlanName());
+        if (ex.getRequiredPlanCode() != null) {
+            details.put("requiredPlanCode", ex.getRequiredPlanCode());
+            details.put("requiredPlanName", ex.getRequiredPlanName());
+        }
+        return ResponseEntity.status(ex.getStatus()).body(new ErrorResponse(
+                false, ex.getMessage(), ex.getCode(), req.getRequestURI(), requestId(req),
+                java.time.OffsetDateTime.now(), details));
+    }
+
     /** Covers BusinessException and every subclass, including auth and not-found. */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusiness(BusinessException ex,
