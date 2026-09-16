@@ -11,6 +11,7 @@ import { PERMISSIONS } from '@/modules/auth/constants';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { substituteService } from '../services/substituteService';
 import { AlternativesPanel } from '../components/AlternativesPanel';
+import { NearbyAvailabilityPanel } from '@/modules/discovery/components/NearbyAvailabilityPanel';
 import { SUBSTITUTE_ROUTES } from '../constants';
 import type { ProductRequestResponse } from '../types';
 
@@ -88,6 +89,8 @@ export function ProductRequestDetailPage() {
         )}
       />
       <AlternativesPanel request={request} onChanged={setRequest} />
+      {/* CR-090 - the owner-only nearby view. Renders nothing at all on a plan without it. */}
+      <NearbyAvailabilityPanel requestId={request.id} requestOpen={request.status === 'OPEN'} />
     </div>
   );
 }

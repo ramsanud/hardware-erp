@@ -49,13 +49,13 @@ entry exist. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas`
 
 ## CR-090 — Nearby Product Discovery (V61)
 
-- [ ] `shop_discovery_setting` (5 consent flags, all false; latitude/longitude; radius km), `product_request_discovery_match`
-- [ ] `ShopDiscoveryService.discover(requestId)` — only opted-in tenants, Haversine within radius, availability bucket only, name/phone/location only when permitted
-- [ ] Owner notification row (`owner_notification`) + unread count; customer-facing response never contains matches
-- [ ] Consent changes → `activity_log`; disabling removes the shop from the next search immediately
-- [ ] APIs: `GET/PUT /v1/discovery/settings`, `POST /v1/product-requests/{id}/discover`, `GET /v1/product-requests/{id}/nearby`, `GET /v1/owner-notifications`, `POST …/{id}/read`
-- [ ] Frontend: Shop Settings "Product discovery sharing" card with explanation + double confirmation, Nearby availability panel with Call/WhatsApp, bell with owner notifications
-- [ ] Tests: `ShopDiscoveryServiceIT` (opt-out invisible, radius, fields withheld, cross-tenant leak check)
+- [x] `shop_discovery_setting` (5 consent flags, all false; latitude/longitude; radius km), `product_request_discovery_match`
+- [x] `ShopDiscoveryService.discover(requestId)` — only opted-in tenants, Haversine within radius, availability bucket only, name/phone/location only when permitted
+- [x] Owner notification row (`owner_notification`) + unread count; customer-facing response never contains matches
+- [x] Consent changes → `activity_log`; disabling removes the shop from the next search immediately
+- [x] APIs: `GET/PUT /v1/discovery/settings`, `POST /v1/product-requests/{id}/discover`, `GET /v1/product-requests/{id}/nearby`, `GET /v1/owner-notifications`, `POST …/{id}/read`
+- [x] Frontend: Shop Settings "Product discovery sharing" card with explanation + double confirmation (list of what is shared, then type ENABLE), Nearby availability panel with Call/WhatsApp, Notifications page in the sidebar utility list
+- [x] Tests: `ShopDiscoveryIT` (8 - opt-out invisible, radius, per-flag field withholding with a whole-body leak check, reciprocity, no-location refused, owner notified, Basic refused)
 
 ## CR-091 — Business logic completion (V62)
 

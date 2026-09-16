@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import {
-  Boxes, Calculator, CalendarCheck, ChevronDown, ChevronRight, ClipboardList, Coins, CreditCard, FileClock, FileDown,
+  Bell, Boxes, Calculator, CalendarCheck, ChevronDown, ChevronRight, ClipboardList, Coins, CreditCard, FileClock, FileDown,
   FileText, HardHat, History, KeyRound, Landmark, LayoutDashboard, Layers, LifeBuoy, MessageCircle, Package,
   PackageSearch, PanelLeftClose, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Store, Tags, TerminalSquare,
   Sparkles, Ticket, TrendingUp, Truck, UserCheck, Users, Wallet,
@@ -14,6 +14,7 @@ import { SUPPORT_ROUTES } from '@/modules/support/constants';
 import { SETTINGS_ROUTES } from '@/modules/settings/constants';
 import { SUBSCRIPTION_ROUTES } from '@/modules/subscription/constants';
 import { SUBSTITUTE_ROUTES } from '@/modules/substitute/constants';
+import { DISCOVERY_ROUTES } from '@/modules/discovery/constants';
 import { brandService } from '@/modules/settings/services/brandService';
 import { avatarService } from '@/modules/auth/services/avatarService';
 import { whatsAppConnectionService } from '@/modules/settings/services/whatsAppConnectionService';
@@ -147,6 +148,7 @@ const NAV_GROUPS: NavGroup[] = [
  */
 const UTILITY: NavItem[] = [
   { to: SETTINGS_ROUTES.whatsapp, label: 'WhatsApp Reminders', icon: MessageCircle, permission: PERMISSIONS.SETTINGS_VIEW, available: true },
+  { to: DISCOVERY_ROUTES.notifications, label: 'Notifications', icon: Bell, available: true },
   { to: SUPPORT_ROUTES.list, label: 'Help & Support', icon: LifeBuoy, available: true },
 ];
 

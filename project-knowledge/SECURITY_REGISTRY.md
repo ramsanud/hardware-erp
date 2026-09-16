@@ -534,3 +534,33 @@ notifications) rather than the platform silently absorbing the extra cost.
 Two concurrent sends cannot both squeeze under the limit: the increment is a
 single `INSERT … ON CONFLICT DO UPDATE … WHERE used_count + :units <=
 :includedCount`, not a read-then-write in Java.
+
+## CR-090 — the one deliberately cross-tenant read, and why it is safe
+
+Nearby Product Discovery lets one shop learn that another shop *may have a
+product*. Everything else about that shop stays invisible, and the rules
+are structural:
+
+- **Consent is in the SQL SELECT list**, not in a mapper: `CASE WHEN
+  d.share_shop_name THEN … ELSE NULL END` per field. A withheld field is
+  never read from the source row. Nothing but the availability bucket
+  (`AVAILABLE`/`LIKELY_AVAILABLE`), the matched product name and the
+  consented name/phone/distance is selected - no price, no quantity, no
+  supplier, no other product, no customer, and no source tenant id in any
+  response.
+- **Opt-in, all off by default**, enforced by `DEFAULT FALSE` on every flag
+  and a `CHECK` that forbids `discovery_enabled` without coordinates.
+  Disabling clears every sub-flag server-side so re-enabling cannot
+  silently re-share. Takes effect on the next search anyone runs.
+- **Reciprocity**: a shop that has not opted in cannot search, and its
+  refusal carries no match data (`ShopDiscoveryIT.nonParticipantCannotSearch`).
+- **The customer never crosses the boundary**: the request's customer
+  name/mobile are not in the search, the snapshot, the owner notification
+  or the wa.me link (which is a bare number with no pre-filled text).
+- **Every consent change is audited** with before/after in `activity_log`.
+- **Plan-gated** on `NEARBY_PRODUCT_DISCOVERY` (PREMIUM) inside the
+  service, so an internal caller is refused exactly like an HTTP one.
+
+Proven by `ShopDiscoveryIT` (8) against real PostgreSQL, including the
+whole-response-body assertion that a withheld name and phone appear
+nowhere in what the requester receives.

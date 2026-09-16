@@ -1,6 +1,39 @@
 # RESUME POINT
 
-**Updated:** 2026-09-16 (**CR-089 — Smart Substitute Product Suggestion, applied**). `SCOPE: BOTH`, migration **V60**. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas` (forked from `main`@`d676f6f`, before CR-085/086/087 landed there — this branch does not yet carry those, reconcile at merge time).
+**Updated:** 2026-09-16 (**CR-090 — Nearby Product Discovery, applied**). `SCOPE: BOTH`, migration **V61**. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas` (forked from `main`@`d676f6f`, before CR-085/086/087 landed there — this branch does not yet carry those, reconcile at merge time).
+
+## CR-090 done (2026-09-16)
+
+PREMIUM, opt-in, everything off by default. The one deliberately
+cross-tenant read in the system: `ShopDiscoveryRepository` is a native
+query whose SELECT list IS the consent policy (`CASE WHEN share_x THEN …
+ELSE NULL END` per field; only the AVAILABLE/LIKELY_AVAILABLE bucket ever
+selected; zero-stock shops absent; one row per shop; never the requester).
+Coordinates live on the consent row with a CHECK forbidding
+enabled-without-location. Disabling clears every sub-flag. Reciprocity: a
+shop not in the network cannot search it. The customer never crosses the
+boundary. Every consent change audited. Frontend: `DiscoverySharingCard`
+in Shop settings (explanation, five flags, geolocation, double confirm -
+list then type ENABLE), `NearbyAvailabilityPanel` on the request page
+(Call / WhatsApp, withheld fields say so), `/notifications` page.
+
+**Verified on this exact tree**: `mvn clean verify` **610 unit + 266
+integration, BUILD SUCCESS**; frontend `tsc` clean, `vite build` clean,
+`tests/run.mjs` 272/272. Write-up: CR-090 body in
+`CHANGE_REQUEST_REGISTRY.md`, `docs/NEARBY_PRODUCT_DISCOVERY.md`.
+
+**Caught by `ShopDiscoveryIT` on its first run**: `could not determine
+data type of parameter $3` - an untyped JDBC NULL in `? IS NOT NULL` for
+the nullable model/manufacturer-code parameters. `CAST(? AS VARCHAR)` at
+all four sites. Also: Jackson is `non_null`, so a withheld field is
+*absent* rather than `null` - `hasNonNull()` is the right assertion, and
+absent is the better privacy outcome anyway.
+
+**Remaining on this branch**: CR-091 (GST split / ledger / profit /
+offline sync, V62 - reuse ebafec6's split and place-of-supply rule),
+CR-092 (multi-branch + insights + backup, V63).
+
+---
 
 ## CR-089 done (2026-09-16)
 

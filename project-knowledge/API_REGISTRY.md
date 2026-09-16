@@ -874,3 +874,20 @@ Every `/v1/product-requests/*` and `/v1/substitute-settings` call is gated on `F
 Two new permissions in V60: `PRODUCT_REQUEST_VIEW` (OWNER/MANAGER/ACCOUNTANT/STAFF) and `PRODUCT_REQUEST_MANAGE` (OWNER/MANAGER/STAFF). `ProductRequest`/`ProductResponse` gained seven optional attribute fields (`subcategory`, `sizeLabel`, `material`, `colorFinish`, `shape`, `usageType`, `productType`) used by the scorer.
 
 Regression tests: `RuleBasedRecommendationStrategyTest` (9), `ProductRequestIT` (8). See `docs/SMART_SUBSTITUTE.md`.
+
+## CR-090 — Owner-side Nearby Product Discovery (PREMIUM, opt-in)
+
+The one deliberately cross-tenant read in the system. Consent is enforced in the search SQL's SELECT list (a field a shop did not consent to is never read), and no response ever carries another shop's tenant id, quantity or price. Full model: `docs/NEARBY_PRODUCT_DISCOVERY.md`.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/discovery/settings` | `SETTINGS_VIEW` | This shop's five consent flags (all false by default), coordinates, radius. Defaults returned before any row exists. |
+| PUT | `/v1/discovery/settings` | `SETTINGS_MANAGE` + `NEARBY_PRODUCT_DISCOVERY` | Enabling without a location is 422; disabling clears every sub-flag server-side. Before/after written to `activity_log`. Takes effect on the next search anyone runs. |
+| POST | `/v1/product-requests/{id}/discover` | `PRODUCT_REQUEST_MANAGE` + feature | Searches opted-in shops within this shop's radius, replaces the request's match snapshot, leaves an `owner_notification` when any were found. `searchUnavailable: true` + reason (no shops) when the caller's own shop is not opted in or has no location - reciprocity, never an error. |
+| GET | `/v1/product-requests/{id}/nearby` | `PRODUCT_REQUEST_VIEW` + feature | The snapshot: per shop `shopName`/`phone`/`whatsappUrl`/`distanceKm` (each absent unless that shop shared it), `matchedProductName`, `AVAILABLE`/`LIKELY_AVAILABLE`. |
+| GET | `/v1/owner-notifications?unreadOnly=` | authenticated | This shop's in-app notifications, newest first. |
+| GET | `/v1/owner-notifications/unread-count` | authenticated | `{unread}`. |
+| POST | `/v1/owner-notifications/{id}/read` | authenticated | 404 for another shop's row. |
+| POST | `/v1/owner-notifications/read-all` | authenticated | `{marked}`. |
+
+Regression tests: `ShopDiscoveryIT` (8).

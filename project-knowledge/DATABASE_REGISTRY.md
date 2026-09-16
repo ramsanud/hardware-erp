@@ -1313,3 +1313,25 @@ Honest deviation: the brief's "physical − reserved − pending allocation"
 availability assumes a reservation mechanism that does not exist here
 (Sales Order never reserves stock, CR-052). Availability is the real
 `stock.quantity_on_hand` (hard rule 12).
+
+## V61 — Nearby Product Discovery (CR-090, 2026-09-16)
+
+| Table | Purpose |
+|---|---|
+| `shop_discovery_setting` | `tenant_id` PK. `discovery_enabled`, `share_shop_name`, `share_phone`, `share_approximate_location`, `share_availability` - all `NOT NULL DEFAULT FALSE`. `latitude`/`longitude` `DECIMAL(9,6)` nullable with range CHECKs; `search_radius_km` CHECK 1-100, default 5. **`CHECK (discovery_enabled = FALSE OR (latitude IS NOT NULL AND longitude IS NOT NULL))`** - no code path can make a shop discoverable without a place to be discovered at. Partial index `WHERE discovery_enabled = TRUE`, the only rows the search scans. Coordinates are here, not on `tenant`, so a shop that never opted in stores no location. |
+| `product_request_discovery_match` | One row per (request, source shop): `matched_product_name`, `availability` CHECK (AVAILABLE/LIKELY_AVAILABLE), and `distance_km`/`shop_name`/`phone` **nullable - null when the source shop's flag was off at search time**, snapshotted so a later opt-out changes future searches, not this record. `source_tenant_id` is for audit/de-duplication only and is never serialised. `UNIQUE (product_request_id, source_tenant_id)`. |
+| `owner_notification` | Tenant-scoped in-app notification: `notification_type` CHECK (PRODUCT_DISCOVERY/DAILY_SUMMARY/LOW_STOCK/SYSTEM), title, body, optional reference, `read_at`. Index `(tenant_id, read_at, created_at)`. First writer is discovery; CR-092 adds the others. |
+
+**The search is a hand-written native query** (`ShopDiscoveryRepository`),
+not JPA, because the consent rules are in the SELECT list: `CASE WHEN
+d.share_shop_name THEN … ELSE NULL END` for each of name/phone/distance,
+only the availability bucket ever selected, `COALESCE(quantity, 0) > 0`
+so zero-stock shops are absent rather than "Unavailable", `row_number()
+PARTITION BY tenant_id` so one row per shop, `d.tenant_id <> requester`.
+Great-circle distance in SQL with the acos argument clamped to [-1, 1].
+Nullable JDBC parameters are `CAST(? AS VARCHAR)` - an untyped NULL in
+`? IS NOT NULL` is a PostgreSQL error, caught by `ShopDiscoveryIT` on its
+first run.
+
+**pg_trgm** (installed by V60) provides the name-similarity fallback
+(`> 0.45`) behind exact code/model/manufacturer-code matching.

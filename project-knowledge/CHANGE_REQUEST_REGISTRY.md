@@ -95,7 +95,7 @@ Nothing is implemented from conversation memory.
 | CR-087 | 2026-09-15 | User | GSTR-1 offline-tool JSON (`b2b`, `b2cl`, `b2cs`, `cdnr`, `cdnur`, `hsn`) for a return period, and Modulo-36 GSTIN checksum validation shared by customer, supplier and shop settings on both layers. `SCOPE: BOTH`. | **IN PROGRESS, 2026-09-15** |
 | CR-088 | 2026-09-15 | User | SaaS subscription plans & feature gating: `subscription_plan` (BASIC ₹299 / PRO ₹599 / PREMIUM ₹999, INR, monthly, prices in the table, mapped onto the locked `SubscriptionTier` FREE/PRO/MAX), `feature` + `plan_feature` catalogue, `tenant_subscription` (TRIAL/ACTIVE/PAST_DUE/EXPIRED/CANCELLED/SUSPENDED, gateway references), `subscription_usage` metering for WhatsApp/SMS/email/AI. Central `FeatureAccessService.requireFeature()` → 403 `FEATURE_NOT_AVAILABLE` with current/required plan. `/v1/subscriptions/*`, `/v1/features/{key}/access`. Pricing page + upgrade dialog + locked sidebar entries. `SCOPE: BOTH`, migration V59. Worktree `hardware-erp-saas`, branch `feature/cr-088-saas-platform`. | **APPLIED, 2026-09-16** |
 | CR-089 | 2026-09-15 | User | Smart Substitute Product Suggestion (PREMIUM): structured product attributes, `product_relationship` manual mappings, `product_request` + `product_request_suggestion` audit, rule-based + manual-mapping strategies behind `RecommendationStrategy`, configurable weights/threshold, pg_trgm fuzzy name match, compare/select flow. `SCOPE: BOTH`, migration V60. | **APPLIED, 2026-09-16** |
-| CR-090 | 2026-09-15 | User | Owner-side Nearby Product Discovery (PREMIUM, opt-in, OFF by default): `shop_discovery_setting` consent flags + coordinates + radius, Haversine radius search over opted-in shops' availability (Available/Likely/Unavailable, never quantities or prices), `product_request_discovery_match`, owner-only notification, Call/WhatsApp contact with only the permitted fields. Consent changes audited. `SCOPE: BOTH`, migration V61. | **IN PROGRESS, 2026-09-15** |
+| CR-090 | 2026-09-15 | User | Owner-side Nearby Product Discovery (PREMIUM, opt-in, OFF by default): `shop_discovery_setting` consent flags + coordinates + radius, Haversine radius search over opted-in shops' availability (Available/Likely/Unavailable, never quantities or prices), `product_request_discovery_match`, owner-only notification, Call/WhatsApp contact with only the permitted fields. Consent changes audited. `SCOPE: BOTH`, migration V61. | **APPLIED, 2026-09-16** |
 | CR-091 | 2026-09-15 | User | Critical business logic completion: CGST/SGST/IGST split per line & invoice with place of supply frozen on the invoice; invoice cancellation reason/by/at; `customer_ledger_entry` (invoice, payment, credit note, cancellation) with statement + ageing computed from the ledger; weighted-average cost frozen on each invoice line (`cost_price_paise`) and a revenue/COGS/gross/expenses/net profit endpoint; offline sync (`sync_transaction`, client UUID idempotency, conflict detection) with an IndexedDB outbox on the frontend. `SCOPE: BOTH`, migration V62. | **IN PROGRESS, 2026-09-15** |
 | CR-092 | 2026-09-15 | User | PREMIUM growth pack: multi-branch (`branch`, `branch_stock`, stock transfer, branch-wise sales/purchases/users/reports), smart insights (slow-moving, overstock, reorder, demand trend, frequently-bought-together, pricing insight — all measured), daily business summary notification, tenant backup history + on-demand export snapshot. `SCOPE: BOTH`, migration V63. | **IN PROGRESS, 2026-09-15** |
 ---
@@ -5387,3 +5387,56 @@ PostgreSQL, includes the `pg_trgm` migration, Basic → 403, tenant
 isolation with no customer-detail leak). Frontend `tsc -b --force` clean,
 `vite build` clean, `tests/run.mjs` 272/272. Full `mvn clean verify` result
 recorded in RESUME_POINT.
+
+---
+
+## CR-090 — Owner-side Nearby Product Discovery (2026-09-16, APPLIED)
+
+**Raised by:** User (the "Owner-Side Nearby Product Discovery / Product
+Sourcing" brief). **Type:** new PREMIUM feature, both layers. `SCOPE:
+BOTH`, migration **V61**. Branch `feature/cr-088-saas-platform`.
+
+### What it is
+
+When a shop is out of what a customer asked for (a CR-089 product
+request), the **owner** can search nearby participating shops and see, per
+shop, only what that shop chose to share: "Available"/"Likely available",
+optionally its name, phone (Call / WhatsApp) and "about N km". The customer
+sees nothing; there is no customer-facing surface. Opt-in, every flag off by
+default, double-confirmed on the way on, one click off, audited.
+
+### Why the privacy claims are structural
+
+The search is a hand-written native query whose SELECT list *is* the
+consent policy (`ShopDiscoveryRepository`): a field a shop did not consent
+to is never read; nothing but the availability bucket and the matched name
+is ever selected; zero-stock shops are absent rather than "Unavailable";
+one row per shop; never the requester; coordinates live on the consent row
+(with a `CHECK` forbidding enabled-without-location) rather than on
+`tenant`; disabling clears every sub-flag; a shop that is not in the
+network cannot search it (reciprocity); the customer's details are never in
+the search, the snapshot, the notification or the wa.me link. Full table in
+`docs/NEARBY_PRODUCT_DISCOVERY.md`, each row mapped to the line of SQL or
+schema that enforces it and the `ShopDiscoveryIT` case that proves it.
+
+### Caught by the IT on its first run
+
+`could not determine data type of parameter $3` - an untyped JDBC NULL for
+the nullable `model_no`/`manufacturer_code` parameters in `? IS NOT NULL`.
+PostgreSQL cannot infer the type; fixed with `CAST(? AS VARCHAR)` at all
+four sites. Five of eight tests hit it; the three that never reach the SQL
+(no-location, non-participant, Basic refused) were already green.
+
+### Honest deviations
+
+Approximate location is a distance, never a rounded pin (strictly less
+leakage than the brief allows). PostGIS not introduced - Haversine over
+the partial index is milliseconds at hundreds of shops; noted for scale.
+The owner alert is in-app only in this pass; push/WhatsApp/email delivery
+of it belongs with CR-092's notification work, metered by CR-088.
+
+### Verified
+
+`ShopDiscoveryIT` 8/8. Full `mvn clean verify` on this exact tree: **610
+unit + 266 integration, BUILD SUCCESS**. Frontend `tsc -b --force` clean,
+`vite build` clean, `tests/run.mjs` 272/272.

@@ -45,6 +45,8 @@ import { SubscriptionPage } from '@/modules/subscription/pages/SubscriptionPage'
 import { SUBSTITUTE_ROUTES } from '@/modules/substitute/constants';
 import { ProductRequestListPage } from '@/modules/substitute/pages/ProductRequestListPage';
 import { ProductRequestDetailPage } from '@/modules/substitute/pages/ProductRequestDetailPage';
+import { DISCOVERY_ROUTES } from '@/modules/discovery/constants';
+import { NotificationsPage } from '@/modules/discovery/pages/NotificationsPage';
 import { QUOTATION_ROUTES } from '@/modules/quotation/constants';
 import { QuotationListPage } from '@/modules/quotation/pages/QuotationListPage';
 import { QuotationDetailPage } from '@/modules/quotation/pages/QuotationDetailPage';
@@ -296,6 +298,9 @@ export function AppRoutes() {
           {/* CR-053 backlog item 7 - no permission gate, same reasoning as
               its sidebar entry: pure client-side arithmetic, no tenant data. */}
           <Route path={TOOLS_ROUTES.gstCalculator} element={<GstCalculatorPage />} />
+
+          {/* CR-090 - the shop's own notifications; any signed-in user, tenant-scoped server-side. */}
+          <Route path={DISCOVERY_ROUTES.notifications} element={<NotificationsPage />} />
 
           <Route element={<RequirePermission permission={PERMISSIONS.REPORT_FINANCIAL} />}>
             <Route path={TOOLS_ROUTES.tallyExport} element={<TallyExportPage />} />
