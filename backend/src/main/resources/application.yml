@@ -87,6 +87,13 @@ server:
     include-binding-errors: never
 
 app:
+  # BUG-OPS-001 (2026-09-16). Default false: a non-'prod' run refuses to
+  # migrate a managed database (DeploymentModeGuard) unless this is set.
+  # Deliberately not under app.deployment - this is a per-run "I mean it"
+  # override, not a property of which installation this is.
+  safety:
+    allow-non-prod-managed-db-migrate: ${APP_ALLOW_NON_PROD_MANAGED_DB_MIGRATE:false}
+
   # CR-059 - which of the two supported installations this is.
   #
   #   CLOUD       hosted SaaS: managed PostgreSQL (Supabase), HTTPS, billing live
