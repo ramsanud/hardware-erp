@@ -99,6 +99,7 @@ generating new code; never reintroduce a listed bug.
 | BUG-BE-003 | Backend / Inventory | High | Fixed 2026-09-09 |
 | BUG-BE-004 | Backend / Common | Medium | Fixed 2026-09-09 |
 | BUG-BE-005 | Backend / Quotation | Medium | Fixed 2026-09-14 |
+| BUG-OPS-001 | Backend / Config | High | Fixed 2026-09-16 |
 
 **This index is complete and covers every entry in this file (verified
 2026-09-08).** It previously stopped at `BUG-ENV-003`, omitting 33 later
@@ -3723,3 +3724,60 @@ creates a live and an expired draft and asserts each filter returns only its
 own — against the real query, since a mocked repository has no opinion about
 JPQL. `QuotationServiceImplTest.searchTranslatesExpiredIntoComputedExpiry`
 pins the translation one level down.
+
+## BUG-OPS-001 — a local run against the real Supabase project applied a migration Render's deployed build did not have (FIXED, 2026-09-16)
+
+| | |
+|---|---|
+| **Severity** | High — production schema drift. No data was lost or corrupted, but the deployed application and its database silently disagreed on schema version, which is exactly the class of defect `ddl-auto: validate` and Flyway's own checksum are meant to make impossible |
+| **Layer** | BACKEND ONLY |
+| **Found** | Investigating a `WARN` in Render's application log: `Schema "public" has a version (55) that is newer than the latest available migration (54)!` |
+| **Symptom** | Render's deployed build (built from `origin/main`, which had not been pushed past `4d0ae45`, 2026-09-09) had migrations only through V54. Supabase — the same project Render connects to — was at V55. Flyway does not fail on a schema ahead of the code (it warns and moves on), so the service kept booting and serving; nothing paged anyone |
+
+**Root cause.** `SPRING_PROFILES_ACTIVE=cloud,local` was run from this machine
+against the production `.env.cloud` connection details (at the user's
+request, to test the app against real hosted data). Flyway migrate runs on
+**every** boot regardless of who started the process or why — nothing
+distinguished "a developer pointed this at production to look at real data"
+from "this is the actual deployment" — so V55 (`activity_log_tenant_id`,
+CR-072) was applied straight to the production database from a laptop, one
+`git push` ahead of the code that was supposed to bring it there.
+
+Compounding it: `origin/main` on GitHub (what Render's git integration
+actually builds) had fallen 38 commits behind local `main`/`develop`, which
+had already been consolidated to a single line locally (see the branch
+consolidation audit in `RESUME_POINT.md`, 2026-09-15) but never pushed. So
+even without the local migrate, the deployed build was already stale.
+
+**Fix.**
+
+1. Pushed local `main` (`de5d01f`) to `origin/main`, fast-forward — it was
+   already a strict descendant of `origin/main`'s prior tip, so nothing was
+   rewritten. This alone closes the version gap: the deployed build now
+   carries every migration through V55 (and the 37 other commits since
+   2026-09-09), matching the database Flyway already found.
+2. **`DeploymentModeGuard`** now refuses to start when **all** of: the
+   active profiles do not include `prod`, the JDBC URL matches a managed-
+   database fragment (the existing `MANAGED_DB_FRAGMENTS` list), and
+   `spring.flyway.enabled` is true (a read-only inspection run is not the
+   mistake this guards against) — unless
+   `APP_ALLOW_NON_PROD_MANAGED_DB_MIGRATE=true` is set explicitly. This is a
+   hard refusal, not a warning, because the existing "managed host without
+   the `cloud` profile" check (right below it in the same method) is about a
+   *misconfigured* connection; this one is about a *correctly* configured
+   connection that has no business running migrations. `prod` deployments —
+   Render's included — are unaffected; the refusal only ever fires outside
+   `prod`.
+
+**Regression tests.** `DeploymentModeGuardTest`: refuses `cloud,local`
+against the Supabase URL; the explicit override lets it through; a run with
+Flyway disabled is not blocked. All nine pre-existing cases in the same test
+continue to pass unchanged — none of them combine a non-`prod` profile with
+a managed-database URL, so none were touched by the new check.
+
+**Not fixed by this entry, by request:** `MFA_REQUIRED=false` on the Render
+deployment stays as-is — the user has confirmed this installation is
+currently in testing/demo use, and `DeploymentModeGuard` already treats this
+as a deliberate, non-refusing choice (CR-060): it prints
+`MFA IS DISABLED (MFA_REQUIRED=false)` on every boot rather than blocking
+startup, precisely so it can be turned on later without a code change.

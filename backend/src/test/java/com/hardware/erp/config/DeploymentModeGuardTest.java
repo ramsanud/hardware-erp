@@ -92,6 +92,45 @@ class DeploymentModeGuardTest {
                 .doesNotThrowAnyException();
     }
 
+    // -----------------------------------------------------------------
+    // BUG-OPS-001 (2026-09-16) - a local `cloud,local` run applied V55 to
+    // the real Supabase project while the deployed build was still on V54.
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("BUG-OPS-001: refuses a non-production run migrating a managed database")
+    void refusesNonProductionMigrateAgainstManagedDatabase() {
+        MockEnvironment environment = new MockEnvironment();
+        environment.setActiveProfiles("cloud", "local");
+        environment.setProperty("spring.datasource.url", SUPABASE_URL);
+
+        assertThatThrownBy(() -> new DeploymentModeGuard().check(environment))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("APP_ALLOW_NON_PROD_MANAGED_DB_MIGRATE");
+    }
+
+    @Test
+    @DisplayName("BUG-OPS-001: the escape hatch, explicitly set, lets a deliberate non-production migrate through")
+    void allowsNonProductionMigrateWithExplicitOverride() {
+        MockEnvironment environment = new MockEnvironment();
+        environment.setActiveProfiles("cloud", "local");
+        environment.setProperty("spring.datasource.url", SUPABASE_URL);
+        environment.setProperty("app.safety.allow-non-prod-managed-db-migrate", "true");
+
+        assertThatCode(() -> new DeploymentModeGuard().check(environment)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("BUG-OPS-001: a read-only run (Flyway disabled) against a managed database is not the mistake this guards against")
+    void allowsNonProductionReadOnlyAgainstManagedDatabase() {
+        MockEnvironment environment = new MockEnvironment();
+        environment.setActiveProfiles("cloud", "local");
+        environment.setProperty("spring.datasource.url", SUPABASE_URL);
+        environment.setProperty("spring.flyway.enabled", "false");
+
+        assertThatCode(() -> new DeploymentModeGuard().check(environment)).doesNotThrowAnyException();
+    }
+
     @Test
     @DisplayName("falls back to the CLOUD defaults when app.deployment is absent entirely")
     void defaultsWhenUnconfigured() {
