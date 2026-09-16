@@ -93,8 +93,8 @@ Nothing is implemented from conversation memory.
 | CR-085 | 2026-09-15 | User | *(claimed by the concurrent session on feature/cr-085-erp-completion — Test-SMS endpoint, DeliveryStatusService, Twilio/SendGrid status webhooks.)* | **IN PROGRESS** |
 | CR-086 | 2026-09-15 | User | Reports module: Day Book, Receivables Ageing, Stock Valuation, Purchase Register and GST Summary as tenant-scoped SQL aggregations under `GET /v1/reports/*`, each downloadable as PDF or Excel from the same figures the screen shows. Gated on `REPORT_VIEW`. Sidebar "Reports" goes live. `SCOPE: BOTH`. | **IN PROGRESS, 2026-09-15** |
 | CR-087 | 2026-09-15 | User | GSTR-1 offline-tool JSON (`b2b`, `b2cl`, `b2cs`, `cdnr`, `cdnur`, `hsn`) for a return period, and Modulo-36 GSTIN checksum validation shared by customer, supplier and shop settings on both layers. `SCOPE: BOTH`. | **IN PROGRESS, 2026-09-15** |
-| CR-088 | 2026-09-15 | User | SaaS subscription plans & feature gating: `subscription_plan` (BASIC ₹299 / PRO ₹599 / PREMIUM ₹999, INR, monthly, prices in the table, mapped onto the locked `SubscriptionTier` FREE/PRO/MAX), `feature` + `plan_feature` catalogue, `tenant_subscription` (TRIAL/ACTIVE/PAST_DUE/EXPIRED/CANCELLED/SUSPENDED, gateway references), `subscription_usage` metering for WhatsApp/SMS/email/AI. Central `FeatureAccessService.requireFeature()` → 403 `FEATURE_NOT_AVAILABLE` with current/required plan. `/v1/subscriptions/*`, `/v1/features/{key}/access`. Pricing page + upgrade dialog + locked sidebar entries. `SCOPE: BOTH`, migration V59. Worktree `hardware-erp-saas`, branch `feature/cr-088-saas-platform`. | **IN PROGRESS, 2026-09-15** |
-| CR-089 | 2026-09-15 | User | Smart Substitute Product Suggestion (PREMIUM): structured product attributes, `product_relationship` manual mappings, `product_request` + `product_request_suggestion` audit, rule-based + manual-mapping strategies behind `RecommendationStrategy`, configurable weights/threshold, pg_trgm fuzzy name match, compare/select flow. `SCOPE: BOTH`, migration V60. | **IN PROGRESS, 2026-09-15** |
+| CR-088 | 2026-09-15 | User | SaaS subscription plans & feature gating: `subscription_plan` (BASIC ₹299 / PRO ₹599 / PREMIUM ₹999, INR, monthly, prices in the table, mapped onto the locked `SubscriptionTier` FREE/PRO/MAX), `feature` + `plan_feature` catalogue, `tenant_subscription` (TRIAL/ACTIVE/PAST_DUE/EXPIRED/CANCELLED/SUSPENDED, gateway references), `subscription_usage` metering for WhatsApp/SMS/email/AI. Central `FeatureAccessService.requireFeature()` → 403 `FEATURE_NOT_AVAILABLE` with current/required plan. `/v1/subscriptions/*`, `/v1/features/{key}/access`. Pricing page + upgrade dialog + locked sidebar entries. `SCOPE: BOTH`, migration V59. Worktree `hardware-erp-saas`, branch `feature/cr-088-saas-platform`. | **APPLIED, 2026-09-16** |
+| CR-089 | 2026-09-15 | User | Smart Substitute Product Suggestion (PREMIUM): structured product attributes, `product_relationship` manual mappings, `product_request` + `product_request_suggestion` audit, rule-based + manual-mapping strategies behind `RecommendationStrategy`, configurable weights/threshold, pg_trgm fuzzy name match, compare/select flow. `SCOPE: BOTH`, migration V60. | **APPLIED, 2026-09-16** |
 | CR-090 | 2026-09-15 | User | Owner-side Nearby Product Discovery (PREMIUM, opt-in, OFF by default): `shop_discovery_setting` consent flags + coordinates + radius, Haversine radius search over opted-in shops' availability (Available/Likely/Unavailable, never quantities or prices), `product_request_discovery_match`, owner-only notification, Call/WhatsApp contact with only the permitted fields. Consent changes audited. `SCOPE: BOTH`, migration V61. | **IN PROGRESS, 2026-09-15** |
 | CR-091 | 2026-09-15 | User | Critical business logic completion: CGST/SGST/IGST split per line & invoice with place of supply frozen on the invoice; invoice cancellation reason/by/at; `customer_ledger_entry` (invoice, payment, credit note, cancellation) with statement + ageing computed from the ledger; weighted-average cost frozen on each invoice line (`cost_price_paise`) and a revenue/COGS/gross/expenses/net profit endpoint; offline sync (`sync_transaction`, client UUID idempotency, conflict detection) with an IndexedDB outbox on the frontend. `SCOPE: BOTH`, migration V62. | **IN PROGRESS, 2026-09-15** |
 | CR-092 | 2026-09-15 | User | PREMIUM growth pack: multi-branch (`branch`, `branch_stock`, stock transfer, branch-wise sales/purchases/users/reports), smart insights (slow-moving, overstock, reorder, demand trend, frequently-bought-together, pricing insight — all measured), daily business summary notification, tenant backup history + on-demand export snapshot. `SCOPE: BOTH`, migration V63. | **IN PROGRESS, 2026-09-15** |
@@ -5301,3 +5301,89 @@ screen was built), a real payment-gateway-driven `renewal_at` recurrence
 (CR-057's Razorpay integration remains one-off checkout, matching its own
 documented scope), and sidebar lock badges on features that do not exist
 yet (Smart Substitute, Nearby Discovery, Multi-Branch — see CR-089/090/092).
+
+---
+
+## CR-089 — Smart Substitute Product Suggestion (2026-09-16, APPLIED)
+
+**Raised by:** User (the "Smart Substitute Product Suggestion" brief).
+**Type:** new PREMIUM feature, both layers. `SCOPE: BOTH`, migration
+**V60**. Branch `feature/cr-088-saas-platform`.
+
+### What it is
+
+When a customer asks for something the shop is out of, the counter records
+the request and the owner sees in-stock alternatives from the shop's **own**
+catalogue - manually defined mappings first, then a rule-based attribute
+score - with a plain-English reason for each, a compare view, and a
+"select" that records the owner's decision. Never customer-facing, never an
+automatic substitution on an invoice: the engine only ever says "these may
+be suitable" (§24), and selecting an alternative touches no billing record
+(`ProductRequestIT.selectingAnAlternativeResolvesTheRequest` asserts the
+invoice count stays zero).
+
+### Design
+
+- **Strategy pattern, no AI dependency.** `RecommendationStrategy` with
+  `ManualMappingRecommendationStrategy` (priority 10) and
+  `RuleBasedRecommendationStrategy` (priority 100);
+  `SubstituteRecommendationServiceImpl` runs them in order, keeps the first
+  suggestion per product, applies the owner's threshold / budget rule /
+  limit, and persists the set. An AI strategy is a third bean, nothing above
+  it changes (§18).
+- **Weights in one place.** `app.substitute.scoring.*`
+  (`SubstituteScoringProperties`, brief's own 30/20/20/15/5/5/5/10 = 110);
+  the scorer holds no literal. Bands 90+/75/60/40 per §7.
+- **Narrow in SQL first (§22).** `ProductRepository.findSubstituteCandidates`
+  applies same-category-or-same-type, ACTIVE, stock ≥ requested quantity
+  and "never the requested product" before a row is scored in Java.
+- **Blank ≠ match.** A missing attribute on either side scores nothing;
+  comparison is case/whitespace-insensitive. A zero-priced requested product
+  gives nothing away on price similarity.
+- **COMPATIBLE is not a substitute.** `RelationshipType.isSubstitute()`
+  excludes it - a compatible product goes *with* the requested one, and
+  offering it instead is the unsafe substitution §16 warns about.
+- **`pg_trgm`** installed by V60 with a GIN index on `product_name`;
+  `findByNameSimilarity` is a separate method so the counter's exact
+  code/barcode search stays exact.
+- **Two new permissions** (`PRODUCT_REQUEST_VIEW`/`_MANAGE`); mappings reuse
+  `PRODUCT_MANAGE` and are deliberately not plan-gated.
+
+### A real bug the IT caught
+
+The first cut sorted the final list by score alone. A near-identical
+lookalike can reach 110 while a manual mapping is fixed at 100, so
+`ProductRequestIT.manualMappingOutranksSimilarity` failed on its first run:
+the owner's own "this is the replacement" sorted below a generic match -
+the opposite of §17. The sort is now source first (`SuggestionSource
+.rank()`, the same numbers the strategies' `priority()` returns so the two
+cannot drift), score second. The nine scorer unit tests were all green
+throughout; this was a property of the orchestration only a real run
+exposed.
+
+### Also caught
+
+`@Pattern(regexp = "^$|^[6-9]\d{9}$")` - the exact illegal-Java-escape trap
+RESUME_POINT recorded for CR-078's WIP. Fixed to `\d` before it reached a
+commit.
+
+### Honest deviations
+
+- "Available = physical − reserved − pending allocation" assumes a
+  reservation mechanism that does not exist (Sales Order never reserves
+  stock, CR-052). Availability is the real `stock.quantity_on_hand`.
+- The seven attribute fields are accepted by `POST/PUT /v1/products` and
+  returned in `ProductResponse`, and the substitute screens render them,
+  but the React product *form* does not yet expose inputs for them - a
+  small follow-up. The engine, mappings, requests, compare and select are
+  complete.
+- `GET /v1/products/{id}/alternatives` is served as
+  `…/alternative-mappings`, named for what it returns.
+
+### Verified
+
+`RuleBasedRecommendationStrategyTest` 9/9, `ProductRequestIT` 8/8 (real
+PostgreSQL, includes the `pg_trgm` migration, Basic → 403, tenant
+isolation with no customer-detail leak). Frontend `tsc -b --force` clean,
+`vite build` clean, `tests/run.mjs` 272/272. Full `mvn clean verify` result
+recorded in RESUME_POINT.

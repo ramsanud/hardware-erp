@@ -44,7 +44,14 @@ public class ProductMapper {
                 product.getUpdatedAt(),
                 hasImage,
                 product.getAltUnitLabel(),
-                product.getAltUnitConversionFactor());
+                product.getAltUnitConversionFactor(),
+                product.getSubcategory(),
+                product.getSizeLabel(),
+                product.getMaterial(),
+                product.getColorFinish(),
+                product.getShape(),
+                product.getUsageType(),
+                product.getProductType());
     }
 
     public ProductSummaryResponse toSummary(Product product, boolean hasImage) {

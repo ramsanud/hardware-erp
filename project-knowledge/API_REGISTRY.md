@@ -850,3 +850,27 @@ Regression tests: `FeatureAccessServiceImplTest`, `UsageTrackingServiceImplTest`
 `SubscriptionLifecycleServiceImplTest` (unit), `SubscriptionControllerIT` (8,
 Basic/Pro → 403 on `/v1/ai/chat`, Premium → 200, tenant isolation, public
 plans, self-service upgrade). See `docs/SUBSCRIPTION_FEATURE_MATRIX.md`.
+
+## CR-089 — Smart Substitute Product Suggestion (PREMIUM)
+
+Every `/v1/product-requests/*` and `/v1/substitute-settings` call is gated on `FeatureKey.SMART_SUBSTITUTE` inside the service (403 `FEATURE_NOT_AVAILABLE` for Basic/Pro) as well as by permission. Tenant from the JWT only.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/v1/product-requests` | `PRODUCT_REQUEST_MANAGE` | Body: `productId`, `requestedQuantity`, optional `requestedBudgetPaise`, `customerName`, `customerMobile`. Records the request and computes the alternatives in one step - manual mappings first, then attribute scoring, filtered by the owner's threshold/budget rule/limit. 201. |
+| GET | `/v1/product-requests?status=OPEN\|RESOLVED\|CANCELLED` | `PRODUCT_REQUEST_VIEW` | Paged, newest first, with each request's stored suggestions. |
+| GET | `/v1/product-requests/{id}` | `PRODUCT_REQUEST_VIEW` | One request: requested product + its live stock, budget, customer, status, selection, suggestions (score, `maximumScore`, level, reason, source, `aboveBudget`). |
+| GET | `/v1/product-requests/{id}/alternatives` | `PRODUCT_REQUEST_VIEW` | Same shape as `get` - the brief's own path. |
+| POST | `/v1/product-requests/{id}/alternatives/recompute` | `PRODUCT_REQUEST_MANAGE` | Recomputes against current stock/prices; replaces the stored set. OPEN only. |
+| GET | `/v1/product-requests/{id}/compare?alternativeProductId=` | `PRODUCT_REQUEST_VIEW` | §12 - requested vs one alternative, attribute by attribute, `same` per row built server-side (two blanks are not "same"). |
+| POST | `/v1/product-requests/{id}/select-alternative` | `PRODUCT_REQUEST_MANAGE` | Body: `productId` - must be one of this request's suggestions (422 otherwise). Records who chose what, status → RESOLVED. **Touches no invoice** (§13/§24). |
+| POST | `/v1/product-requests/{id}/cancel` | `PRODUCT_REQUEST_MANAGE` | OPEN → CANCELLED. A RESOLVED request cannot be cancelled. |
+| GET | `/v1/products/{id}/alternative-mappings` | `PRODUCT_VIEW` | The owner's own mappings on one product (ALTERNATIVE/COMPATIBLE/UPGRADE/LOWER_COST/SAME_USE/REPLACEMENT). Not plan-gated - describing your catalogue is not the premium part. |
+| POST | `/v1/products/{id}/alternative-mappings` | `PRODUCT_MANAGE` | Body: `relatedProductId`, `relationshipType`, optional `notes`. Self-mapping and duplicates rejected. 201. |
+| DELETE | `/v1/products/{id}/alternative-mappings/{relationshipId}` | `PRODUCT_MANAGE` | 404 unless the mapping belongs to this product and tenant. |
+| GET | `/v1/substitute-settings` | `PRODUCT_REQUEST_VIEW` | `minScoreThreshold` (default 40), `showAboveBudget` (true), `maxResults` (3). Defaults returned even before a row exists. |
+| PUT | `/v1/substitute-settings` | `SETTINGS_MANAGE` | Threshold above the configured maximum score (110) is refused. |
+
+Two new permissions in V60: `PRODUCT_REQUEST_VIEW` (OWNER/MANAGER/ACCOUNTANT/STAFF) and `PRODUCT_REQUEST_MANAGE` (OWNER/MANAGER/STAFF). `ProductRequest`/`ProductResponse` gained seven optional attribute fields (`subcategory`, `sizeLabel`, `material`, `colorFinish`, `shape`, `usageType`, `productType`) used by the scorer.
+
+Regression tests: `RuleBasedRecommendationStrategyTest` (9), `ProductRequestIT` (8). See `docs/SMART_SUBSTITUTE.md`.

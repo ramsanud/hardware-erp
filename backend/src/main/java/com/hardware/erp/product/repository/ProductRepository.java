@@ -106,4 +106,53 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
            where product_id = :id and tenant_id = :tenantId and deleted_at is not null
            """, nativeQuery = true)
     int restoreDeleted(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
+    /**
+     * CR-089 §22. The candidate pool for substitute scoring - narrowed in
+     * SQL before anything is scored in Java, so a shop with 10,000 products
+     * never scores 10,000 rows for one out-of-stock item.
+     *
+     * The filters are the ones §8 calls non-negotiable: never the requested
+     * product itself, never an inactive or (via @SQLRestriction) deleted
+     * product, and never something with no sellable stock. Category is the
+     * primary narrowing - a substitute for a tower bolt is another door
+     * fitting, not a paint tin - with productType as an alternative route in
+     * for shops that have not categorised their catalogue but did fill in
+     * the attribute.
+     */
+    @Query("""
+           SELECT p FROM Product p
+           LEFT JOIN Stock s ON s.product = p AND s.tenant.id = :tenantId
+           WHERE p.tenant.id = :tenantId
+             AND p.id <> :excludeProductId
+             AND p.status = com.hardware.erp.product.entity.ProductStatus.ACTIVE
+             AND COALESCE(s.quantityOnHand, 0) >= :minimumQuantity
+             AND ( (:categoryId IS NOT NULL AND p.category.id = :categoryId)
+                OR (:productType IS NOT NULL AND lower(p.productType) = lower(:productType)) )
+           """)
+    List<Product> findSubstituteCandidates(@Param("tenantId") Long tenantId,
+                                           @Param("excludeProductId") Long excludeProductId,
+                                           @Param("categoryId") Long categoryId,
+                                           @Param("productType") String productType,
+                                           @Param("minimumQuantity") java.math.BigDecimal minimumQuantity);
+
+    /**
+     * CR-089 §10. Typo-tolerant lookup ("towr bolt" -> "Tower Bolt") over
+     * the pg_trgm GIN index added in V60. Deliberately a separate method
+     * from search(): the counter's exact code/barcode lookup must stay
+     * exact and fast, this one is for "the customer described it roughly".
+     */
+    @Query(value = """
+           select * from product
+           where tenant_id = :tenantId
+             and deleted_at is null
+             and status = 'ACTIVE'
+             and similarity(product_name, :query) > :threshold
+           order by similarity(product_name, :query) desc, product_name
+           limit :maxResults
+           """, nativeQuery = true)
+    List<Product> findByNameSimilarity(@Param("tenantId") Long tenantId,
+                                       @Param("query") String query,
+                                       @Param("threshold") double threshold,
+                                       @Param("maxResults") int maxResults);
 }

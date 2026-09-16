@@ -80,6 +80,10 @@ class RoleGrantDriftTest {
             // not raise them - same reasoning as QUOTATION_MANAGE above.
             PermissionCode.SALES_ORDER_MANAGE,
             PermissionCode.DELIVERY_CHALLAN_MANAGE,
+            // CR-089. Sees the product-request queue for billing/reporting
+            // context but does not run the counter - same reasoning as
+            // SALES_ORDER_MANAGE above.
+            PermissionCode.PRODUCT_REQUEST_MANAGE,
             // See WITHHELD_FROM_MANAGER - developer diagnostics, CR-045.
             // CR-067. Erasing the shop's trading history is owner-only. It is a
             // code of its own precisely so that granting SETTINGS_MANAGE to a

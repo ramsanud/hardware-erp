@@ -209,6 +209,24 @@ app:
     trial-tier: ${APP_SUBSCRIPTION_TRIAL_TIER:MAX}
     past-due-grace-days: ${APP_SUBSCRIPTION_PAST_DUE_GRACE_DAYS:7}
 
+  # CR-089 - Smart Substitute scoring weights, in one place rather than
+  # scattered through the engine. The defaults are the brief's own worked
+  # example and sum to 110. What an OWNER controls (minimum score to show,
+  # whether over-budget products appear, how many to show) is per-tenant in
+  # `substitute_setting`, not here.
+  substitute:
+    scoring:
+      same-category: ${APP_SUBSTITUTE_SAME_CATEGORY:30}
+      same-product-type: ${APP_SUBSTITUTE_SAME_PRODUCT_TYPE:20}
+      same-usage: ${APP_SUBSTITUTE_SAME_USAGE:20}
+      same-size: ${APP_SUBSTITUTE_SAME_SIZE:15}
+      same-material: ${APP_SUBSTITUTE_SAME_MATERIAL:5}
+      same-brand: ${APP_SUBSTITUTE_SAME_BRAND:5}
+      similar-price: ${APP_SUBSTITUTE_SIMILAR_PRICE:5}
+      in-stock: ${APP_SUBSTITUTE_IN_STOCK:10}
+      # Within 20% of the requested product's price counts as "similar".
+      similar-price-tolerance: ${APP_SUBSTITUTE_PRICE_TOLERANCE:0.20}
+
   mail:
     log-links-when-unconfigured: false
 

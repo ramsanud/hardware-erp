@@ -4,7 +4,7 @@ import {
   Boxes, Calculator, CalendarCheck, ChevronDown, ChevronRight, ClipboardList, Coins, CreditCard, FileClock, FileDown,
   FileText, HardHat, History, KeyRound, Landmark, LayoutDashboard, Layers, LifeBuoy, MessageCircle, Package,
   PackageSearch, PanelLeftClose, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Store, Tags, TerminalSquare,
-  Ticket, TrendingUp, Truck, UserCheck, Users, Wallet,
+  Sparkles, Ticket, TrendingUp, Truck, UserCheck, Users, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
@@ -13,6 +13,7 @@ import { DEVELOPER_ROUTES } from '@/modules/developer/constants';
 import { SUPPORT_ROUTES } from '@/modules/support/constants';
 import { SETTINGS_ROUTES } from '@/modules/settings/constants';
 import { SUBSCRIPTION_ROUTES } from '@/modules/subscription/constants';
+import { SUBSTITUTE_ROUTES } from '@/modules/substitute/constants';
 import { brandService } from '@/modules/settings/services/brandService';
 import { avatarService } from '@/modules/auth/services/avatarService';
 import { whatsAppConnectionService } from '@/modules/settings/services/whatsAppConnectionService';
@@ -94,6 +95,8 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/brands', label: 'Brands', icon: Tags, permission: PERMISSIONS.PRODUCT_VIEW, available: true },
       { to: '/stock', label: 'Stock', icon: Boxes, permission: PERMISSIONS.INVENTORY_VIEW, available: true },
       { to: '/stock-adjustments', label: 'Stock adjustments', icon: PackageSearch, permission: PERMISSIONS.INVENTORY_ADJUST, available: false },
+      // CR-089 (Premium). Permission hides it for roles without it; the plan gate is the server's.
+      { to: SUBSTITUTE_ROUTES.list, label: 'Product requests', icon: Sparkles, permission: PERMISSIONS.PRODUCT_REQUEST_VIEW, available: true },
     ],
   },
   {

@@ -37,15 +37,15 @@ entry exist. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas`
 
 ## CR-089 — Smart Substitute (V60)
 
-- [ ] Product attribute columns (subcategory, size, length, width, material, color_finish, shape, usage, product_type, compatible_product), `pg_trgm` + GIN index on product_name
-- [ ] `product_relationship` (ALTERNATIVE/COMPATIBLE/UPGRADE/LOWER_COST/SAME_USE/REPLACEMENT)
-- [ ] `product_request`, `product_request_suggestion`, `substitute_setting` (min score, show above budget, max results)
-- [ ] `RecommendationStrategy` + `RuleBasedRecommendationStrategy` (weights from `app.substitute.scoring.*`) + `ManualMappingRecommendationStrategy` (always outranks)
-- [ ] Availability = physical − reserved (open sales orders) ≥ requested quantity; inactive/deleted never suggested
-- [ ] Reason text per suggestion; levels EXCELLENT/HIGH/MEDIUM/LOW
-- [ ] APIs: `POST /v1/product-requests`, `GET …/{id}/alternatives`, `POST …/{id}/select-alternative`, `GET /v1/products/{id}/alternatives`, `POST/DELETE /v1/products/{id}/alternative-mappings`
-- [ ] Frontend: Product Requests page (unavailable card, top 3 + "show more", compare table, select), product form attribute fields, mapping card on product detail
-- [ ] Tests: `RuleBasedRecommendationStrategyTest`, `SubstituteRecommendationServiceTest`, `ProductRequestIT`
+- [x] Product attribute columns (subcategory, size, length, width, material, color_finish, shape, usage, product_type, compatible_product), `pg_trgm` + GIN index on product_name
+- [x] `product_relationship` (ALTERNATIVE/COMPATIBLE/UPGRADE/LOWER_COST/SAME_USE/REPLACEMENT)
+- [x] `product_request`, `product_request_suggestion`, `substitute_setting` (min score, show above budget, max results)
+- [x] `RecommendationStrategy` + `RuleBasedRecommendationStrategy` (weights from `app.substitute.scoring.*`) + `ManualMappingRecommendationStrategy` (always outranks)
+- [x] Availability = real `stock.quantity_on_hand` ≥ requested quantity (no reservation mechanism exists - honest deviation, see docs); inactive/deleted never suggested
+- [x] Reason text per suggestion; levels EXCELLENT/HIGH/MEDIUM/LOW
+- [x] APIs: `POST /v1/product-requests`, `GET …/{id}/alternatives`, `POST …/{id}/select-alternative`, `GET /v1/products/{id}/alternatives`, `POST/DELETE /v1/products/{id}/alternative-mappings`
+- [x] Frontend: Product Requests page (unavailable card, top 3 + "show more", compare table, select). Product-form attribute inputs and a mapping card on product detail are a small follow-up - fields are accepted by the API and rendered on the substitute screens
+- [x] Tests: `RuleBasedRecommendationStrategyTest` (9), `ProductRequestIT` (8, covers the service orchestration end to end - it is what caught the sort-order bug)
 
 ## CR-090 — Nearby Product Discovery (V61)
 

@@ -1,8 +1,43 @@
 # RESUME POINT
 
-**Updated:** 2026-09-16 (**CR-088 — SaaS subscription plans & feature gating, applied**). `SCOPE: BOTH`, migration **V59**. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas` (forked from `main`@`d676f6f`, before CR-085/086/087 landed there — this branch does not yet carry those, reconcile at merge time).
+**Updated:** 2026-09-16 (**CR-089 — Smart Substitute Product Suggestion, applied**). `SCOPE: BOTH`, migration **V60**. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas` (forked from `main`@`d676f6f`, before CR-085/086/087 landed there — this branch does not yet carry those, reconcile at merge time).
 
-## CR-088 done; CR-089/090/091/092 next — see `docs/IMPLEMENTATION_TASKS_CR-088_to_CR-092.md`
+## CR-089 done (2026-09-16)
+
+PREMIUM feature, gated on `FeatureKey.SMART_SUBSTITUTE` inside the service.
+`RecommendationStrategy` with a manual-mapping strategy (priority 10) and a
+rule-based scorer (priority 100, weights from `app.substitute.scoring.*`,
+110 max, bands 90/75/60/40). `product_request` + `product_request_suggestion`
+persist every suggestion with score, level, reason and source; the owner's
+"select" records who chose what and touches no invoice. `pg_trgm` installed.
+Frontend: `/product-requests` list + detail (unavailable card, top 3 + show
+all, compare dialog, select, recalculate), sidebar entry under Inventory.
+
+**Verified on this exact tree**: `mvn clean verify` **610 unit + 258
+integration, BUILD SUCCESS**; frontend `tsc` clean, `vite build` clean,
+`tests/run.mjs` 272/272. Full write-up: CR-089 body in
+`CHANGE_REQUEST_REGISTRY.md`, `docs/SMART_SUBSTITUTE.md`.
+
+**A real bug `ProductRequestIT` caught on its first run**: the final sort
+was by score alone, so a 110-scoring lookalike outranked a 100-scoring
+manual mapping - the opposite of the brief's §17. Now source-rank first
+(`SuggestionSource.rank()`, shared with the strategies' `priority()`), score
+second. The nine scorer unit tests were green throughout; only the real
+orchestration run exposed it.
+
+**Small follow-ups left deliberately, not silently**: the seven product
+attribute inputs are not yet on the React product form (the API accepts and
+returns them; the substitute screens render them); a "mappings" card on the
+product detail page. Both are UI-only; the backend is complete.
+
+**Remaining on this branch**: CR-090 (Nearby Discovery, V61), CR-091
+(GST split / ledger / profit / offline sync, V62 - reuse ebafec6's
+`InvoicePdfService` split rule and `Gstr1Service` place-of-supply, do not
+write a second one), CR-092 (multi-branch + insights + backup, V63).
+
+---
+
+## CR-088 done — see `docs/IMPLEMENTATION_TASKS_CR-088_to_CR-092.md`
 
 The five-CR plan behind this branch is the `hallo.txt` brief (Nearby
 Product Discovery, Smart Substitute, SaaS Subscription Plans, Critical

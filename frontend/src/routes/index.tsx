@@ -42,6 +42,9 @@ import { NotificationHistoryPage } from '@/modules/notification/pages/Notificati
 import { AppearancePage } from '@/modules/settings/pages/AppearancePage';
 import { SUBSCRIPTION_ROUTES } from '@/modules/subscription/constants';
 import { SubscriptionPage } from '@/modules/subscription/pages/SubscriptionPage';
+import { SUBSTITUTE_ROUTES } from '@/modules/substitute/constants';
+import { ProductRequestListPage } from '@/modules/substitute/pages/ProductRequestListPage';
+import { ProductRequestDetailPage } from '@/modules/substitute/pages/ProductRequestDetailPage';
 import { QUOTATION_ROUTES } from '@/modules/quotation/constants';
 import { QuotationListPage } from '@/modules/quotation/pages/QuotationListPage';
 import { QuotationDetailPage } from '@/modules/quotation/pages/QuotationDetailPage';
@@ -206,6 +209,14 @@ export function AppRoutes() {
             <Route path={PRODUCT_ROUTES.brands} element={<BrandListPage />} />
             <Route path={PRODUCT_ROUTES.list} element={<ProductListPage />} />
             <Route path="/products/:id" element={<ProductDetailPage />} />
+          </Route>
+
+          {/* CR-089. Permission gate here is UX only - the plan gate
+              (Premium) is enforced server-side and surfaces as the
+              upgrade dialog on the page itself. */}
+          <Route element={<RequirePermission permission={PERMISSIONS.PRODUCT_REQUEST_VIEW} />}>
+            <Route path={SUBSTITUTE_ROUTES.list} element={<ProductRequestListPage />} />
+            <Route path="/product-requests/:id" element={<ProductRequestDetailPage />} />
           </Route>
 
           <Route element={<RequirePermission permission={PERMISSIONS.INVOICE_VIEW} />}>

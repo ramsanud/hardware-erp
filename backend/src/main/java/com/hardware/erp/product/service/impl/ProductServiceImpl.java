@@ -111,6 +111,13 @@ public class ProductServiceImpl implements ProductService {
                 .status(request.status())
                 .altUnitLabel(blankToNull(request.altUnitLabel()))
                 .altUnitConversionFactor(request.altUnitConversionFactor())
+                .subcategory(blankToNull(request.subcategory()))
+                .sizeLabel(blankToNull(request.sizeLabel()))
+                .material(blankToNull(request.material()))
+                .colorFinish(blankToNull(request.colorFinish()))
+                .shape(blankToNull(request.shape()))
+                .usageType(blankToNull(request.usageType()))
+                .productType(blankToNull(request.productType()))
                 .build();
 
         Product saved = productRepository.save(product);

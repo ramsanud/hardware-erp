@@ -37,6 +37,9 @@ public final class PermissionCode {
     public static final String PRODUCT_MANAGE     = "PRODUCT_MANAGE";
     public static final String PRODUCT_VIEW_COST  = "PRODUCT_VIEW_COST";
     public static final String PRODUCT_VIEW_STOCK = "PRODUCT_VIEW_STOCK";
+    /** CR-089 - PREMIUM (Smart Substitute). Recording a customer's request and browsing/acting on the queue is its own capability, not implied by selling the product. */
+    public static final String PRODUCT_REQUEST_VIEW   = "PRODUCT_REQUEST_VIEW";
+    public static final String PRODUCT_REQUEST_MANAGE = "PRODUCT_REQUEST_MANAGE";
 
     // PURCHASE
     public static final String PURCHASE_VIEW   = "PURCHASE_VIEW";

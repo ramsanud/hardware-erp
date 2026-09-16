@@ -1274,3 +1274,42 @@ integration test that exercises a Premium-only path (quotations, credit
 notes, AI) keeps working now that those are plan-gated; plan-gating itself
 is tested against freshly-registered shops on each tier, never against
 tenant 1.
+
+## V60 — Smart Substitute (CR-089, 2026-09-16)
+
+`CREATE EXTENSION IF NOT EXISTS pg_trgm` and a GIN trigram index on
+`product.product_name` (`idx_product_name_trgm`) for typo-tolerant lookup
+(`ProductRepository.findByNameSimilarity`, native `similarity()`).
+
+| Table / change | Purpose |
+|---|---|
+| `product` +7 nullable columns | `subcategory`, `size_label`, `material`, `color_finish`, `shape`, `usage_type`, `product_type` - the attributes the scorer compares. None mandatory: hardware products vary too much. `size_label` is free text ("4 Inch"), never parsed - sizes are not one unit system. `usage_type` avoids the reserved-sounding `usage`. |
+| `product_relationship` | Owner-defined, directional A→B. `relationship_type` CHECK (ALTERNATIVE/COMPATIBLE/UPGRADE/LOWER_COST/SAME_USE/REPLACEMENT), `CHECK (product_id <> related_product_id)`, `UNIQUE (tenant_id, product_id, related_product_id, relationship_type)`. Index on `(tenant_id, product_id)`. |
+| `substitute_setting` | `tenant_id` PK. `min_score_threshold` (0-110, default 40), `show_above_budget` (default true), `max_results` (1-20, default 3). No row until an owner changes something - `SubstituteSetting.defaults()` mirrors the column defaults. The scoring *weights* are deliberately NOT here (see below). |
+| `product_request` | `requested_product_id` NOT NULL, `requested_quantity > 0`, optional `requested_budget_paise ≥ 0`, optional `customer_name`/`customer_mobile` (never forwarded anywhere), `status` CHECK (OPEN/RESOLVED/CANCELLED), `selected_product_id`/`selected_by`/`selected_at` (the owner's choice - never written by the engine), `resolved_at`. Indexes on `(tenant_id, status, created_at)` and `(tenant_id, requested_product_id)`. |
+| `product_request_suggestion` | One row per suggestion: `score`, `match_level` CHECK (EXCELLENT/HIGH/MEDIUM/LOW/DO_NOT_RECOMMEND), `reason` (≤500, the plain-English explanation), `source` CHECK (RULE_BASED/MANUAL_MAPPING). `UNIQUE (product_request_id, suggested_product_id)`. Recompute deletes and re-inserts the set. |
+| `permission` +2, `role_permission` grants | `PRODUCT_REQUEST_VIEW` → OWNER/MANAGER/ACCOUNTANT/STAFF; `PRODUCT_REQUEST_MANAGE` → OWNER/MANAGER/STAFF. Same "write the grant for the roles that already exist" pattern as V54; `TenantRegistrationServiceImpl.ROLE_PERMISSIONS` carries them for shops registered afterwards, pinned by `RoleGrantDriftTest`. |
+
+**Why the weights are config, not a table.** `app.substitute.scoring.*`
+(`SubstituteScoringProperties`, defaults 30/20/20/15/5/5/5/10 = 110) is
+platform tuning; an owner adjusting "same material is worth 5 or 7" is a
+support call waiting to happen. What an owner genuinely decides - minimum
+score to show, whether to show over-budget products, how many to show - is
+the per-tenant row.
+
+**Entity naming.** The `product_request` row maps to
+`ProductRequestRecord`, not `ProductRequest`: that name is already the
+product create/update DTO (`product/dto/ProductRequest.java`) and the
+naming law forbids two concepts sharing a name. The table keeps the right
+name for the row.
+
+**Candidate narrowing is SQL, not Java.** `ProductRepository
+.findSubstituteCandidates` joins `stock` and applies same-category-or-same-
+product-type, ACTIVE (and `@SQLRestriction` excludes deleted), stock ≥
+requested quantity, and never the requested product itself - before the
+scorer sees a row (§22).
+
+Honest deviation: the brief's "physical − reserved − pending allocation"
+availability assumes a reservation mechanism that does not exist here
+(Sales Order never reserves stock, CR-052). Availability is the real
+`stock.quantity_on_hand` (hard rule 12).

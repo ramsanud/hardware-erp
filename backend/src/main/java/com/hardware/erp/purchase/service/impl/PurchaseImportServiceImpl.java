@@ -344,7 +344,8 @@ public class PurchaseImportServiceImpl implements PurchaseImportService {
                 row.newProductSku(), row.newProductName(), row.newProductCategoryId(), row.newProductBrandId(),
                 null, null, null, row.newProductUnit(), null, null,
                 row.gstRatePercent(), row.unitPricePaise(), row.unitPricePaise(), row.unitPricePaise(),
-                BigDecimal.ZERO, BigDecimal.ZERO, ProductStatus.ACTIVE, null, null);
+                BigDecimal.ZERO, BigDecimal.ZERO, ProductStatus.ACTIVE, null, null,
+                null, null, null, null, null, null, null);
         var created = productService.create(request);
         return productRepository.findByIdAndTenantId(created.id(), tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", created.id()));
