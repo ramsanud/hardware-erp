@@ -220,7 +220,7 @@ function zeroBuckets(preset: PeriodPreset): TrendPoint[] {
   const end = new Date(`${to}T00:00:00`);
   if (preset.granularity === 'month') cursor.setDate(1);
   while (cursor <= end && out.length < 400) {
-    out.push({ bucket: cursor.toISOString().slice(0, 10), revenuePaise: 0, revenueDisplay: '0.00', invoiceCount: 0 });
+    out.push({ bucket: cursor.toISOString().slice(0, 10), revenuePaise: 0, revenueDisplay: '0.00', invoiceCount: 0, outstandingPaise: 0, outstandingDisplay: '0.00' });
     if (preset.granularity === 'month') cursor.setMonth(cursor.getMonth() + 1);
     else cursor.setDate(cursor.getDate() + 1);
   }

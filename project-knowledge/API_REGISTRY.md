@@ -156,6 +156,18 @@ got set was never, despite the column existing since CR-021.
 | GET / PUT / DELETE | `/v1/settings/upi-qr` | authenticated to view, SETTINGS_MANAGE to change | 200/204 (CR-026) |
 | GET | `/v1/settings/brand` | authenticated (any user) | 200 - `{name, hasLogo, subscriptionTier}` only, unlike `GET /v1/settings` which needs SETTINGS_VIEW (subscriptionTier added CR-027, so any staff member - not only SETTINGS_VIEW holders - can tell whether a tier-gated feature is available) |
 | GET | `/v1/dashboard/sales-summary` | INVOICE_VIEW | 200 |
+| GET | `/v1/analytics/summary?from&to` | REPORT_VIEW | 200 - period revenue, invoice count, average order value, outstanding (CR-048; row added to this registry under CR-084 — the tenant analytics endpoints were never listed) |
+| GET | `/v1/analytics/revenue-trend?from&to&granularity=day|week|month` | REPORT_VIEW | 200 - one point per bucket: `revenuePaise`, `invoiceCount`, and since CR-084 `outstandingPaise` (balance still due on that bucket's invoices). Drives the dashboard's Total Sales, Today's Earnings and Pending Payments sparklines |
+| GET | `/v1/analytics/sales-by-category?from&to` | REPORT_VIEW | 200 - slices with `sharePercent` computed server-side (CR-048) |
+| GET | `/v1/analytics/low-stock-trend?days=14` | **INVENTORY_VIEW** | 200 - `{points: [{date, lowStockCount}], summary}`, oldest first, only days with a snapshot; takes today's snapshot lazily if missing. `days` outside 2–90 → 400. Gated on INVENTORY_VIEW, not REPORT_VIEW: the card that draws it is (CR-084) |
+| GET | `/v1/reports/day-book?from&to` | REPORT_VIEW | 200 - `{period, entries[{date, kind SALE|RECEIPT|CREDIT_NOTE|PURCHASE|EXPENSE, reference, party, detail, amountPaise, amountDisplay}], totals}`; `from > to` or a range over 366 days → 400 (CR-086) |
+| GET | `/v1/reports/receivables-ageing?asOf` | REPORT_VIEW | 200 - one row per customer with a balance due, bucketed 0–30/31–60/61–90/90+ days from the invoice date; `asOf` defaults to today IST (CR-086) |
+| GET | `/v1/reports/stock-valuation` | REPORT_VIEW | 200 - non-zero stock at the product's current purchase and selling price, totals (CR-086) |
+| GET | `/v1/reports/purchase-register?from&to` | REPORT_VIEW | 200 - RECEIVED/PARTIALLY_PAID/PAID purchases with CGST/SGST/IGST (split by supplier vs shop state), paid, balance (CR-086) |
+| GET | `/v1/reports/gst-summary?from&to` | REPORT_VIEW | 200 - `outward`, `creditNotes`, `inward` sections by rate slab and `net*Paise` = output − credit notes − input (CR-086) |
+| GET | `/v1/reports/{report}/export?format=pdf|xlsx&…` | REPORT_VIEW | 200 `application/pdf` or `…spreadsheetml.sheet` as an attachment, built from the same object as the JSON; same filters as the report; any other `format` → 400 (CR-086) |
+| GET | `/v1/reports/gstr1?period=MMYYYY` | REPORT_FINANCIAL | 200 - the GSTR-1 document (offline-tool layout: `gstin, fp, b2b, b2cl, b2cs, cdnr, cdnur, hsn`) enveloped for preview; bad period → 400; shop GSTIN missing/invalid → 400 (CR-087) |
+| GET | `/v1/reports/gstr1/download?period=MMYYYY` | REPORT_FINANCIAL | 200 - the same document as a bare `GSTR1-MMYYYY.json` attachment (CR-087) |
 
 `PUT` image endpoints are `multipart/form-data`, field name `file`, 2MB cap
 (`ImageValidation`). `TenantSettingsRequest` gained a required `name` field

@@ -2,6 +2,7 @@ package com.hardware.erp.supplier.dto;
 
 import com.hardware.erp.supplier.entity.SupplierStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
+import com.hardware.erp.common.validation.ValidGstin;
 import jakarta.validation.constraints.*;
 
 @Schema(name = "SupplierRequest", description = "Create or update a supplier")
@@ -39,9 +40,8 @@ public record SupplierRequest(
         @Size(max = 255)
         String email,
 
-        @Schema(description = "15-character GSTIN", example = "33AABCS1429B1ZP")
-        @Pattern(regexp = "^$|^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$",
-                 message = "Enter a valid 15-character GSTIN")
+        @Schema(description = "15-character GSTIN", example = "33AABCS1429B1Z1")
+        @ValidGstin
         String gstNo,
 
         @Schema(example = "AABCS1429B")

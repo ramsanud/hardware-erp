@@ -101,7 +101,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/expenses', label: 'Expenses', icon: Coins, permission: PERMISSIONS.EXPENSE_VIEW, available: true },
       { to: '/ledgers', label: 'Ledgers', icon: Landmark, permission: PERMISSIONS.REPORT_FINANCIAL, available: false },
-      { to: '/reports', label: 'Reports', icon: TrendingUp, permission: PERMISSIONS.REPORT_VIEW, available: false },
+      { to: '/reports', label: 'Reports', icon: TrendingUp, permission: PERMISSIONS.REPORT_VIEW, available: true },
       // CR-053 backlog item 7 - pure client-side arithmetic, no permission
       // gate: it reads no tenant data, so there is nothing to protect.
       { to: '/tools/gst-calculator', label: 'GST calculator', icon: Calculator, available: true },

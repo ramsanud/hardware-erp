@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 public interface CreditNoteRepository extends JpaRepository<CreditNote, Long> {
@@ -34,4 +35,15 @@ public interface CreditNoteRepository extends JpaRepository<CreditNote, Long> {
                              @Param("fromDate") LocalDate fromDate,
                              @Param("toDate") LocalDate toDate,
                              Pageable pageable);
+
+    /** CR-087 (GSTR-1). Cancelled notes excluded - the same rule InvoiceRepository.findForExport applies. */
+    @Query("""
+           select cn from CreditNote cn
+           where cn.tenant.id = :tenantId and cn.status <> CANCELLED
+             and cn.creditNoteDate >= :fromDate and cn.creditNoteDate <= :toDate
+           order by cn.creditNoteDate asc, cn.id asc
+           """)
+    List<CreditNote> findForExport(@Param("tenantId") Long tenantId,
+                                   @Param("fromDate") LocalDate fromDate,
+                                   @Param("toDate") LocalDate toDate);
 }

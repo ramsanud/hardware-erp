@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import { GSTIN_MESSAGE, isValidGstin } from '@/shared/lib/gstin';
 
 export const customerSchema = z.object({
   customerName: z.string().trim().min(1, 'Customer name is required').max(255),
   mobileNo: z.string().trim().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number'),
   email: z.string().trim().email('Enter a valid email address').optional().or(z.literal('')),
   gstNo: z.string().trim().toUpperCase()
-    .regex(/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/, 'Enter a valid 15-character GSTIN')
+    .refine(isValidGstin, GSTIN_MESSAGE)
     .optional().or(z.literal('')),
   addressLine1: z.string().trim().max(255).optional().or(z.literal('')),
   addressLine2: z.string().trim().max(255).optional().or(z.literal('')),

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { GSTIN_MESSAGE, isValidOrBlankGstin } from '@/shared/lib/gstin';
 
 /**
  * Mirrors the backend Bean Validation constraints on SupplierRequest and
@@ -45,11 +46,12 @@ export const supplierSchema = z.object({
   mobileNo: mobileRules,
   alternateMobileNo: optionalMobile,
   email: optionalEmail,
-  // ^$|^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$
+  // Structure plus Modulo-36 checksum, the same rule the server applies (CR-087).
   gstNo: z
     .string()
     .trim()
-    .regex(/^$|^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/, 'Enter a valid 15-character GSTIN')
+    .toUpperCase()
+    .refine(isValidOrBlankGstin, GSTIN_MESSAGE)
     .optional()
     .or(z.literal('')),
   // ^$|^[A-Z]{5}[0-9]{4}[A-Z]$

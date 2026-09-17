@@ -44,6 +44,56 @@ of `E:/Project/hardware-erp*` before claiming the next one.
 
 **Previous entry follows.**
 
+**Updated:** 2026-09-15 (**CR-086 Reports module + CR-087 GSTR-1 and GSTIN checksum**). `SCOPE: BOTH`, no migration. Branch `feature/cr-086-reports` (on top of the CR-084 commits, which are **still not on `main`**).
+
+## CR-086 / CR-087 — Reports, GSTR-1, GSTIN checksum (2026-09-15)
+
+`/reports/:report` is live behind REPORT_VIEW: Day Book, Receivables
+Ageing, Stock Valuation, Purchase Register, GST Summary, each as JSON and
+as a PDF/XLSX built from the same record (`report/` package,
+`ReportDocument` → `ReportExporter`). GSTR-1 (`/v1/reports/gstr1`,
+REPORT_FINANCIAL) writes the offline-tool JSON — b2b/b2cl/b2cs/cdnr/cdnur/hsn.
+Every GSTIN field on both layers now applies the Modulo-36 checksum
+(`Gstin` / `@ValidGstin` / `shared/lib/gstin.ts`); every fabricated GSTIN
+in the repo failed it, so the Swagger examples and the one IT literal were
+replaced (seeds untouched).
+
+Verified: backend 18 unit + 9 IT for the new code; frontend tsc 0, build 0,
+Playwright **297/297** on an isolated build; full `mvn -o clean verify` on a
+detached worktree at `ebafec6`: **599 unit + 251 integration tests, 0 failures, BUILD SUCCESS** (2 skipped, 5 min 12 s).
+
+**The concurrent session owns everything else in the brief** (agreed over
+cross-session message, 2026-09-15): Phase 1 hygiene (BUG-FE-039 hasAvatar,
+SupplierWizard spinner, BUG-BE-006 ProductSaleHistoryProvider +
+PackageCycleTest, ErrorBoundary), CR-085 (Test-SMS, DeliveryStatusService,
+Twilio/SendGrid webhooks), CR-078/079 (email OTP, passkeys; migrations
+V57/V58), CR-088 Collections, CR-089 barcode/labels, CR-090 i18n — on
+`feature/cr-085-erp-completion` in `E:/Project/hardware-erp-erp`. Next free
+migration for anyone else: **V59**.
+
+**Merge order for the user** (the classifier blocks merges into `main` from
+a session): `git checkout main && git merge --no-ff feature/cr-086-reports`
+brings CR-084 + CR-086 + CR-087 in one go; then the other session's branch.
+
+---
+
+**Updated:** 2026-09-15 (**CR-084 — every dashboard sparkline is now a measurement**). `SCOPE: BOTH`, migration **V56**.
+
+## CR-084 — the last two placeholders became measured (2026-09-15)
+
+Pending Payments' line reads `outstandingPaise` now carried on every
+revenue-trend bucket (no new endpoint). Low Stock Alerts' line and delta
+read `low_stock_snapshot` — one row per tenant per day, written at 00:15
+IST by `LowStockSnapshotJob` and taken lazily on first read — via
+`GET /v1/analytics/low-stock-trend` (`INVENTORY_VIEW`). Two traps avoided
+on the way: a self-invoked `REQUIRES_NEW` (BUG-BE-002 again) and an INSERT
+inside the analytics service's class-level `readOnly` transaction.
+`LowStockTrendIT` 4/4, `LowStockSnapshotJobTest` 2/2, frontend 272/272.
+**Full `mvn clean verify` not run this pass** — run it before tagging.
+`API_REGISTRY` gained the tenant analytics rows it never had.
+
+---
+
 **Updated:** 2026-09-15, early (**branch consolidation audit: every branch is on `main`; the CR-078 WIP is not mergeable yet**). `SCOPE: BOTH` (no code change to `main`).
 
 ## Branch consolidation audit (2026-09-15)

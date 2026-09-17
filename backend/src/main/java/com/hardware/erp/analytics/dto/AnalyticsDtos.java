@@ -34,14 +34,31 @@ public final class AnalyticsDtos {
     ) {}
 
     /** One point on the revenue line. bucket is an ISO date - the start of the day/week/month. */
+    /**
+     * CR-084 added outstandingPaise: the balance still due on the invoices in
+     * this bucket - the same rows, the same "not cancelled" rule, one more
+     * column. It is what the dashboard's Pending Payments sparkline draws.
+     */
     public record TrendPoint(
             String bucket,
             long revenuePaise,
             String revenueDisplay,
-            long invoiceCount
+            long invoiceCount,
+            long outstandingPaise,
+            String outstandingDisplay
     ) {}
 
     public record TrendSeries(Period period, List<TrendPoint> points, String summary) {}
+
+    /** CR-084. One day's low-stock count, from low_stock_snapshot. */
+    public record LowStockPoint(LocalDate date, int lowStockCount) {}
+
+    /**
+     * CR-084. Daily low-stock counts for the last {@code days}, oldest first.
+     * Only days with a snapshot appear; a shop that went live yesterday has
+     * one point, not a fortnight of zeros pretending to be history.
+     */
+    public record LowStockTrend(List<LowStockPoint> points, String summary) {}
 
     /** A bar, or a donut segment. share is 0-100, computed server-side so every client agrees. */
     public record CategorySlice(

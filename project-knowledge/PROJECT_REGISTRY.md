@@ -105,7 +105,7 @@ wholesale in passing; reconciling the full table against `git log` is its
 own worthwhile pass, not a side effect of this session's Sales Order/
 Delivery Challan/Credit Note work.
 | — | Finance / Cash-Bank-Cheque ledger | — | — | — | not started — Phase 8 |
-| — | Reports (daily/weekly/monthly/yearly) | — | — | — | not started — Phase 9 |
+| — | Reports (Day Book, Receivables Ageing, Stock Valuation, Purchase Register, GST Summary) + GSTR-1 | DONE (CR-086/087) | DONE (`/reports/:report`, PDF/XLSX) | 18 unit + 9 IT | applied 2026-09-15 — period reports by date range; no daily/weekly/monthly scheduler |
 
 There is now a public tenant self-registration endpoint (`POST
 /v1/tenants/register`, rate-limited, CR-028) — CR-008's "no self-registration"

@@ -36,6 +36,8 @@ public class AnalyticsController {
 
     private static final String REPORT_VIEW =
             "hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).REPORT_VIEW)";
+    private static final String INVENTORY_VIEW =
+            "hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).INVENTORY_VIEW)";
 
     private final AnalyticsService analyticsService;
 
@@ -54,6 +56,17 @@ public class AnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "day") String granularity) {
         return ApiResponse.ok(analyticsService.revenueTrend(from, to, granularity));
+    }
+
+    /**
+     * CR-084. INVENTORY_VIEW, not REPORT_VIEW: this is the history of a stock
+     * figure, and the card that draws it is gated on INVENTORY_VIEW - a
+     * storekeeper with no report permission still owns the shelf.
+     */
+    @GetMapping("/low-stock-trend")
+    @PreAuthorize(INVENTORY_VIEW)
+    public ApiResponse<LowStockTrend> lowStockTrend(@RequestParam(defaultValue = "14") int days) {
+        return ApiResponse.ok(analyticsService.lowStockTrend(days));
     }
 
     @GetMapping("/sales-by-category")

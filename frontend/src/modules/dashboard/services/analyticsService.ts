@@ -27,6 +27,21 @@ export interface TrendPoint {
   revenuePaise: number;
   revenueDisplay: string;
   invoiceCount: number;
+  /** CR-084. Balance still due on this bucket's invoices - the Pending Payments sparkline. */
+  outstandingPaise: number;
+  outstandingDisplay: string;
+}
+
+/** CR-084. Mirrors AnalyticsDtos.LowStockPoint / LowStockTrend. */
+export interface LowStockPoint {
+  date: string;
+  lowStockCount: number;
+}
+
+export interface LowStockTrend {
+  /** Oldest first; only days with a snapshot, so a new shop has one point, not fourteen zeros. */
+  points: LowStockPoint[];
+  summary: string;
 }
 
 export interface TrendSeries {
@@ -73,6 +88,9 @@ export const analyticsService = {
 
   salesByCategory: (from: string, to: string) =>
     apiGet<CategoryBreakdown>(`/v1/analytics/sales-by-category?${range(from, to)}`),
+
+  /** CR-084. INVENTORY_VIEW, not REPORT_VIEW - the card that draws it is gated the same way. */
+  lowStockTrend: (days = 14) => apiGet<LowStockTrend>(`/v1/analytics/low-stock-trend?days=${days}`),
 };
 
 // ---------------------------------------------------------------------------

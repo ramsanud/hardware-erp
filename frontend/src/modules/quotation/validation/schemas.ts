@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { GSTIN_MESSAGE, isValidGstin } from '@/shared/lib/gstin';
 
 /** Step 1 - who the quote is for. */
 export const quotationCustomerStepSchema = z.object({
@@ -6,7 +7,7 @@ export const quotationCustomerStepSchema = z.object({
   customerMobile: z.string().trim().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number'),
   customerEmail: z.string().trim().email('Enter a valid email address').optional().or(z.literal('')),
   customerGstNo: z.string().trim().toUpperCase()
-    .regex(/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/, 'Enter a valid 15-character GSTIN')
+    .refine(isValidGstin, GSTIN_MESSAGE)
     .optional().or(z.literal('')),
   customerStateCode: z.string().trim().regex(/^\d{2}$/, 'State code is 2 digits')
     .optional().or(z.literal('')),

@@ -12,10 +12,12 @@ import { signedInApi, OWNER } from '../support/fixtures.mjs';
 
 const day = (i) => new Date(Date.now() - (13 - i) * 86400000).toISOString().slice(0, 10);
 const SERIES = [0, 0, 1200, 800, 0, 2500, 1800, 900, 3100, 0, 4200, 2600, 3900, 5100]
-  .map((v, i) => ({ bucket: day(i), revenuePaise: v * 100, revenueDisplay: v.toFixed(2), invoiceCount: v ? 1 : 0 }));
+  .map((v, i) => ({ bucket: day(i), revenuePaise: v * 100, revenueDisplay: v.toFixed(2), invoiceCount: v ? 1 : 0, outstandingPaise: Math.round(v * 40), outstandingDisplay: (v * 0.4).toFixed(2) }));
+// CR-084: fourteen daily low-stock snapshots, falling from 9 to 3.
+const LOW_STOCK = [9, 9, 8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3].map((c, i) => ({ date: day(i), lowStockCount: c }));
 
 /** The signed-in stub plus the dashboard's own endpoints, with figures and a real 14-day series. */
-function dashboardApi({ trend = true, categories = [{ id: 1, categoryName: 'Pipes & Fittings' }, { id: 2, categoryName: 'Paints' }], whatsapp = true } = {}) {
+function dashboardApi({ trend = true, lowStock = true, categories = [{ id: 1, categoryName: 'Pipes & Fittings' }, { id: 2, categoryName: 'Paints' }], whatsapp = true } = {}) {
   const base = signedInApi();
   return (url, route) => {
     if (url.includes('/v1/dashboard/sales-summary')) {
@@ -36,6 +38,7 @@ function dashboardApi({ trend = true, categories = [{ id: 1, categoryName: 'Pipe
         outstandingPaise: before ? 600000 : 845000, outstandingDisplay: '0.00' });
     }
     if (url.includes('/v1/categories')) return envelope(categories);
+    if (url.includes('/v1/analytics/low-stock-trend')) return envelope({ points: lowStock ? LOW_STOCK : [], summary: 'stub' });
     if (url.includes('/v1/settings/whatsapp')) return envelope({ connected: whatsapp, status: whatsapp ? 'CONNECTED' : 'NOT_CONNECTED' });
     if (url.includes('/v1/activity-log')) {
       return envelope({ content: [], page: 0, size: 5, totalElements: 0, totalPages: 0, first: true, last: true });
@@ -83,12 +86,16 @@ export default async function run() {
       text.includes('40.8% vs last week')
         && await page.evaluate(() => [...document.querySelectorAll('p')].some((el) => el.innerText.includes('40.8%') && el.className.includes('text-destructive'))),
       '40.8% in red');
-    s.check('Low Stock Alerts shows the zero-state delta row', text.includes('0% vs last week'), '→ 0%');
+    // CR-084: low stock fell 6 -> 3 over the week; fewer low-stock lines is good, so green.
+    s.check('Low Stock Alerts compares today\x27s snapshot with last week\x27s, and down is good',
+      text.includes('50% vs last week')
+        && await page.evaluate(() => [...document.querySelectorAll('p')].some((el) => el.innerText.includes('50%') && el.innerText.includes('vs last week') && el.className.includes('text-success'))),
+      '50% in green');
     const sparklines = await page.locator('svg[data-sparkline]').count();
     const baselines = await page.locator('svg[data-sparkline-empty]').count();
     s.check('all four KPI cards carry a sparkline', sparklines === 4, `${sparklines} sparklines`);
-    s.check('two are measured series and two are the flat baseline, marked as such in the DOM',
-      baselines === 2, `${baselines} baselines`);
+    s.check('with data, all four are measured series - no baselines left (CR-084)',
+      baselines === 0, `${baselines} baselines`);
 
     // ---- Charts render their canvas even when empty -------------------------
     const legend = await page.evaluate(() => [...document.querySelectorAll('[data-category-legend] li')].map((li) => li.innerText.replace(/\s+/g, ' ').trim()));
@@ -148,7 +155,7 @@ export default async function run() {
     await page.context().close();
 
     // ---- With no series at all: baselines, axes and the fallback legend ------
-    const bare = await newPage(browser, { viewport: { width: 1440, height: 900 }, api: dashboardApi({ trend: false, categories: [], whatsapp: false }) });
+    const bare = await newPage(browser, { viewport: { width: 1440, height: 900 }, api: dashboardApi({ trend: false, lowStock: false, categories: [], whatsapp: false }) });
     await bare.goto(BASE + '/dashboard', { waitUntil: 'networkidle', timeout: 20000 });
     await bare.waitForTimeout(600);
     const bareBaselines = await bare.locator('svg[data-sparkline-empty]').count();

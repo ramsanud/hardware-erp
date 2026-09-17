@@ -103,6 +103,11 @@ export const PAGE_TIPS: Record<string, PageTip> = {
     title: 'Everything that is not a purchase',
     body: 'Rent, transport, wages, tea - if money went out and it was not for stock, it goes here. Reports read this, so profit is only right if this is.',
   },
+  '/reports': {
+    id: 'reports',
+    title: 'The books, one page at a time',
+    body: 'Day book, who owes you, what the shelf is worth, supplier bills and GST - pick a tab, set the dates, and download the same table as PDF or Excel for your accountant.',
+  },
   '/tools/gst-calculator': {
     id: 'gst-calculator',
     title: 'Quick GST arithmetic',
