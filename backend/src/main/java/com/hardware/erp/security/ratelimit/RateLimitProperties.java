@@ -30,5 +30,9 @@ public record RateLimitProperties(
         int platformAdminLoginPerIpPerMinute,
 
         /** CR-062 - signup availability lookups (shop name, mobile, email) per IP per minute. */
-        int registrationAvailabilityPerIpPerMinute
+        int registrationAvailabilityPerIpPerMinute,
+        /** CR-078 - signup verification codes per IP per hour. */
+        int registrationCodePerIpPerHour,
+        /** BUG-SEC-007 - MFA code submissions (TOTP, backup, email) per IP per minute. */
+        int mfaVerifyPerIpPerMinute
 ) {}

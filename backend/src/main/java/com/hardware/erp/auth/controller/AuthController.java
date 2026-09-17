@@ -173,6 +173,20 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.ok(withMaskedRefreshToken(result)));
     }
 
+    @PostMapping("/mfa/email/resend")
+    @Operation(
+            summary = "Send the sign-in code again (CR-078)",
+            description = """
+                    Called with the mfaToken from a login response whose
+                    mfaMethod is EMAIL. Sends a fresh code to the same address
+                    and kills the previous one. Refused with 429 OTP_COOLDOWN
+                    inside 60 seconds of the last send - the earlier code is
+                    still valid, use that.""")
+    public ResponseEntity<ApiResponse<OtpSentResponse>> resendEmailCode(
+            @Valid @RequestBody MfaTokenRequest request) {
+        return ResponseEntity.ok(ApiResponse.ok(authService.resendEmailCode(request)));
+    }
+
     @PostMapping("/refresh")
     @Operation(
             summary = "Rotate the token pair",
@@ -257,6 +271,28 @@ public class AuthController {
                 "Password updated. You can now sign in."));
     }
 
+    @PostMapping("/reset-password/code")
+    @Operation(
+            summary = "Set a new password using the 6-digit code from the reset email (CR-078)",
+            description = """
+                    The alternative to /reset-password for a phone, where the
+                    emailed link may open the wrong browser. The code expires
+                    after 10 minutes, dies after 5 wrong guesses, and works once.
+                    Using it also kills the link from the same email.
+
+                    Every failure - unknown identifier, wrong code, expired code
+                    - is the identical 400 INVALID_OTP, so this endpoint reveals
+                    no more about which accounts exist than /forgot-password.
+                    Rate limited to 10/hour per IP.""")
+    public ResponseEntity<ApiResponse<Void>> resetPasswordWithCode(
+            @Valid @RequestBody ResetPasswordWithCodeRequest request,
+            HttpServletResponse response) {
+        authService.resetPasswordWithCode(request);
+        cookieService.clear(response);
+        return ResponseEntity.ok(ApiResponse.message(
+                "Your password has been reset. Please sign in with the new password."));
+    }
+
     // =================================================================
     // AUTHENTICATED
     // =================================================================
@@ -313,6 +349,66 @@ public class AuthController {
         Long userId = SecurityUtils.requireCurrentUser().getId();
         return ResponseEntity.ok(ApiResponse.ok(
                 "Profile updated", userService.updateOwnProfile(userId, request)));
+    }
+
+    // ---- CR-078 - step-up, and an authenticator added later ----
+
+    @PostMapping("/step-up/send")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(
+            summary = "Send a re-confirmation code to the signed-in user's email (CR-078)",
+            description = """
+                    For the few actions where a live session is not enough proof
+                    that the account holder is the one acting: changing the login
+                    email, erasing the shop's data. The code goes to the CURRENT
+                    address on the account. 400 NO_EMAIL when there is none;
+                    429 OTP_COOLDOWN inside 60 seconds of the last send.""")
+    public ResponseEntity<ApiResponse<OtpSentResponse>> sendStepUpCode() {
+        return ResponseEntity.ok(ApiResponse.ok(
+                authService.sendStepUpCode(SecurityUtils.requireCurrentUser().getId())));
+    }
+
+    @PostMapping("/step-up/verify")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(
+            summary = "Exchange the re-confirmation code for a short-lived step-up token (CR-078)",
+            description = """
+                    Returns a token that the sensitive endpoints accept as
+                    `stepUpToken` for 10 minutes. It is bound to this user and
+                    to this purpose: it is not a session token, and /mfa/verify
+                    will not accept it. 400 INVALID_OTP on a wrong or expired code.""")
+    public ResponseEntity<ApiResponse<StepUpResponse>> verifyStepUp(
+            @Valid @RequestBody StepUpVerifyRequest request) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                authService.verifyStepUp(SecurityUtils.requireCurrentUser().getId(), request.code())));
+    }
+
+    @PostMapping("/mfa/setup")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(
+            summary = "Add an authenticator app to an account that signs in with email codes (CR-078)",
+            description = """
+                    The same enrollment /mfa/enroll performs, for a user who is
+                    already signed in. Returns the QR code and the secret as
+                    manual-entry text. Nothing changes until /mfa/setup/confirm
+                    succeeds. 401 MFA_ALREADY_ENROLLED if an app is already set up.""")
+    public ResponseEntity<ApiResponse<MfaEnrollResponse>> beginMfaSetup() {
+        return ResponseEntity.ok(ApiResponse.ok(
+                authService.beginMfaSetup(SecurityUtils.requireCurrentUser().getId())));
+    }
+
+    @PostMapping("/mfa/setup/confirm")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(
+            summary = "Confirm the authenticator app with a code it shows (CR-078)",
+            description = """
+                    From the next sign-in the second factor is the app, not an
+                    email code. Returns ten one-time backup codes - shown exactly
+                    once, here. The current session is unaffected.""")
+    public ResponseEntity<ApiResponse<List<String>>> confirmMfaSetup(
+            @Valid @RequestBody MfaSetupConfirmRequest request) {
+        return ResponseEntity.ok(ApiResponse.ok("Authenticator app added",
+                authService.confirmMfaSetup(SecurityUtils.requireCurrentUser().getId(), request.code())));
     }
 
     @PostMapping("/change-password")

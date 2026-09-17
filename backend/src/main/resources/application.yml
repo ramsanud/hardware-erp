@@ -148,6 +148,14 @@ app:
     # somebody wrote down, never the result of a forgotten variable, and the
     # startup banner says "mfa: DISABLED" on every boot while it is off.
     mfa-required: ${MFA_REQUIRED:true}
+    # CR-078 - a user with no authenticator app gets a sign-in code by email
+    # instead of being forced to enroll TOTP first. false restores the
+    # CR-058 enroll-or-nothing behaviour.
+    mfa-email-fallback: ${MFA_EMAIL_FALLBACK:true}
+    # CR-078 - registering a shop requires a code sent to the owner's email
+    # first. Never turn this off in production: an unverified address is a
+    # password reset that can never arrive.
+    registration-email-verification: ${REGISTRATION_EMAIL_VERIFICATION:true}
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
 
   # Cloudflare Turnstile on the sign-in page. Off by default and treated as
@@ -189,6 +197,12 @@ app:
     # keystroke pause; still low enough that scripted enumeration of the
     # identifier space is impractical from one address.
     registration-availability-per-ip-per-minute: 20
+    # CR-078. A signup sends a code to whatever address was typed; ten an
+    # hour covers a typo or two and stops one address using this to spam.
+    registration-code-per-ip-per-hour: 10
+    # BUG-SEC-007. Ten guesses a minute at a six-digit code is 100 minutes
+    # per 0.1% chance - a real person mistypes a TOTP two or three times.
+    mfa-verify-per-ip-per-minute: 10
 
   password-reset:
     token-validity-minutes: 30

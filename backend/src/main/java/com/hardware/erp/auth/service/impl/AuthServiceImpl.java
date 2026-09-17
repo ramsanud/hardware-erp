@@ -8,6 +8,7 @@ import com.hardware.erp.auth.repository.RefreshTokenRepository;
 import com.hardware.erp.auth.repository.UserAvatarRepository;
 import com.hardware.erp.auth.repository.UserRepository;
 import com.hardware.erp.auth.service.AuthService;
+import com.hardware.erp.auth.service.EmailOtpService;
 import com.hardware.erp.auth.service.MailService;
 import com.hardware.erp.auth.service.SecurityAuditService;
 import com.hardware.erp.auth.service.UserBackupCodeService;
@@ -38,6 +39,7 @@ import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -56,6 +58,7 @@ public class AuthServiceImpl implements AuthService {
     private final TotpService totpService;
     private final UserBackupCodeService backupCodeService;
     private final SecurityProperties securityProperties;
+    private final EmailOtpService emailOtpService;
 
     private static final String MFA_ISSUER_LABEL = "Hardware ERP";
 
@@ -130,12 +133,33 @@ public class AuthServiceImpl implements AuthService {
         // mfaEnabled=false gets an enrollment challenge instead of a session
         // on this successful password check, and never gets a session before
         // enrollment is confirmed.
-        MfaTokenPurpose purpose = user.isMfaEnabled() ? MfaTokenPurpose.LOGIN : MfaTokenPurpose.ENROLL;
+        //
+        // CR-078 - unless the installation allows email as the fallback and
+        // the account has an address to send to, in which case a code goes
+        // there and the user is never forced through QR enrollment. The
+        // choice is made here, once, from the account's state; the client
+        // cannot ask for the weaker method.
+        MfaTokenPurpose purpose;
+        if (user.isMfaEnabled()) {
+            purpose = MfaTokenPurpose.LOGIN;
+        } else if (securityProperties.mfaEmailFallback() && hasEmail(user)) {
+            purpose = MfaTokenPurpose.LOGIN_EMAIL;
+        } else {
+            purpose = MfaTokenPurpose.ENROLL;
+        }
         String mfaToken = jwtService.generateMfaToken(user.getId(), purpose);
 
         auditService.success(AuditAction.LOGIN_MFA_REQUIRED, user.getId(), user.getFullName(),
                 "USER", user.getId());
 
+        if (purpose == MfaTokenPurpose.LOGIN_EMAIL) {
+            // A cooldown here means a code from a sign-in seconds ago is still
+            // live - the user can enter that one, so nothing is lost by not
+            // sending another.
+            emailOtpService.issue(user.getEmail(), user, EmailOtpPurpose.LOGIN, user.getFullName());
+            return LoginChallengeResponse.emailChallenge(
+                    mfaToken, jwtService.mfaTokenSeconds(), maskEmail(user.getEmail()));
+        }
         return LoginChallengeResponse.challenge(
                 mfaToken, purpose == MfaTokenPurpose.ENROLL, jwtService.mfaTokenSeconds());
     }
@@ -143,7 +167,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public MfaEnrollResponse enrollMfa(MfaTokenRequest request) {
-        User user = requireChallenge(request.mfaToken(), MfaTokenPurpose.ENROLL);
+        User user = requireChallenge(request.mfaToken(), Set.of(MfaTokenPurpose.ENROLL)).user();
         if (user.isMfaEnabled()) {
             throw new AuthException("MFA is already enrolled for this account", "MFA_ALREADY_ENROLLED");
         }
@@ -163,7 +187,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public MfaConfirmResponse confirmMfaEnroll(MfaVerifyRequest request) {
-        User user = requireChallenge(request.mfaToken(), MfaTokenPurpose.ENROLL);
+        User user = requireChallenge(request.mfaToken(), Set.of(MfaTokenPurpose.ENROLL)).user();
         if (user.getTotpSecret() == null) {
             throw new AuthException("Call /mfa/enroll first", "MFA_NOT_STARTED");
         }
@@ -190,14 +214,23 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public LoginResponse verifyMfa(MfaVerifyRequest request) {
-        User user = requireChallenge(request.mfaToken(), MfaTokenPurpose.LOGIN);
+        Challenge challenge = requireChallenge(request.mfaToken(),
+                Set.of(MfaTokenPurpose.LOGIN, MfaTokenPurpose.LOGIN_EMAIL));
+        User user = challenge.user();
 
-        boolean valid = totpService.verifyCode(user.getTotpSecret(), request.code())
-                || backupCodeService.consume(user, request.code());
+        // CR-078 - the token says which verifier applies. A LOGIN_EMAIL token
+        // is never checked against TOTP and vice versa: the purpose was fixed
+        // when the password was checked, from the account's state, and the
+        // code presented here cannot change it.
+        boolean valid = challenge.purpose() == MfaTokenPurpose.LOGIN_EMAIL
+                ? emailOtpService.verify(user.getEmail(), EmailOtpPurpose.LOGIN, request.code())
+                : totpService.verifyCode(user.getTotpSecret(), request.code())
+                        || backupCodeService.consume(user, request.code());
 
         if (!valid) {
             auditService.failure(AuditAction.MFA_CHALLENGE_FAILED, user.getId(), user.getFullName(),
-                    "Invalid TOTP or backup code");
+                    challenge.purpose() == MfaTokenPurpose.LOGIN_EMAIL
+                            ? "Invalid email code" : "Invalid TOTP or backup code");
             throw new AuthException("Invalid verification code", "INVALID_MFA_CODE");
         }
 
@@ -206,13 +239,92 @@ public class AuthServiceImpl implements AuthService {
         return issueTokens(user);
     }
 
-    private User requireChallenge(String mfaToken, MfaTokenPurpose expectedPurpose) {
+    @Override
+    @Transactional
+    public OtpSentResponse resendEmailCode(MfaTokenRequest request) {
+        User user = requireChallenge(request.mfaToken(), Set.of(MfaTokenPurpose.LOGIN_EMAIL)).user();
+        EmailOtpService.IssueResult result = emailOtpService.issue(
+                user.getEmail(), user, EmailOtpPurpose.LOGIN, user.getFullName());
+        if (result == EmailOtpService.IssueResult.COOLDOWN) {
+            // The password was already checked, so saying "wait" reveals nothing
+            // about the account that the caller does not already know.
+            throw new BusinessException("Please wait a minute before requesting another code",
+                    HttpStatus.TOO_MANY_REQUESTS, "OTP_COOLDOWN");
+        }
+        return new OtpSentResponse(maskEmail(user.getEmail()), EmailOtpService.RESEND_COOLDOWN_SECONDS);
+    }
+
+    // =================================================================
+    // CR-078 - TOTP added later, from the profile
+    // =================================================================
+
+    /**
+     * The same enrollment as /mfa/enroll, for a user who signed in with an
+     * email code and now wants an authenticator app. Reached only with a
+     * real session, which is the point: with the email fallback on, an
+     * unenrolled account's second factor IS the email code, so enrolling
+     * TOTP from the challenge screen - before that code is entered - would
+     * let a password alone attach an authenticator to the account.
+     */
+    @Override
+    @Transactional
+    public MfaEnrollResponse beginMfaSetup(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", userId));
+        if (user.isMfaEnabled()) {
+            throw new AuthException("MFA is already enrolled for this account", "MFA_ALREADY_ENROLLED");
+        }
+
+        String secret = totpService.generateSecret();
+        user.beginMfaEnrollment(secret);
+        userRepository.save(user);
+
+        String otpAuthUri = totpService.otpAuthUri(MFA_ISSUER_LABEL, identifierForOtpUri(user), secret);
+        String qrBase64 = Base64.getEncoder().encodeToString(QrCodeGenerator.pngBytes(otpAuthUri));
+
+        auditService.success(AuditAction.MFA_ENROLLMENT_STARTED, user.getId(), user.getFullName(),
+                "USER", user.getId());
+        return new MfaEnrollResponse(otpAuthUri, qrBase64, secret);
+    }
+
+    @Override
+    @Transactional
+    public List<String> confirmMfaSetup(Long userId, String code) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", userId));
+        if (user.isMfaEnabled()) {
+            throw new AuthException("MFA is already enrolled for this account", "MFA_ALREADY_ENROLLED");
+        }
+        if (user.getTotpSecret() == null) {
+            throw new AuthException("Call /mfa/setup first", "MFA_NOT_STARTED");
+        }
+        if (!totpService.verifyCode(user.getTotpSecret(), code)) {
+            auditService.failure(AuditAction.MFA_CHALLENGE_FAILED, user.getId(), user.getFullName(),
+                    "Invalid setup code");
+            throw new AuthException("Invalid verification code", "INVALID_MFA_CODE");
+        }
+
+        user.confirmMfaEnrollment();
+        userRepository.save(user);
+        List<String> backupCodes = backupCodeService.issueNewSet(user);
+
+        auditService.success(AuditAction.MFA_ENROLLED_FROM_PROFILE, user.getId(), user.getFullName(),
+                "USER", user.getId());
+        // From the next sign-in the challenge is TOTP; nothing about the
+        // current session changes, so no token is reissued here.
+        return backupCodes;
+    }
+
+    /** A challenge token and what it was issued for. */
+    private record Challenge(User user, MfaTokenPurpose purpose) {}
+
+    private Challenge requireChallenge(String mfaToken, Set<MfaTokenPurpose> acceptedPurposes) {
         Claims claims = jwtService.parse(mfaToken).orElseThrow(
                 () -> new AuthException("Invalid or expired verification session", "MFA_TOKEN_INVALID"));
 
         MfaTokenPurpose purpose = jwtService.purposeFrom(claims).orElseThrow(
                 () -> new AuthException("Invalid or expired verification session", "MFA_TOKEN_INVALID"));
-        if (purpose != expectedPurpose) {
+        if (!acceptedPurposes.contains(purpose)) {
             throw new AuthException("Invalid or expired verification session", "MFA_TOKEN_INVALID");
         }
 
@@ -224,7 +336,29 @@ public class AuthServiceImpl implements AuthService {
         if (!user.isActive() || user.isLocked()) {
             throw AuthException.invalidCredentials();
         }
-        return user;
+        return new Challenge(user, purpose);
+    }
+
+    private static boolean hasEmail(User user) {
+        return user.getEmail() != null && !user.getEmail().isBlank();
+    }
+
+    /**
+     * "o***r@sarahardware.in" - enough for the person to recognise their own
+     * address, not enough for someone shoulder-surfing the verify screen to
+     * learn it. Package-private for the test.
+     */
+    static String maskEmail(String email) {
+        int at = email.indexOf('@');
+        if (at <= 0) {
+            return "***";
+        }
+        String local = email.substring(0, at);
+        String domain = email.substring(at);
+        if (local.length() <= 2) {
+            return local.charAt(0) + "***" + domain;
+        }
+        return local.charAt(0) + "***" + local.charAt(local.length() - 1) + domain;
     }
 
     /** Falls back to the mobile number - email is optional on app_user, an OTP URI account label must not be blank. */
@@ -496,7 +630,13 @@ public class AuthServiceImpl implements AuthService {
                 .build());
 
         String url = resetUrlBase + "?token=" + URLEncoder.encode(rawToken, StandardCharsets.UTF_8);
-        mailService.sendPasswordResetLink(user.getEmail(), user.getFullName(), url);
+
+        // CR-078 - a six-digit code goes in the same email as the link, for a
+        // phone where the link opens the wrong browser or none. A cooldown
+        // here is swallowed on purpose: reporting it would say "this account
+        // exists and asked a minute ago", which /forgot-password never says.
+        String code = emailOtpService.issueRaw(user.getEmail(), user, EmailOtpPurpose.PASSWORD_RESET);
+        mailService.sendPasswordResetLink(user.getEmail(), user.getFullName(), url, code);
 
         auditService.success(AuditAction.PASSWORD_RESET_REQUESTED, user.getId(),
                 user.getFullName(), "USER", user.getId());
@@ -530,6 +670,87 @@ public class AuthServiceImpl implements AuthService {
 
         auditService.success(AuditAction.PASSWORD_RESET, user.getId(), user.getFullName(),
                 "USER", user.getId());
+    }
+
+    // =================================================================
+    // CR-078 - forgot-password by code, and step-up
+    // =================================================================
+
+    @Override
+    @Transactional
+    public void resetPasswordWithCode(ResetPasswordWithCodeRequest request) {
+        // Every failure below is the same 400 INVALID_OTP, whether the account
+        // is unknown, has no email, or the code is wrong: this endpoint must
+        // be exactly as silent about which accounts exist as /forgot-password.
+        Optional<User> maybeUser = userRepository.findByIdentifier(request.identifier().trim());
+        if (maybeUser.isEmpty() || !maybeUser.get().isActive() || !hasEmail(maybeUser.get())
+                || !emailOtpService.verify(maybeUser.get().getEmail(), EmailOtpPurpose.PASSWORD_RESET, request.code())) {
+            throw new BusinessException("This code is invalid or has expired. Please request a new one.",
+                    HttpStatus.BAD_REQUEST, "INVALID_OTP");
+        }
+        User user = maybeUser.get();
+
+        user.applyNewPassword(passwordEncoder.encode(request.newPassword()), false);
+        userRepository.save(user);
+
+        // The link from the same email is dead too: one request, one reset.
+        resetTokenRepository.invalidateAllForUser(user.getId(), LocalDateTime.now());
+        refreshTokenRepository.revokeAllForUser(
+                user.getId(), RevokedReason.PASSWORD_RESET, LocalDateTime.now());
+
+        auditService.success(AuditAction.PASSWORD_RESET, user.getId(), user.getFullName(),
+                "USER", user.getId());
+    }
+
+    @Override
+    @Transactional
+    public OtpSentResponse sendStepUpCode(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", userId));
+        if (!hasEmail(user)) {
+            throw new BusinessException("Add an email address to your profile first - that is where the code is sent.",
+                    HttpStatus.BAD_REQUEST, "NO_EMAIL");
+        }
+        EmailOtpService.IssueResult result = emailOtpService.issue(
+                user.getEmail(), user, EmailOtpPurpose.STEP_UP, user.getFullName());
+        if (result == EmailOtpService.IssueResult.COOLDOWN) {
+            throw new BusinessException("Please wait a minute before requesting another code",
+                    HttpStatus.TOO_MANY_REQUESTS, "OTP_COOLDOWN");
+        }
+        return new OtpSentResponse(maskEmail(user.getEmail()), EmailOtpService.RESEND_COOLDOWN_SECONDS);
+    }
+
+    @Override
+    @Transactional
+    public StepUpResponse verifyStepUp(Long userId, String code) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", userId));
+        if (!hasEmail(user) || !emailOtpService.verify(user.getEmail(), EmailOtpPurpose.STEP_UP, code)) {
+            throw new BusinessException("This code is invalid or has expired. Please request a new one.",
+                    HttpStatus.BAD_REQUEST, "INVALID_OTP");
+        }
+        auditService.success(AuditAction.STEP_UP_VERIFIED, user.getId(), user.getFullName(), "USER", user.getId());
+        // The same JWT shape as an MFA challenge, with its own purpose so it is
+        // accepted nowhere else - not as a bearer token, not by /mfa/verify.
+        return new StepUpResponse(
+                jwtService.generateMfaToken(user.getId(), MfaTokenPurpose.STEP_UP), jwtService.mfaTokenSeconds());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void requireStepUp(Long userId, String stepUpToken) {
+        if (stepUpToken == null || stepUpToken.isBlank()) {
+            throw new BusinessException("Confirm this change with the code sent to your email first",
+                    HttpStatus.FORBIDDEN, "STEP_UP_REQUIRED");
+        }
+        Optional<Claims> claims = jwtService.parse(stepUpToken);
+        boolean valid = claims.isPresent()
+                && jwtService.purposeFrom(claims.get()).filter(MfaTokenPurpose.STEP_UP::equals).isPresent()
+                && jwtService.userIdFrom(claims.get()).filter(userId::equals).isPresent();
+        if (!valid) {
+            throw new BusinessException("Your confirmation has expired - request a new code",
+                    HttpStatus.FORBIDDEN, "STEP_UP_REQUIRED");
+        }
     }
 
     @Override

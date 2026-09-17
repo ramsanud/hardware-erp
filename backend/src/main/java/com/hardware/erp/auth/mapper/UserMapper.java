@@ -40,6 +40,8 @@ public class UserMapper {
                 user.getStatus(),
                 user.isMustChangePassword(),
                 hasAvatar,
+                user.isMfaEnabled(),
+                user.getEmailVerifiedAt() != null,
                 user.getLastLoginAt(),
                 user.getCreatedAt());
     }

@@ -6,6 +6,7 @@ import com.hardware.erp.auth.mapper.UserMapper;
 import com.hardware.erp.auth.repository.RefreshTokenRepository;
 import com.hardware.erp.auth.repository.RoleRepository;
 import com.hardware.erp.auth.repository.UserRepository;
+import com.hardware.erp.auth.service.AuthService;
 import com.hardware.erp.auth.service.SecurityAuditService;
 import com.hardware.erp.auth.service.UserService;
 import com.hardware.erp.common.dto.PageResponse;
@@ -36,6 +37,8 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
     private final SecurityAuditService auditService;
     private final EntitlementService entitlementService;
+    /** CR-078 - only for requireStepUp; AuthServiceImpl has no dependency back on this class. */
+    private final AuthService authService;
     private final com.hardware.erp.common.activity.ActivityLogRepository activityLogRepository;
 
     @Override
@@ -158,12 +161,29 @@ public class UserServiceImpl implements UserService {
             throw new DuplicateResourceException("Email", email);
         }
 
+        // CR-078 - the login email is where password resets and sign-in codes
+        // go, so changing a verified one is the takeover step a stolen
+        // session would take first. It needs a code sent to the CURRENT
+        // address. An address that was never verified, or none at all, has
+        // nothing to protect yet and no inbox a code could reach.
+        String current = normaliseEmail(user.getEmail());
+        boolean emailChanging = current == null ? email != null : !current.equals(email);
+        if (emailChanging) {
+            if (user.getEmailVerifiedAt() != null) {
+                authService.requireStepUp(userId, request.stepUpToken());
+            }
+            user.setEmailVerifiedAt(null);
+        }
+
         user.setFullName(request.fullName().trim());
         user.setEmail(email);
 
         User saved = userRepository.save(user);
         auditService.success(AuditAction.USER_UPDATED, userId, saved.getFullName(),
                 "USER", userId);
+        if (emailChanging) {
+            auditService.success(AuditAction.EMAIL_CHANGED, userId, saved.getFullName(), "USER", userId);
+        }
         return userMapper.toUserResponse(saved);
     }
 

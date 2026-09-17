@@ -30,7 +30,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.rate-limit.forgot-password-per-ip-per-hour=3",
         "app.rate-limit.forgot-password-per-identifier-per-hour=100",
         // CR-062 / BUG-SEC-005
-        "app.rate-limit.registration-availability-per-ip-per-minute=3"
+        "app.rate-limit.registration-availability-per-ip-per-minute=3",
+        // CR-078 / BUG-SEC-007
+        "app.rate-limit.mfa-verify-per-ip-per-minute=3",
+        "app.rate-limit.registration-code-per-ip-per-hour=2"
 })
 class RateLimitIT extends AbstractIntegrationTest {
 
@@ -170,6 +173,52 @@ class RateLimitIT extends AbstractIntegrationTest {
         mockMvc.perform(org.springframework.test.web.servlet.request
                         .MockMvcRequestBuilders.get("/v1/tenants/register/identifier-available")
                         .param("mobileNo", "9000000003"))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    @DisplayName("BUG-SEC-007: /mfa/verify is rate limited - a six-digit code cannot be guessed at wire speed")
+    void mfaVerifyIsRateLimited() throws Exception {
+        // A garbage token is enough: the filter runs before the controller,
+        // and the bucket must count every submission, valid token or not.
+        String body = "{\"mfaToken\":\"not-a-real-token\",\"code\":\"000000\"}";
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            mockMvc.perform(post("/v1/auth/mfa/verify").contentType(APPLICATION_JSON).content(body))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        mockMvc.perform(post("/v1/auth/mfa/verify").contentType(APPLICATION_JSON).content(body))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMIT_EXCEEDED"));
+    }
+
+    @Test
+    @DisplayName("BUG-SEC-007: the three MFA code endpoints share one bucket, so alternating between them gains nothing")
+    void mfaEndpointsShareOneBucket() throws Exception {
+        String body = "{\"mfaToken\":\"not-a-real-token\",\"code\":\"000000\"}";
+        mockMvc.perform(post("/v1/auth/mfa/verify").contentType(APPLICATION_JSON).content(body))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/v1/auth/mfa/enroll/confirm").contentType(APPLICATION_JSON).content(body))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/v1/auth/mfa/email/resend").contentType(APPLICATION_JSON)
+                        .content("{\"mfaToken\":\"not-a-real-token\"}"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/v1/auth/mfa/verify").contentType(APPLICATION_JSON).content(body))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    @DisplayName("CR-078: the signup code send is rate limited per IP")
+    void registrationCodeSendIsRateLimited() throws Exception {
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            mockMvc.perform(post("/v1/tenants/register/send-code").contentType(APPLICATION_JSON)
+                            .content("{\"email\":\"ratelimit-" + attempt + "@example.in\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(post("/v1/tenants/register/send-code").contentType(APPLICATION_JSON)
+                        .content("{\"email\":\"ratelimit-3@example.in\"}"))
                 .andExpect(status().isTooManyRequests());
     }
 }

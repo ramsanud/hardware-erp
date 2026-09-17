@@ -117,15 +117,22 @@ public class SecurityConfig {
                             "/v1/auth/refresh",
                             "/v1/auth/forgot-password",
                             "/v1/auth/reset-password",
+                            // CR-078 - the code path of the same reset email.
+                            "/v1/auth/reset-password/code",
                             // CR-058 - carry the MFA challenge token from
                             // login in the body; there is no session yet.
                             "/v1/auth/mfa/enroll",
                             "/v1/auth/mfa/enroll/confirm",
                             "/v1/auth/mfa/verify",
+                            // CR-078 - resend the emailed sign-in code; the
+                            // challenge token in the body is the only credential.
+                            "/v1/auth/mfa/email/resend",
                             "/v1/tenants/register",
                             "/v1/tenants/register/slug-available",
                             // CR-062 - same public signup wizard, rate-limited alongside it.
                             "/v1/tenants/register/identifier-available",
+                            // CR-078 - the email code the signup wizard asks for.
+                            "/v1/tenants/register/send-code",
                             // Meta calls this with no JWT of ours - authenticity is
                             // enforced inside WhatsAppWebhookController itself (the
                             // GET handshake's hub.verify_token, the POST's

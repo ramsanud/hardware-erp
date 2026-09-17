@@ -53,6 +53,7 @@ class AuthServiceImplTest {
     @Mock private UserRepository userRepository;
     @Mock private RefreshTokenRepository refreshTokenRepository;
     @Mock private com.hardware.erp.auth.repository.UserAvatarRepository avatarRepository;
+    @Mock private com.hardware.erp.auth.service.EmailOtpService emailOtpService;
     @Mock private PasswordResetTokenRepository resetTokenRepository;
     @Mock private MailService mailService;
     @Mock private SecurityAuditService auditService;
@@ -72,7 +73,9 @@ class AuthServiceImplTest {
      */
     @Spy private SecurityProperties securityProperties = new SecurityProperties(
             SecurityProperties.RefreshTokenTransport.COOKIE, "erp_refresh_token",
-            true, true, List.of("http://localhost:5173"));
+            // CR-078: fallback off here so the enrollment assertions below keep their
+            // meaning; EmailOtpFlowIT covers the email path against PostgreSQL.
+            true, true, false, true, List.of("http://localhost:5173"));
 
     @InjectMocks private AuthServiceImpl authService;
 
@@ -533,7 +536,7 @@ class AuthServiceImplTest {
             verify(resetTokenRepository).save(tokenCaptor.capture());
             ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
             verify(mailService).sendPasswordResetLink(
-                    eq("owner@sarahardware.in"), anyString(), urlCaptor.capture());
+                    eq("owner@sarahardware.in"), anyString(), urlCaptor.capture(), any());
 
             assertThat(tokenCaptor.getValue().getTokenHash()).hasSize(64);
             assertThat(urlCaptor.getValue())

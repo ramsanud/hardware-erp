@@ -1,6 +1,7 @@
 package com.hardware.erp.tenant.service;
 
 import com.hardware.erp.tenant.dto.IdentifierAvailabilityResponse;
+import com.hardware.erp.auth.dto.OtpSentResponse;
 import com.hardware.erp.tenant.dto.TenantRegistrationRequest;
 import com.hardware.erp.tenant.dto.TenantRegistrationResponse;
 
@@ -16,4 +17,14 @@ public interface TenantRegistrationService {
      * register. Either argument may be null or blank, meaning "not asked".
      */
     IdentifierAvailabilityResponse isIdentifierAvailable(String mobileNo, String email);
+
+    /**
+     * CR-078. Sends a verification code to the address the wizard is about to
+     * register. Returns the masked address and the resend cooldown; throws
+     * 429 OTP_COOLDOWN inside it and 409 if the address is already taken -
+     * the same fact identifier-available already discloses, so no new
+     * enumeration surface.
+     */
+    OtpSentResponse sendVerificationCode(String email);
+
 }

@@ -1,5 +1,7 @@
 package com.hardware.erp.tenant.service.impl;
 
+import com.hardware.erp.auth.dto.OtpSentResponse;
+import com.hardware.erp.auth.entity.EmailOtpPurpose;
 import com.hardware.erp.auth.entity.Permission;
 import com.hardware.erp.auth.entity.Role;
 import com.hardware.erp.auth.entity.RoleStatus;
@@ -8,6 +10,7 @@ import com.hardware.erp.auth.entity.UserStatus;
 import com.hardware.erp.auth.repository.PermissionRepository;
 import com.hardware.erp.auth.repository.RoleRepository;
 import com.hardware.erp.auth.repository.UserRepository;
+import com.hardware.erp.auth.service.EmailOtpService;
 import com.hardware.erp.common.exception.BusinessException;
 import com.hardware.erp.common.exception.DuplicateResourceException;
 import com.hardware.erp.legal.LegalDocumentVersions;
@@ -22,6 +25,7 @@ import com.hardware.erp.tenant.entity.SubscriptionTier;
 import com.hardware.erp.tenant.entity.Tenant;
 import com.hardware.erp.tenant.entity.TenantStatus;
 import com.hardware.erp.tenant.repository.TenantRepository;
+import com.hardware.erp.security.SecurityProperties;
 import com.hardware.erp.tenant.service.TenantRegistrationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -144,6 +148,8 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
     private final UserConsentRepository userConsentRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EmailOtpService emailOtpService;
+    private final SecurityProperties securityProperties;
 
     @Override
     @Transactional
@@ -157,6 +163,18 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
         }
         if (userRepository.existsByEmailIgnoreCase(request.email().trim())) {
             throw new DuplicateResourceException("Email", request.email());
+        }
+
+        // CR-078 - the address must have received a code before anything is
+        // created. Checked after the duplicate checks so a taken email is
+        // reported as taken, not as "wrong code". The switch exists for the
+        // dev/test profiles; production leaves it on.
+        if (securityProperties.registrationEmailVerification()) {
+            if (request.emailCode() == null
+                    || !emailOtpService.verify(request.email(), EmailOtpPurpose.EMAIL_VERIFY, request.emailCode())) {
+                throw new BusinessException("The email verification code is invalid or has expired. Request a new one.",
+                        HttpStatus.BAD_REQUEST, "INVALID_OTP");
+            }
         }
 
         Tenant tenant = tenantRepository.save(Tenant.builder()
@@ -199,6 +217,8 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 .tokenVersion(0)
                 .failedLoginAttempts(0)
                 .passwordChangedAt(LocalDateTime.now())
+                // CR-078 - proven by the code above; null when the check is switched off.
+                .emailVerifiedAt(securityProperties.registrationEmailVerification() ? LocalDateTime.now() : null)
                 .build());
 
         recordConsent(tenant, owner, ConsentType.TERMS, request.termsVersion(), true);
@@ -262,6 +282,35 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
         boolean emailFree = email == null || email.isBlank()
                 || !userRepository.existsByEmailIgnoreCase(email.trim());
         return new IdentifierAvailabilityResponse(mobileFree, emailFree);
+    }
+
+    @Override
+    @Transactional
+    public OtpSentResponse sendVerificationCode(String email) {
+        String address = email.trim();
+        if (userRepository.existsByEmailIgnoreCase(address)) {
+            throw new DuplicateResourceException("Email", address);
+        }
+        EmailOtpService.IssueResult result = emailOtpService.issue(address, null, EmailOtpPurpose.EMAIL_VERIFY, null);
+        if (result == EmailOtpService.IssueResult.COOLDOWN) {
+            throw new BusinessException("Please wait a minute before requesting another code",
+                    HttpStatus.TOO_MANY_REQUESTS, "OTP_COOLDOWN");
+        }
+        return new OtpSentResponse(maskEmail(address), EmailOtpService.RESEND_COOLDOWN_SECONDS);
+    }
+
+    /** Same masking as AuthServiceImpl - one shape of hint across the sign-in and signup screens. */
+    private static String maskEmail(String email) {
+        int at = email.indexOf('@');
+        if (at <= 0) {
+            return "***";
+        }
+        String local = email.substring(0, at);
+        String domain = email.substring(at);
+        if (local.length() <= 2) {
+            return local.charAt(0) + "***" + domain;
+        }
+        return local.charAt(0) + "***" + local.charAt(local.length() - 1) + domain;
     }
 
     @Override
