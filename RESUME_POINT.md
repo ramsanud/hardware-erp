@@ -1,5 +1,91 @@
 # RESUME POINT
 
+**Updated:** 2026-09-16 (**BUG-OPS-001 — production schema drift fixed and verified; `origin/main` push still pending confirmation**). `SCOPE: BACKEND ONLY`.
+
+## BUG-OPS-001 — production schema drift, and `origin/main` was 38 commits stale (2026-09-16)
+
+**Found while diagnosing a Render support request.** No deploy had failed —
+the user pasted the *application* log (not a build/deploy log), which
+showed only ordinary WARNs across repeated free-tier sleep/wake cycles, plus
+one real signal: `Schema "public" has a version (55) that is newer than the
+latest available migration (54)!`.
+
+**Root cause, confirmed by the user:** the Render service and this
+session's `.env.cloud` point at the exact same Supabase project. Earlier in
+this same conversation (see the "start the application" / "in local data
+are store in docker image or supabase?" exchange, same day), a local run
+with `SPRING_PROFILES_ACTIVE=cloud,local` was pointed at that connection and
+Flyway applied **V55** to it directly — a schema change made from a laptop,
+outside any deploy. Separately, `origin/main` on GitHub (what Render's git
+integration actually builds) had not been pushed since `4d0ae45`
+(2026-09-09); local `main`/`develop` had already been consolidated 38
+commits ahead (see the 2026-09-15 branch-consolidation audit below) but
+never pushed, so the deployed build was stale independent of the migration
+issue.
+
+**Fixed, branch `hotfix/cr-099-block-non-prod-managed-db-migrate` off local
+`main` (`de5d01f`), merged back into `main` with `--no-ff`:**
+
+1. `DeploymentModeGuard` now **refuses to start** when the active profiles
+   exclude `prod`, the datasource looks like a managed provider (Supabase/
+   Neon/RDS/Azure), and Flyway is enabled — unless
+   `APP_ALLOW_NON_PROD_MANAGED_DB_MIGRATE=true` is set explicitly. `prod`
+   deployments (Render's included) are never affected. New property
+   `app.safety.allow-non-prod-managed-db-migrate` (default false).
+2. `origin/main` needs pushing to close the version gap (see below —
+   **not done without your go-ahead**, since a push here triggers a real
+   Render redeploy).
+3. `MFA_REQUIRED=false` — left exactly as-is, per the user: this
+   installation is in testing/demo use for now. No code change; the guard
+   already treats this as deliberate (CR-060), never a refusal.
+
+Full writeup: `BUG_REGISTRY.md` → BUG-OPS-001.
+
+**Verification, all in an isolated detached worktree
+(`E:/Project/hardware-erp-verify-main`) at `de5d01f` and then the hotfix
+commit on top:**
+
+- `mvn -o clean verify` on `de5d01f` (before the guard change): **599 unit,
+  0 failures, 2 skipped** (pre-existing, `LiveMailSmokeTest` — needs live
+  mail creds). Integration: 197 run, 6 errors + 1 failure on the first pass
+  — all six were `Unable to find a @SpringBootConfiguration`, the exact
+  "shape of the error" `testing.md` names as environmental (this machine
+  had three other sessions' Maven/Docker processes running concurrently at
+  the time); the seventh was a transient 500. Re-ran those 7 classes alone:
+  **54/54 clean.** Not a regression — confirmed by isolation, not assumed.
+- `DeploymentModeGuardTest` with the new guard: **12/12** (9 pre-existing +
+  3 new — refuses `cloud,local` against Supabase; the explicit override
+  lets it through; Flyway-disabled is exempt). None of the 9 pre-existing
+  cases combine a non-`prod` profile with a managed-database URL, so none
+  were affected by the new check.
+- Frontend `tsc -b --force` and `vite build` (private outDir) on `de5d01f`:
+  both clean, unrelated to this fix (no frontend change) but re-verified
+  since local `main` had never been built in isolation before.
+- `static_check.py`: **not executed** (no python3 on this machine).
+
+**What is committed locally but NOT pushed — needs your decision:**
+
+- Local `main` is **39 commits ahead of `origin/main`** (the 38-commit
+  catch-up already sitting in local `main`, plus the BUG-OPS-001 hotfix
+  merge on top). `origin/main` is a strict ancestor — this is a
+  fast-forward, not a rewrite.
+- Pushing `origin/main` is what actually fixes the live deployment (Render
+  builds from GitHub, not from this machine) and it triggers a real
+  redeploy of the production-facing Render service. That is an outward-
+  facing, not-trivially-reversible action, so it was prepared and verified
+  but **not pushed**, pending explicit confirmation, separate from "prepare
+  the merge and verify the status," which is what was asked and is what
+  this entry is.
+- After a push, expect Render's app log to show `Schema "public" is up to
+  date. No migration necessary.` instead of the version-mismatch WARN on
+  its next boot; ask the user to paste it to confirm, since this session
+  has no authenticated access to the Render dashboard or its API (no
+  `RENDER_API_KEY` configured anywhere on this machine).
+
+**Also from that Render debugging thread, unrelated to this fix:** a script
+hammered `/v1/tenants/register/slug-available` from `152.57.203.157` —
+`RateLimitFilter` blocked it correctly; nothing to do unless it recurs.
+
 **Updated:** 2026-09-16 (**CR-096 — Render free-tier keep-alive from inside the app**). `SCOPE: BACKEND ONLY`.
 
 ## CR-096 — the app pings itself so Render does not idle it out (2026-09-16)

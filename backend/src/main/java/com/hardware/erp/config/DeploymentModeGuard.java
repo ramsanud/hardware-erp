@@ -149,6 +149,44 @@ public class DeploymentModeGuard implements BeanFactoryPostProcessor {
                      install, which has no certificate to present."""));
         }
 
+        // BUG-OPS-001 (2026-09-16) - a local `cloud,local` run against the
+        // real Supabase project applied V55 straight to it: Flyway migrate
+        // runs on every boot regardless of who started the process or why,
+        // and nothing distinguished "a developer pointed this at production
+        // to look at real data" from "this IS the deployment". The database
+        // and the deployed build then silently disagreed on schema version
+        // until the next real deploy caught up.
+        //
+        // Refused outside 'prod' rather than merely warned, because the
+        // existing warning below (managed host, no 'cloud' profile) is about
+        // a MISCONFIGURED connection - this is a CORRECTLY configured one
+        // that is about to run migrations it has no business running. flyway
+        // enabled is checked too: a read-only inspection run
+        // (spring.flyway.enabled=false) against a managed database is not
+        // the mistake this guards against.
+        boolean flywayEnabled = environment.getProperty("spring.flyway.enabled", Boolean.class, true);
+        boolean allowNonProdManagedMigrate =
+                environment.getProperty("app.safety.allow-non-prod-managed-db-migrate", Boolean.class, false);
+        if (!production && managedDb && flywayEnabled && !allowNonProdManagedMigrate) {
+            throw new IllegalStateException(refusal("""
+                     A non-production run (profiles: %s) is about to run
+                     Flyway migrations against what looks like a managed,
+                     hosted database (Supabase/Neon/RDS/Azure). Every schema
+                     change belongs to a deploy, not to whoever happened to
+                     point DB_HOST at production - the deployed build and the
+                     database schema silently disagreed on version once
+                     already this way (V55 applied locally, main still on
+                     V54, 2026-09-16).
+
+                     If this really is a throwaway or staging database and
+                     migrating it from here is intended, set
+                     APP_ALLOW_NON_PROD_MANAGED_DB_MIGRATE=true explicitly.
+                     Otherwise point DB_HOST at a database this process may
+                     change: the local docker-compose container, or a
+                     dedicated non-production Supabase project."""
+                    .formatted(profiles.isEmpty() ? "[none]" : String.join(",", profiles))));
+        }
+
         // Managed database, but the 'cloud' profile is not active - so none of
         // application-cloud.yml applies and the connection is being built from
         // application.yml's LOCAL defaults: port 5433, database hardware_erp,
