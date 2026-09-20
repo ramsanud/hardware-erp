@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Clock } from 'lucide-react';
 import { Alert, AlertDescription } from '@/shared/components/ui/alert';
 import { APP_NAME } from '@/shared/constants';
 import { isAuthRoute } from '@/routes/ProtectedRoute';
@@ -15,7 +16,7 @@ interface LocationState {
 }
 
 export function LoginPage() {
-  const { login, isAuthenticated, initialising, cancelPendingLogin } = useAuth();
+  const { login, isAuthenticated, initialising, cancelPendingLogin, sessionExpired } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -84,6 +85,16 @@ export function LoginPage() {
         {justRegistered ? (
           <Alert>
             <AlertDescription>Your shop is ready. Sign in below to get started.</AlertDescription>
+          </Alert>
+        ) : null}
+        {/* CR-100: the bounce from an expired session used to be silent, and a
+            user mid-invoice read it as "the app logged me out for no reason". */}
+        {sessionExpired ? (
+          <Alert variant="warning" data-session-expired>
+            <Clock aria-hidden />
+            <AlertDescription className="text-foreground/80">
+              Your session has expired. Sign in again to pick up where you left off.
+            </AlertDescription>
           </Alert>
         ) : null}
         {/* "Forgot password?" sits beside Remember me inside the form, so it is not repeated here. */}

@@ -37,6 +37,12 @@ interface AuthContextValue {
    * which is the only correct answer once the flow has been abandoned.
    */
   cancelPendingLogin: () => void;
+  /**
+   * CR-100. True when the last session ended because the server refused to
+   * refresh it - not because the user signed out. The sign-in page reads it
+   * to explain the bounce; a completed sign-in clears it.
+   */
+  sessionExpired: boolean;
   verifyMfa: (code: string) => Promise<UserResponse>;
   enrollMfa: () => Promise<MfaEnrollResponse>;
   confirmMfaEnroll: (code: string) => Promise<{ user: UserResponse; backupCodes: string[] }>;
@@ -55,7 +61,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [enrollmentRequired, setEnrollmentRequired] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const bootstrapped = useRef(false);
+  // Read inside the expiry handler, which is registered once and must not
+  // capture a stale `user`. Written from an effect, never during render; the
+  // handler only ever runs from a network callback, which is after commit.
+  const signedIn = useRef(false);
+  useEffect(() => { signedIn.current = user !== null; }, [user]);
 
   const clearSession = useCallback(() => {
     tokenStorage.clear();
@@ -93,10 +105,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession]);
 
   // A refresh failure mid-session must drop the user back to the login screen.
-  useEffect(() => setSessionExpiredHandler(clearSession), [clearSession]);
+  // CR-100: and tell them why, but only if there was a session to lose - the
+  // startup refresh on a first visit fails the same way and is not an expiry.
+  useEffect(() => setSessionExpiredHandler(() => {
+    if (signedIn.current) setSessionExpired(true);
+    clearSession();
+  }), [clearSession]);
 
   /** Applies a completed session. Shared by verifyMfa and confirmMfaEnroll. */
   const applySession = useCallback((session: LoginResponse) => {
+    setSessionExpired(false);
     tokenStorage.set(session.accessToken);
     setUser(session.user);
     setMustChangePassword(session.mustChangePassword);
@@ -167,7 +185,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.warn('[auth] Sign-out call failed; clearing the local session anyway.', error);
     } finally {
+      // A deliberate sign-out is never an expiry, even when the call itself
+      // was refused with a 401 on the way out (CR-100).
       clearSession();
+      setSessionExpired(false);
     }
   }, [clearSession]);
 
@@ -178,7 +199,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.warn('[auth] Sign-out-everywhere call failed; clearing the local session anyway.', error);
     } finally {
+      // A deliberate sign-out is never an expiry, even when the call itself
+      // was refused with a 401 on the way out (CR-100).
       clearSession();
+      setSessionExpired(false);
     }
   }, [clearSession]);
 
@@ -208,6 +232,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       enrollmentRequired,
       login,
       cancelPendingLogin,
+      sessionExpired,
       verifyMfa,
       enrollMfa,
       confirmMfaEnroll,
@@ -218,7 +243,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hasAnyPermission,
     }),
     [user, initialising, mustChangePassword, mfaToken, enrollmentRequired, login,
-      cancelPendingLogin, verifyMfa, enrollMfa, confirmMfaEnroll, logout, logoutAll,
+      cancelPendingLogin, sessionExpired, verifyMfa, enrollMfa, confirmMfaEnroll, logout, logoutAll,
       refreshUser, hasPermission, hasAnyPermission],
   );
 

@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { AppLayout } from '@/layouts/AppLayout';
@@ -71,6 +72,9 @@ import { TallyExportPage } from '@/modules/tools/pages/TallyExportPage';
 import { REPORT_ROUTES } from '@/modules/report/constants';
 import { ReportsPage } from '@/modules/report/pages/ReportsPage';
 import { NotFoundPage } from '@/shared/components/NotFoundPage';
+import { LoadingState } from '@/shared/components/LoadingState';
+import { LANDING_ROUTES } from '@/modules/landing/constants';
+import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { PlatformAdminAuthProvider } from '@/modules/platform-admin/hooks/PlatformAdminAuthProvider';
 import { PlatformAdminLoginPage } from '@/modules/platform-admin/pages/PlatformAdminLoginPage';
 import { PlatformAdminMfaVerifyPage } from '@/modules/platform-admin/pages/PlatformAdminMfaVerifyPage';
@@ -96,6 +100,30 @@ import { PlatformAdminProtectedRoute } from '@/modules/platform-admin/routes/Pla
 import { ProtectedRoute } from './ProtectedRoute';
 import { RequirePermission } from './RequirePermission';
 
+/*
+ * CR-100. The landing page is the only lazy route: it pulls in `motion` for
+ * the integrations visual, and a signed-in user opening the app should not
+ * pay for a page they are redirected away from.
+ */
+const LandingPage = lazy(() => import('@/modules/landing/pages/LandingPage'));
+
+/**
+ * CR-100. `/` is the front door for a visitor and the dashboard for a user.
+ * Waiting on `initialising` matters: the startup refresh is in flight for a
+ * moment after a reload, and rendering the landing page in that gap would
+ * flash marketing at someone who is already signed in.
+ */
+function LandingRoute() {
+  const { isAuthenticated, initialising } = useAuth();
+  if (initialising) return <LoadingState variant="page" />;
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  return (
+    <Suspense fallback={<LoadingState variant="page" />}>
+      <LandingPage />
+    </Suspense>
+  );
+}
+
 /**
  * Routes are declared per module. Modules 2-12 add their own block here and
  * nothing else in this file changes.
@@ -103,6 +131,9 @@ import { RequirePermission } from './RequirePermission';
 export function AppRoutes() {
   return (
     <Routes>
+      {/* Public front door (CR-100). Above ProtectedRoute on purpose. */}
+      <Route path={LANDING_ROUTES.home} element={<LandingRoute />} />
+
       {/*
         Platform Admin Console (CR-054) - deliberately outside AuthLayout/
         AppLayout and the tenant AuthProvider entirely. Its own provider
@@ -298,8 +329,7 @@ export function AppRoutes() {
           {/* Every role can reach the dashboard - it only renders the cards
               a role actually has permission to see. */}
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          {/* `/` itself is the landing route above; a signed-in user is sent on to the dashboard from there. */}
         </Route>
       </Route>
 
