@@ -76,6 +76,7 @@ beyond `support/`. Nine suites, 246 assertions as of CR-082's second pass:
 | address-map | Leaflet picker (CR-076) |
 | whatsapp | manual `wa.me` links (CR-080) |
 | dashboard | titles, figures, sparklines (measured vs baseline), empty-chart canvases, the unanswered-endpoints case, rail folds (CR-082) |
+| states | landing page at two widths, partial-data notice + Retry, offline banner, code-keyed ErrorState, session-expiry notice, denied-route exit (CR-100) |
 
 Harness rules that bite:
 

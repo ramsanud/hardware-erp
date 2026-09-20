@@ -6,6 +6,7 @@ import { DesignStyleProvider } from '@/theme/DesignStyleProvider';
 import { ThemeColorMeta } from '@/theme/ThemeColorMeta';
 import { AuthProvider } from '@/modules/auth/hooks/AuthProvider';
 import { AppRoutes } from '@/routes';
+import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
 
 /**
  * Provider order matters. ThemeProvider is outermost so the loading state
@@ -30,7 +31,11 @@ export default function App() {
           <ThemeColorMeta />
           <BrowserRouter>
             <AuthProvider>
-              <AppRoutes />
+              {/* CR-100: the last line. Inside the router so the crash screen's
+                  links work; inside every theme provider so it is themed. */}
+              <ErrorBoundary variant="page">
+                <AppRoutes />
+              </ErrorBoundary>
               <Toaster
                 position="top-right"
                 richColors

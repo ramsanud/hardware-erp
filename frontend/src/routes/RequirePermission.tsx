@@ -1,7 +1,8 @@
-import { Navigate, Outlet } from 'react-router-dom';
+import { Link, Navigate, Outlet } from 'react-router-dom';
 import { ShieldX } from 'lucide-react';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { EmptyState } from '@/shared/components/EmptyState';
+import { Button } from '@/shared/components/ui/button';
 
 interface RequirePermissionProps {
   permission: string;
@@ -25,6 +26,9 @@ export function RequirePermission({ permission, redirectTo }: RequirePermissionP
       icon={ShieldX}
       title="You do not have access to this page"
       description="Ask the shop owner to grant the required permission on your role."
+      // CR-100: a dead end with no way out is a support call. The dashboard
+      // renders for every role, so it is always a safe place to send them.
+      action={<Button variant="outline" asChild><Link to="/dashboard">Back to dashboard</Link></Button>}
     />
   );
 }
