@@ -1,6 +1,6 @@
 # RESUME POINT
 
-**Updated:** 2026-09-20 (**CR-100 — application states + landing page, built and verified, awaiting the owner's render approval before commit**). `SCOPE: FRONTEND ONLY`, no migration. Branch `feature/cr-100-app-states-landing` from `main` (`de171b6`) in worktree `E:/Project/hardware-erp-fe` (node_modules is a junction to the main checkout's; `rmdir` it before `git worktree remove`).
+**Updated:** 2026-09-20 (**CR-100 — application states + landing page, render approved, committed as `da35a6d`, not yet merged to `main`**). `SCOPE: FRONTEND ONLY`, no migration. Branch `feature/cr-100-app-states-landing` from `main` (`de171b6`) in worktree `E:/Project/hardware-erp-fe` (node_modules is a junction to the main checkout's; `rmdir` it before `git worktree remove`).
 
 ## CR-100 — states and landing (2026-09-20)
 
@@ -16,9 +16,9 @@ Verified on the isolated build: tsc 0, build clean, Playwright **324/324**
 (297 + the new `states` suite). Screenshots at 1440 light/dark and 390 in
 the session scratchpad. Backend untouched; `mvn verify` not executed.
 
-**Open:** rule 13 — the landing page was shown to the owner as a render;
-commit once approved (stage by pathspec; the main checkout has other
-sessions' registry edits). The main checkout also has a stray untracked
+**Open:** merge — `git checkout main && git merge --no-ff feature/cr-100-app-states-landing`
+(the branch is one commit + this docs commit on top of `de171b6`, so it is
+a clean fast-forwardable merge unless another session has moved `main`). The main checkout also has a stray untracked
 root `package.json` / `package-lock.json` with `motion` from an
 `npm install` run at the repo root — not ours, not needed; the dependency
 lives in `frontend/package.json`.

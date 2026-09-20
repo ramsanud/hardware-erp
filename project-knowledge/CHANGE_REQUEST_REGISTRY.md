@@ -94,7 +94,7 @@ Nothing is implemented from conversation memory.
 | CR-086 | 2026-09-15 | User | Reports module: Day Book, Receivables Ageing, Stock Valuation, Purchase Register and GST Summary as tenant-scoped SQL aggregations under `GET /v1/reports/*`, each downloadable as PDF or Excel from the same figures the screen shows. Gated on `REPORT_VIEW`. Sidebar "Reports" goes live. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
 | CR-087 | 2026-09-15 | User | GSTR-1 offline-tool JSON (`b2b`, `b2cl`, `b2cs`, `cdnr`, `cdnur`, `hsn`) for a return period, and Modulo-36 GSTIN checksum validation shared by customer, supplier and shop settings on both layers. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
 | CR-096 | 2026-09-16 | User | Render free-tier keep-alive from inside the app: a scheduled self-ping of `/api/actuator/health` every 10 minutes, auto-configured from the `RENDER_EXTERNAL_URL` Render injects, off everywhere else. Complements — cannot replace — the external pingers in `docs/DEPLOYMENT.md` §4, because a scheduler inside a sleeping container cannot wake it. | **APPLIED, 2026-09-16** |
-| CR-100 | 2026-09-20 | User | Application states as one system: an `ErrorBoundary` crash screen with a copyable reference, an offline banner and a "cannot reach the server" error state, a session-expired notice on sign-in, a partial-data notice on the dashboard, `ErrorState` copy and icon keyed to the error code (403 / 404 / 429 / timeout / network), a shared `LoadingState`. Plus a public landing page at `/` (signed-out only; signed-in users still land on the dashboard) with an animated integrations card adapted from a 21st.dev component onto tokens and shipped integrations. Numbered 100 because 093/096/097/099 are held by sibling worktrees. `SCOPE: FRONTEND ONLY`. | **IN PROGRESS, 2026-09-20** |
+| CR-100 | 2026-09-20 | User | Application states as one system: an `ErrorBoundary` crash screen with a copyable reference, an offline banner and a "cannot reach the server" error state, a session-expired notice on sign-in, a partial-data notice on the dashboard, `ErrorState` copy and icon keyed to the error code (403 / 404 / 429 / timeout / network), a shared `LoadingState`. Plus a public landing page at `/` (signed-out only; signed-in users still land on the dashboard) with an animated integrations card adapted from a 21st.dev component onto tokens and shipped integrations. Numbered 100 because 093/096/097/099 are held by sibling worktrees. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-20** |
 ---
 
 
@@ -5399,7 +5399,7 @@ skipped) + 238 IT (0 F)**, BUILD SUCCESS. The built jar booted under
 `prod,cloud` four ways — see `RESUME_POINT.md` for the observed log lines.
 `static_check.py` not executed (no python3).
 
-## CR-100 — Application states as one system, and a public landing page (IN PROGRESS 2026-09-20)
+## CR-100 — Application states as one system, and a public landing page (APPLIED 2026-09-20)
 
 `SCOPE: FRONTEND ONLY`. No endpoint, no migration. Branch
 `feature/cr-100-app-states-landing` from `main` at `de171b6`, in the
@@ -5477,7 +5477,9 @@ existing plus a new `states` suite (27 assertions: landing at 1440 and 390
 with no errors and no horizontal scroll, the six tiles, signed-in `/` →
 dashboard, partial-data notice and Retry, offline and recovery, 403 drawn
 as permission, session-expiry notice and its absence on a plain visit,
-the denied route's way out). Screenshots at 1440 (light and dark) and 390
+the denied route's way out). Committed as `da35a6d` on
+`feature/cr-100-app-states-landing` after the owner approved the render.
+Screenshots at 1440 (light and dark) and 390
 read against the copy. Self-review then changed four things (ref written
 from an effect, not during render; the startup loader no longer says
 "Signing you in"; the offline banner's sticky offset carries the notch inset
