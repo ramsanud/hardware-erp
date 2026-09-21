@@ -1,5 +1,50 @@
 # RESUME POINT
 
+**Updated:** 2026-09-21 (**CR-101 — document engine: image export, async export queue, sharing**). `SCOPE: BOTH`, migration **V65** (renumbered from V62 at consolidation - CR-091 holds V62). Branch `feature/cr-101-document-engine` from `main` (`2a582e4`), worktree `E:/Project/hardware-erp-doc` (frontend `node_modules` is a junction to `hardware-erp-fe`'s — the main checkout's is empty; `rmdir` it before `git worktree remove`).
+
+## CR-101 — document engine extensions (2026-09-21)
+
+Asked for as CR-091/V61 (module M0 of the billing prompt kit); both numbers
+are taken on `feature/cr-088-saas-platform`, so this is **CR-101 / V65** (V62 at the time; renumbered at consolidation).
+Built: `DocumentImageRenderer` (the report PDF → PDFBox `PDFRenderer` →
+PNG/JPEG, 1080 px), `ReportExporter.toCsv`, the `report_job` queue
+(`/v1/documents/jobs`, `@Async` worker that rebuilds the requester's
+security context, 7-day cleanup), `ShareDispatcherService` (wa.me caption /
+email attachment / download for a finished job, `WhatsAppService
+.generateChooserUrl` default method, `occasionGreeting` template), and on
+the frontend `DocumentShareModal` + `AsyncExportStatusBanner` +
+`useDocumentJob` + `shared/utils/shareImage.ts` (html2canvas, own chunk),
+wired as a `Share` button beside PDF/Excel on all five reports.
+Deliberately **not** built: a Party Statement (no such report exists — its
+own CR), and re-implementing invoice/quotation sharing (CR-036/056/080 own
+it). Registry body under CR-101 has the asked-vs-built table.
+
+Verified in this worktree (own `target/`, own `dist`):
+- Frontend: tsc 0, build clean, Playwright **341/341** on the isolated
+  build (324 + the new `document-share` suite, 17). Screenshots at 1440
+  and 390 in the session scratchpad.
+- Backend: new unit tests 45 (`DocumentImageRendererTest` 4,
+  `ReportExporterTest` +2, `ManualWhatsAppServiceTest` +3,
+  `ShareDispatcherServiceImplTest` 8, `ReportJobWorkerTest` 5,
+  `ReportJobServiceImplTest` 4) and `ReportJobControllerIT` **7/7** on a
+  real Testcontainers PostgreSQL. Full `mvn -o clean verify`:
+  **648 unit + 258 integration, 0 failures (2 skipped), BUILD SUCCESS**
+  (2026-09-21, ~14 min; that run started before the V61→V62 rename of
+  the identical migration file, so `clean verify -Dit.test=ReportJobControllerIT`
+  was re-run on V62: Flyway applied "62 - cr101 report job", 7/7).
+- `static_check.py` not executed (no python3).
+
+**Open:** merge — `git checkout main && git merge --no-ff feature/cr-101-document-engine`.
+When `feature/cr-088-saas-platform` merges, its V59/V60/V61 sit below this
+V62 with no gap problem; the next free migration for anyone is **V63**.
+Follow-ups worth their own CR: a Party Statement report (then it drops
+into the queue for free — one `case` in `StandardReportJobRenderer`),
+"Image of this screen" on the invoice/quotation pages (the modal already
+takes `captureElement`), and a job list page (the endpoint exists).
+
+---
+
+
 **Updated:** 2026-09-21 (**CR-092 — Premium growth pack, applied. CR-088 → CR-092 all applied on this branch.**). `SCOPE: BOTH`, migration **V63**. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas` (forked from `main`@`d676f6f`, before CR-085/086/087 landed there — this branch does not yet carry those; the main checkout is on `feature/cr-086-reports`, whose `/reports` module is not here). **Next step is the reconcile/merge, not more features.**
 
 ## CR-092 done (2026-09-21)

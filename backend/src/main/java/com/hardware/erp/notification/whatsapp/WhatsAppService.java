@@ -21,4 +21,17 @@ public interface WhatsAppService {
      * @return an absolute https URL safe to hand to {@code window.open}
      */
     String generateChatUrl(String phoneNumber, String message);
+
+    /**
+     * CR-101 - a default method, not a new parameter on {@link #generateChatUrl}
+     * (the "gains capability via a default method" rule): no fixed
+     * recipient, so no number to validate. Opens WhatsApp's own contact
+     * chooser with {@code message} pre-filled - for sharing something (a
+     * report, a document) that is not addressed to one known customer.
+     *
+     * @return an absolute https URL safe to hand to {@code window.open}
+     */
+    default String generateChooserUrl(String message) {
+        return WhatsAppUrlBuilder.chooserUrl(message);
+    }
 }

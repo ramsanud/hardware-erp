@@ -100,6 +100,7 @@ Nothing is implemented from conversation memory.
 | CR-091 | 2026-09-15 | User | Critical business logic completion: CGST/SGST/IGST split per line & invoice with place of supply frozen on the invoice; invoice cancellation reason/by/at; `customer_ledger_entry` (invoice, payment, credit note, cancellation) with statement + ageing computed from the ledger; weighted-average cost frozen on each invoice line (`cost_price_paise`) and a revenue/COGS/gross/expenses/net profit endpoint; offline sync (`sync_transaction`, client UUID idempotency, conflict detection) with an IndexedDB outbox on the frontend. `SCOPE: BOTH`, migration V62. | **APPLIED, 2026-09-21** |
 | CR-092 | 2026-09-15 | User | PREMIUM growth pack: multi-branch (`branch`, `branch_stock`, stock transfer, branch-wise sales/purchases/users/reports), smart insights (slow-moving, overstock, reorder, demand trend, frequently-bought-together, pricing insight — all measured), daily business summary notification, tenant backup history + on-demand export snapshot. `SCOPE: BOTH`, migration V63. | **APPLIED, 2026-09-21** |
 | CR-100 | 2026-09-20 | User | Application states as one system: an `ErrorBoundary` crash screen with a copyable reference, an offline banner and a "cannot reach the server" error state, a session-expired notice on sign-in, a partial-data notice on the dashboard, `ErrorState` copy and icon keyed to the error code (403 / 404 / 429 / timeout / network), a shared `LoadingState`. Plus a public landing page at `/` (signed-out only; signed-in users still land on the dashboard) with an animated integrations card adapted from a 21st.dev component onto tokens and shipped integrations. Numbered 100 because 093/096/097/099 are held by sibling worktrees. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-20** |
+| CR-101 | 2026-09-20 | User | Document engine extensions: PNG/JPEG export from the existing report/invoice/quotation PDF pipeline, an async `report_job` queue for heavy exports (Party Statement, Day Book, GSTR-1) off the request thread, and a `ShareDispatcherService` assembling WhatsApp/email/download payloads for invoices, quotations and reports. Asked for as CR-091/V61: CR-091 and V61 are taken on `feature/cr-088-saas-platform`, so claimed as CR-101 on `main`; migration V62 is free there. `SCOPE: BOTH`. | **APPLIED, 2026-09-21** |
 ---
 
 
@@ -5851,3 +5852,86 @@ and the suite was re-run: 323/324, the one failure a timing flake in the
 pre-existing quotations suite ("Clear filters" empty state) that passed 3/3
 in isolation and is untouched by this CR. Backend untouched — `mvn verify` not executed.
 `static_check.py` not executed (no python3).
+
+## CR-101 — Document engine extensions: image export, async export queue, multi-format sharing (2026-09-21)
+
+**Raised by:** User (the "M0 — Document & Share Engine" module of the billing
+prompt kit, executed against what this repo already has rather than as the
+greenfield it describes). **Numbering:** asked for as CR-091 / V61, but CR-091
+is "Critical business logic completion" and V61 is nearby-product discovery
+on `feature/cr-088-saas-platform`; V57/V59/V60 are held by sibling
+worktrees too. Claimed as **CR-101** with migration **V65** (V62 when claimed; renumbered at consolidation because CR-091 landed on develop with V62 first) on `main`
+(V58 left unused). `SCOPE: BOTH`. Branch `feature/cr-101-document-engine`
+from `main` (`2a582e4`), worktree `E:/Project/hardware-erp-doc`.
+
+### What was asked, and what was built against it
+
+| Asked | Built | Why the difference |
+|---|---|---|
+| `DocumentImageRenderer` extending `ReportExporter` to PNG/JPEG via Java2D `PDFRenderer` | `report/export/DocumentImageRenderer` — the exact PDF `ReportExporter` builds → PDFBox `PDFRenderer` → `BufferedImage` → PNG (or JPEG with a real quality parameter). 1080 px default width, first page only, >4 MB PNG falls back to JPEG 0.85. `pdfbox` pinned explicitly to the 2.0.24 openhtmltopdf already ships. `ReportExporter.toCsv` added (UTF-8 BOM, commons-csv already on the classpath) | Sibling class in the same package rather than a subclass: `ReportExporter` is a stateless `@Component` injected by type, and a subclass would have made two beans of one type |
+| `report_job` with `file_path` | `report_job` with `file_data BYTEA` in-row | This deployment's only storage is one PostgreSQL (V11/V13/V21 precedent); Render's disk is ephemeral, so a path would be a dangling reference after the next deploy. UUID id → BIGSERIAL `report_job_id` per the naming law |
+| `@Async` service for Party Statement, Day Book, GSTR files | Async queue for CR-086's five reports (PDF/XLSX/CSV/PNG) and CR-087's GSTR-1 (JSON). **No Party Statement** — no such report exists in this codebase; inventing a ledger under a document-engine CR would be a new report, proposed separately | Rule 3 of "the shape of a task": bigger things are their own CR |
+| `ShareDispatcherService` for invoices, quotations, ledgers, greetings | `ShareDispatcherService` for the artefact that had no sharing at all — a finished `report_job` — over WhatsApp (wa.me + caption), email (attachment via `EmailTransport`) and download; plus one greeting template (`occasionGreeting`) and its link. Invoice/quotation sharing is **not** re-implemented: CR-036/CR-056/CR-080 already own it | "Extend it, never rebuild it" |
+| `DocumentShareModal`, `AsyncExportStatusBanner`, `shareImage.ts` (html2canvas) | All three, wired into the Reports page's download bar (`Share` beside PDF/Excel on all five reports) | — |
+
+### Backend
+
+- `document/` package: `ReportJob` entity + `ReportJobStatus`/`ReportJobFormat`,
+  `ReportJobRepository` (entity fetch for download only; interface projection
+  `Summary` for list/status so `file_data` is never selected for a page),
+  `ReportJobService`/`Impl` (enqueue → save → hand id to the worker; status;
+  list; download), `ReportJobWorker` (`@Async("taskExecutor")`, separate bean
+  — BUG-BE-002's proxy lesson applies to `@Async` too), `ReportJobRenderer`
+  seam + `StandardReportJobRenderer` (delegates to `ReportService`,
+  `Gstr1Service`, `ReportDocuments`, `ReportExporter`, `DocumentImageRenderer`;
+  no report logic duplicated), `ReportJobCleanupJob` (7-day sweep, 00:30 IST,
+  `JobExecutionTracker`), `ReportJobController` (`/v1/documents/jobs`),
+  `ShareDispatcherService`/`Impl`/`Controller`.
+- **The security-context handoff.** An `@Async` thread has no
+  `SecurityContext`, and every `ReportService` method reads its tenant from
+  `SecurityUtils`. The worker loads `requested_by` through
+  `AppUserDetailsService`, refuses an inactive/locked user or a tenant
+  mismatch, sets the same `UsernamePasswordAuthenticationToken`
+  `JwtAuthenticationFilter` builds, and clears it in `finally`. A job whose
+  requester is gone ends FAILED with a readable message, never stuck.
+- `WhatsAppService.generateChooserUrl(message)` — a default method (the
+  "capability via default method" rule), `https://wa.me/?text=…` for a share
+  with no fixed recipient. `PhoneNumberNormalizer` refuses a blank number,
+  so the chooser could not be reached through `generateChatUrl("")`.
+- `WhatsAppMessageTemplates.document(...)` and `.occasionGreeting(...)`.
+- GSTR-1 as a job requires REPORT_FINANCIAL, checked in the controller
+  body: a compound `@PreAuthorize` against a request-body field was
+  avoided deliberately (see the class javadoc).
+- Not changed: `ReportController`'s synchronous `file()` still accepts pdf/xlsx
+  only, so `ReportControllerIT.exports()`'s "csv is 4xx" assertion holds.
+
+### Frontend
+
+- `modules/document/`: `types`, `documentJobService`, `useDocumentJob`
+  (polls every 1.5 s only while PENDING/PROCESSING, stops on a terminal
+  status and on unmount), `AsyncExportStatusBanner` (draws nothing without
+  a job; toast on COMPLETED/FAILED; Download button), `DocumentShareModal`
+  (PDF | Image | Excel × Download | WhatsApp | Email; the channel clicked
+  while the job builds is carried out once it completes; a COMPLETED job in
+  the same format is reused rather than re-queued; optional "Image of this
+  screen" via html2canvas).
+- `shared/utils/shareImage.ts`: `captureElementAsPng` (html2canvas loaded by
+  dynamic import — its own chunk, paid for by the first share only) and
+  `shareOrDownloadImage` (Web Share API with files when the browser can;
+  otherwise download + open the fallback wa.me link, telling the person so).
+- `html2canvas ^1.4.1` (MIT) added to `frontend/package.json`.
+- `ReportShell.DownloadButtons` gains the `Share` button and mounts the modal.
+
+### Verified (2026-09-21, this worktree, own `target/` and own `dist`)
+
+- Backend: `DocumentImageRendererTest` 4, `ReportExporterTest` 5 (2 new),
+  `ManualWhatsAppServiceTest` 19 (3 new), `ShareDispatcherServiceImplTest` 8,
+  `ReportJobWorkerTest` 5, `ReportJobServiceImplTest` 4,
+  `ReportJobControllerIT` 7 (real Testcontainers PostgreSQL, real
+  `taskExecutor` thread: enqueue → poll → download for PDF/PNG/CSV/JSON,
+  GSTR-1 permission gate, GSTR-1 PNG ends FAILED, STAFF 403, list order, 404).
+  Full `mvn -o clean verify`: **648 unit + 258 integration, 0 failures, BUILD SUCCESS** (re-run of the job IT on the renamed V62: 7/7).
+- Frontend: tsc 0, build clean (html2canvas in its own chunk), new
+  `document-share` suite **17/17**; full suite on the isolated build: **341/341** (see
+  RESUME_POINT). Screenshots at 1440 and 390 in the session scratchpad.
+- `static_check.py` / `check_registry.py` not executed (no python3).
