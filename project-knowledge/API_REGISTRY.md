@@ -661,6 +661,20 @@ forced true):
   summary must describe what is actually enforced, not a ceiling that is
   never applied.
 
+## CR-097 — `GET /v1/products?search=` falls back to closest matches
+
+No new endpoint, no new permission. When the substring search returns zero
+rows and the term is at least three characters, the same call answers with
+pg_trgm's closest matches on name and code, in the caller's tenant only,
+ordered by score. One additive field on `ProductSummaryResponse`:
+
+| Field | Note |
+|---|---|
+| `matchScore` | `0.0`–`1.0` word similarity, highest first. **Absent** (not null) on an ordinary page, so its presence alone means "these are close matches, not what you typed". |
+
+The sort parameters are ignored on a fuzzy page - it is ordered by score,
+then name. The threshold is `APP_SEARCH_FUZZY_THRESHOLD` (default 0.5).
+
 ## CR-068 — `ProductSummaryResponse` widened for the column picker
 
 No new endpoint, no new permission. `GET /v1/products` returns the same

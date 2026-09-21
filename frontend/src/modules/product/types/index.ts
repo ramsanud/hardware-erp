@@ -149,6 +149,12 @@ export interface ProductSummaryResponse {
   barcode?: string | null;
   hsnCode?: string | null;
   mrpDisplay: string;
+  /**
+   * CR-097. Set only when the substring search found nothing and the page
+   * is the closest matches instead (pg_trgm word_similarity, 0-1, highest
+   * first). Null or absent on an ordinary page.
+   */
+  matchScore?: number | null;
 }
 
 /** CR-058 - the recycle-bin projection. Carries no price at all, cost or selling. */
