@@ -14,6 +14,8 @@ export interface TenantRegistrationRequest {
   privacyVersion?: string;
   /** Optional and revocable. Absent or false is never treated as consent. */
   marketingConsent?: boolean;
+  /** CR-078. The six-digit code sent to `email` by /register/send-code. Required unless the deployment switched registration-email-verification off. */
+  emailCode?: string;
 }
 
 export interface TenantRegistrationResponse {
@@ -21,4 +23,9 @@ export interface TenantRegistrationResponse {
   slug: string;
   shopName: string;
   ownerMobileNo: string;
+}
+
+/** CR-078. Sent to /v1/tenants/register/send-code. */
+export interface RegistrationCodeRequest {
+  email: string;
 }
