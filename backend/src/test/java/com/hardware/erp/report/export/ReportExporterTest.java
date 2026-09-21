@@ -70,4 +70,37 @@ class ReportExporterTest {
             assertThat(totals.getCell(2).getNumericCellValue()).isEqualTo(150250.50);
         }
     }
+
+    @Test
+    @DisplayName("CR-101: the CSV carries the title, captions, header, rows and totals, with a UTF-8 BOM")
+    void csvCarriesEverySection() {
+        byte[] bytes = exporter.toCsv(sample());
+        // Excel needs the BOM to read Tamil/Rupee correctly - the whole reason it is written at all.
+        assertThat(bytes[0] & 0xFF).isEqualTo(0xEF);
+        assertThat(bytes[1] & 0xFF).isEqualTo(0xBB);
+        assertThat(bytes[2] & 0xFF).isEqualTo(0xBF);
+
+        String csv = new String(bytes, 3, bytes.length - 3, java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(csv).contains("Day Book")
+                .contains("Sara Hardware & Sons")
+                .contains("Period: 01-09-2026 to 30-09-2026")
+                .contains("Date,Party,Amount")
+                // Indian digit grouping means the display amount itself carries commas -
+                // exactly the field CSV quoting exists for; the party name has none, so
+                // it is left bare even though it carries other punctuation.
+                .contains("01-09-2026,R <Ravi> & Co,\"1,50,000.00\"")
+                .contains("02-09-2026,Meena,250.50")
+                .contains("Total,,\"1,50,250.50\"");
+    }
+
+    @Test
+    @DisplayName("an empty table's CSV still prints its header - no bare blank section")
+    void csvEmptyTableStillPrintsHeader() {
+        ReportDocument empty = ReportDocument.builder("GST Summary")
+                .table("Outward supplies", List.of(Column.text("Rate")), List.of(), List.of("Total"))
+                .build();
+        byte[] bytes = exporter.toCsv(empty);
+        String csv = new String(bytes, 3, bytes.length - 3, java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(csv).contains("GST Summary").contains("Outward supplies").contains("Rate").contains("Total");
+    }
 }

@@ -1224,3 +1224,54 @@ the repository's `upsert` (`@Transactional` on the interface method), not
 the job — a `REQUIRES_NEW` on the job would be self-invoked from its own
 loop and never cross the proxy (BUG-BE-002). `lowStockTrend()` is the one
 read-write method in an otherwise `readOnly` service, for that INSERT.
+
+## V62 — `report_job` (CR-101, 2026-09-21)
+
+Numbered V62 because V57 (`email_otp`, cr-085 branch) and V59/V60/V61 (cr-088
+branch) are held by sibling worktrees not yet on `main`; V58 is
+deliberately left unused. Check every branch before taking V63.
+
+### `report_job`
+One background render request for a report or document too heavy for the
+request thread: CR-086's five operational reports as PDF/XLSX/CSV/PNG, and
+CR-087's GSTR-1 as JSON. The synchronous `/v1/reports/*/export` endpoints
+are untouched; this is the queue beside them.
+
+| Column | Type | Notes |
+|---|---|---|
+| `report_job_id` | BIGSERIAL PK | |
+| `tenant_id` | BIGINT NOT NULL → `tenant` | every read is `findByIdAndTenantId` or a tenant-filtered page |
+| `requested_by` | BIGINT NULL → `app_user` | the enqueuing user; the worker rebuilds its security context from this row (see below) |
+| `report_type` | VARCHAR(40) NOT NULL | `DAY_BOOK`, `RECEIVABLES_AGEING`, `STOCK_VALUATION`, `PURCHASE_REGISTER`, `GST_SUMMARY`, `GSTR1` — matched by `ReportJobRenderer.supports()` |
+| `format` | VARCHAR(10) NOT NULL, CHECK in PDF/XLSX/CSV/PNG/JSON | JSON is GSTR-1 only; PNG is refused for GSTR-1 by the renderer |
+| `params_json` | TEXT NOT NULL DEFAULT '{}' | the report's own filters (`from`, `to`, `asOf`, `period`) as the synchronous endpoint would take them |
+| `status` | VARCHAR(20) NOT NULL DEFAULT 'PENDING', CHECK PENDING/PROCESSING/COMPLETED/FAILED | |
+| `file_name` | VARCHAR(150) | set on COMPLETED |
+| `file_data` | BYTEA | the finished file, in-row — the same pattern as V11/V13/V21 (one database is the only storage; Render's disk is ephemeral) |
+| `file_size_bytes` | INTEGER | |
+| `error_message` | VARCHAR(500) | set on FAILED, truncated by the worker |
+| `created_at` / `updated_at` / `started_at` / `completed_at` | TIMESTAMP(3) | |
+
+`ck_report_job_completion` makes an inconsistent row unwritable: COMPLETED
+⇒ file present and no error; FAILED ⇒ error present and no file;
+PENDING/PROCESSING ⇒ no file. Indexes: `(tenant_id, created_at DESC)` for
+the status list, `(created_at)` for the retention sweep.
+
+**Not a `BaseEntity`** — `requested_by` is the only attribution that means
+anything here, and the status timestamps say what `updated_at` would.
+
+### Write path
+`ReportJobServiceImpl.enqueue` saves the PENDING row (Spring Data's own
+transaction, no outer `@Transactional` — the commit must be visible before
+the worker thread reads it) and then calls `ReportJobWorker.process(id)`,
+a separate bean because `@Async` is proxied like `@Transactional` and a
+self-invocation never goes async (BUG-BE-002 restated). The worker runs on
+`taskExecutor`, reconstructs a `SecurityContext` for `requested_by` via
+`AppUserDetailsService` (the same token construction
+`JwtAuthenticationFilter` uses), renders through the existing
+`ReportService`/`Gstr1Service`, and always ends the row COMPLETED or
+FAILED — never throws out of the void method. `ReportJobCleanupJob` deletes
+rows older than 7 days at 00:30 IST.
+
+The list/status reads use an interface projection (`ReportJobRepository.Summary`)
+so `file_data` is never selected for a page of spinners and ticks.

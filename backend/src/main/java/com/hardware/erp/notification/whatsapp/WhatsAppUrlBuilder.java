@@ -26,6 +26,18 @@ final class WhatsAppUrlBuilder {
     }
 
     /**
+     * CR-101 - no fixed number: {@code https://wa.me/?text=...} opens
+     * WhatsApp's own contact chooser with the text pre-filled, for a share
+     * (a report, a document) that is not addressed to one known customer.
+     */
+    static String chooserUrl(String message) {
+        if (message == null || message.isBlank()) {
+            return BASE;
+        }
+        return BASE + "?text=" + encode(message);
+    }
+
+    /**
      * URLEncoder is a form encoder: it writes a space as '+', which a query
      * string reader may or may not turn back into a space, and it leaves '*'
      * alone. Rewriting '+' to '%20' makes the result plain RFC 3986 percent-

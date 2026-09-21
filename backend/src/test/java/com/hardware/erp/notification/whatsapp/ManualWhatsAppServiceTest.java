@@ -107,4 +107,29 @@ class ManualWhatsAppServiceTest {
         assertThat(service.generateChatUrl("+44 20 7946 0958", "Hi"))
                 .startsWith("https://wa.me/442079460958?text=");
     }
+
+    // ----------------------------------------------------- CR-101 chooser
+
+    @Test
+    @DisplayName("the chooser link has no fixed number - the path is bare, unlike a real chat's /<digits>")
+    void chooserUrlShape() {
+        String url = service.generateChooserUrl("Please find the report attached");
+        assertThat(url).startsWith("https://wa.me/?text=");
+        assertThat(URI.create(url).getPath()).isEqualTo("/");
+        assertThat(textParamOf(url)).isEqualTo("Please find the report attached");
+    }
+
+    @Test
+    @DisplayName("a blank chooser message opens the chooser with nothing typed - no dangling ?text=")
+    void chooserUrlEmptyMessage() {
+        assertThat(service.generateChooserUrl(null)).isEqualTo("https://wa.me/");
+        assertThat(service.generateChooserUrl("")).isEqualTo("https://wa.me/");
+        assertThat(service.generateChooserUrl("   ")).isEqualTo("https://wa.me/");
+    }
+
+    @Test
+    @DisplayName("the chooser link never validates a number - it has none to validate")
+    void chooserUrlNeverThrows() {
+        assertThat(service.generateChooserUrl("Tamil: வணக்கம், rupee: ₹1,234")).contains("wa.me/?text=");
+    }
 }

@@ -168,6 +168,13 @@ got set was never, despite the column existing since CR-021.
 | GET | `/v1/reports/{report}/export?format=pdf|xlsx&…` | REPORT_VIEW | 200 `application/pdf` or `…spreadsheetml.sheet` as an attachment, built from the same object as the JSON; same filters as the report; any other `format` → 400 (CR-086) |
 | GET | `/v1/reports/gstr1?period=MMYYYY` | REPORT_FINANCIAL | 200 - the GSTR-1 document (offline-tool layout: `gstin, fp, b2b, b2cl, b2cs, cdnr, cdnur, hsn`) enveloped for preview; bad period → 400; shop GSTIN missing/invalid → 400 (CR-087) |
 | GET | `/v1/reports/gstr1/download?period=MMYYYY` | REPORT_FINANCIAL | 200 - the same document as a bare `GSTR1-MMYYYY.json` attachment (CR-087) |
+| POST | `/v1/documents/jobs` | REPORT_VIEW (+ REPORT_FINANCIAL when `reportType=GSTR1`, checked in the controller) | 202 - `{reportType, format PDF|XLSX|CSV|PNG|JSON, params{}}` → `ReportJobResponse {id, reportType, format, status PENDING|PROCESSING|COMPLETED|FAILED, fileName, fileSizeBytes, errorMessage, createdAt, completedAt}`; the render happens on `taskExecutor`, never on this request (CR-101) |
+| GET | `/v1/documents/jobs/{id}` | REPORT_VIEW | 200 - the same shape, tenant-scoped, 404 for another tenant's id; poll this until COMPLETED or FAILED (CR-101) |
+| GET | `/v1/documents/jobs?page&size` | REPORT_VIEW | 200 - `PageResponse<ReportJobResponse>`, newest first, never carries the file bytes (CR-101) |
+| GET | `/v1/documents/jobs/{id}/download` | REPORT_VIEW | 200 - the finished file as an attachment with the format's content type; 404 until COMPLETED (CR-101) |
+| GET | `/v1/documents/jobs/{id}/share/whatsapp-link?toMobileNo` | REPORT_VIEW | 200 - `WhatsAppLinkResponse` with the file's caption; no number → `https://wa.me/?text=…` (WhatsApp's own contact chooser). Never carries the file (CR-101) |
+| POST | `/v1/documents/jobs/{id}/share/email` | REPORT_VIEW | 200 - `{toEmail}` → `SENT|LOGGED_ONLY|FAILED`, the file attached through `EmailTransport` (CR-101) |
+| GET | `/v1/customers/{id}/greeting-link?occasion=Diwali` | CUSTOMER_VIEW | 200 - `WhatsAppLinkResponse` from `WhatsAppMessageTemplates.occasionGreeting`; no phone → 422 (CR-101, the first Smart Greetings entry — scheduling is M8) |
 
 `PUT` image endpoints are `multipart/form-data`, field name `file`, 2MB cap
 (`ImageValidation`). `TenantSettingsRequest` gained a required `name` field
