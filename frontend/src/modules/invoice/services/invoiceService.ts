@@ -19,7 +19,8 @@ export const invoiceService = {
   addPayment: (id: number, body: PaymentRequest) =>
     apiPost<InvoiceResponse>(`/v1/invoices/${id}/payments`, body),
 
-  cancel: (id: number) => apiPost<InvoiceResponse>(`/v1/invoices/${id}/cancel`),
+  /** CR-091 Phase 3 - a reason is mandatory; the server refuses a blank one. */
+  cancel: (id: number, reason: string) => apiPost<InvoiceResponse>(`/v1/invoices/${id}/cancel`, { reason }),
 
   pdf: (id: number) => apiGetBlob(`/v1/invoices/${id}/pdf`),
 

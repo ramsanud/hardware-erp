@@ -35,6 +35,9 @@ import { PurchaseListPage } from '@/modules/purchase/pages/PurchaseListPage';
 import { PurchaseDetailPage } from '@/modules/purchase/pages/PurchaseDetailPage';
 import { PurchaseCreatePage } from '@/modules/purchase/pages/PurchaseCreatePage';
 import { DashboardPage } from '@/modules/dashboard/pages/DashboardPage';
+import { ProfitReportPage } from '@/modules/dashboard/pages/ProfitReportPage';
+import { SyncPage } from '@/modules/sync/pages/SyncPage';
+import { SYNC_ROUTES } from '@/modules/sync/constants';
 import { SETTINGS_ROUTES } from '@/modules/settings/constants';
 import { ShopSettingsPage } from '@/modules/settings/pages/ShopSettingsPage';
 import { WhatsAppSettingsPage } from '@/modules/settings/pages/WhatsAppSettingsPage';
@@ -227,6 +230,8 @@ export function AppRoutes() {
           </Route>
           <Route element={<RequirePermission permission={PERMISSIONS.INVOICE_CREATE} />}>
             <Route path={INVOICE_ROUTES.create} element={<InvoiceCreatePage />} />
+            {/* CR-091 Phase 9 - syncing an offline invoice is exactly the authority to create one. */}
+            <Route path={SYNC_ROUTES.outbox} element={<SyncPage />} />
           </Route>
 
           <Route element={<RequirePermission permission={PERMISSIONS.INVENTORY_VIEW} />}>
@@ -304,6 +309,8 @@ export function AppRoutes() {
 
           <Route element={<RequirePermission permission={PERMISSIONS.REPORT_FINANCIAL} />}>
             <Route path={TOOLS_ROUTES.tallyExport} element={<TallyExportPage />} />
+            {/* CR-091 Phase 6 - profit is owner/accountant information, same gate as the Tally export. */}
+            <Route path="/reports/profit" element={<ProfitReportPage />} />
           </Route>
 
           {/* Every role can reach the dashboard - it only renders the cards

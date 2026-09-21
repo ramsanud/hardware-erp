@@ -96,7 +96,7 @@ Nothing is implemented from conversation memory.
 | CR-088 | 2026-09-15 | User | SaaS subscription plans & feature gating: `subscription_plan` (BASIC ₹299 / PRO ₹599 / PREMIUM ₹999, INR, monthly, prices in the table, mapped onto the locked `SubscriptionTier` FREE/PRO/MAX), `feature` + `plan_feature` catalogue, `tenant_subscription` (TRIAL/ACTIVE/PAST_DUE/EXPIRED/CANCELLED/SUSPENDED, gateway references), `subscription_usage` metering for WhatsApp/SMS/email/AI. Central `FeatureAccessService.requireFeature()` → 403 `FEATURE_NOT_AVAILABLE` with current/required plan. `/v1/subscriptions/*`, `/v1/features/{key}/access`. Pricing page + upgrade dialog + locked sidebar entries. `SCOPE: BOTH`, migration V59. Worktree `hardware-erp-saas`, branch `feature/cr-088-saas-platform`. | **APPLIED, 2026-09-16** |
 | CR-089 | 2026-09-15 | User | Smart Substitute Product Suggestion (PREMIUM): structured product attributes, `product_relationship` manual mappings, `product_request` + `product_request_suggestion` audit, rule-based + manual-mapping strategies behind `RecommendationStrategy`, configurable weights/threshold, pg_trgm fuzzy name match, compare/select flow. `SCOPE: BOTH`, migration V60. | **APPLIED, 2026-09-16** |
 | CR-090 | 2026-09-15 | User | Owner-side Nearby Product Discovery (PREMIUM, opt-in, OFF by default): `shop_discovery_setting` consent flags + coordinates + radius, Haversine radius search over opted-in shops' availability (Available/Likely/Unavailable, never quantities or prices), `product_request_discovery_match`, owner-only notification, Call/WhatsApp contact with only the permitted fields. Consent changes audited. `SCOPE: BOTH`, migration V61. | **APPLIED, 2026-09-16** |
-| CR-091 | 2026-09-15 | User | Critical business logic completion: CGST/SGST/IGST split per line & invoice with place of supply frozen on the invoice; invoice cancellation reason/by/at; `customer_ledger_entry` (invoice, payment, credit note, cancellation) with statement + ageing computed from the ledger; weighted-average cost frozen on each invoice line (`cost_price_paise`) and a revenue/COGS/gross/expenses/net profit endpoint; offline sync (`sync_transaction`, client UUID idempotency, conflict detection) with an IndexedDB outbox on the frontend. `SCOPE: BOTH`, migration V62. | **IN PROGRESS, 2026-09-15** |
+| CR-091 | 2026-09-15 | User | Critical business logic completion: CGST/SGST/IGST split per line & invoice with place of supply frozen on the invoice; invoice cancellation reason/by/at; `customer_ledger_entry` (invoice, payment, credit note, cancellation) with statement + ageing computed from the ledger; weighted-average cost frozen on each invoice line (`cost_price_paise`) and a revenue/COGS/gross/expenses/net profit endpoint; offline sync (`sync_transaction`, client UUID idempotency, conflict detection) with an IndexedDB outbox on the frontend. `SCOPE: BOTH`, migration V62. | **APPLIED, 2026-09-21** |
 | CR-092 | 2026-09-15 | User | PREMIUM growth pack: multi-branch (`branch`, `branch_stock`, stock transfer, branch-wise sales/purchases/users/reports), smart insights (slow-moving, overstock, reorder, demand trend, frequently-bought-together, pricing insight — all measured), daily business summary notification, tenant backup history + on-demand export snapshot. `SCOPE: BOTH`, migration V63. | **IN PROGRESS, 2026-09-15** |
 ---
 
@@ -5440,3 +5440,73 @@ of it belongs with CR-092's notification work, metered by CR-088.
 `ShopDiscoveryIT` 8/8. Full `mvn clean verify` on this exact tree: **610
 unit + 266 integration, BUILD SUCCESS**. Frontend `tsc -b --force` clean,
 `vite build` clean, `tests/run.mjs` 272/272.
+
+## CR-091 — Critical business logic: GST split, ledger, frozen cost, profit, offline sync (2026-09-21, APPLIED)
+
+**Raised by:** User (the "Critical Business Logic Implementation Plan"
+brief, phases 1-10). **Type:** correctness + new endpoints, both layers.
+`SCOPE: BOTH`, migration **V62**. Branch `feature/cr-088-saas-platform`.
+
+### What it is
+
+Four rules that lived in conventions are now columns and one code path
+each, plus offline invoice sync. `docs/BUSINESS_RULES_GST_STOCK_LEDGER_PROFIT.md`
+maps every rule to the code and the IT that proves it; `docs/OFFLINE_SYNC.md`
+covers the outbox.
+
+- **GST split** - `GstSplit` (place of supply: customer state → GSTIN
+  prefix → shop state; INTRA halves, INTER whole IGST; SGST = GST − CGST so
+  halves always sum). Stored per invoice and per line; V62 backfilled.
+- **Cost frozen at sale** - `StockService.applyPurchaseReceipt()` keeps a
+  weighted average on `stock.average_cost_paise`; each invoice line freezes
+  `cost_price_paise` at sale. Profit reads the frozen figure, never today's
+  purchase price.
+- **Invoice cancellation** needs a reason; `cancelled_at/by/reason` kept and
+  shown; the ledger is reversed.
+- **Customer ledger** - append-only `customer_ledger_entry`, idempotent by
+  `UNIQUE (tenant, entry_type, reference_type, reference_id)`; balance,
+  statement, ageing (0-30/31-60/61-90/90+ from invoice date), manual
+  adjustment (PAYMENT_MANAGE, reason mandatory, activity-logged). Backfilled
+  from every existing invoice/payment/credit note/cancellation.
+- **Profit** - `GET /v1/analytics/profit` (REPORT_FINANCIAL): revenue −
+  returns − frozen COGS − expenses. Frontend page under Accounting.
+- **Offline sync** - `POST /v1/sync/transactions` (INVOICE_CREATE), one
+  batch, one outcome per row, client-UUID idempotent, conflicts recorded
+  never silently retried. Frontend IndexedDB outbox, `/sync` page, auto-sync
+  on the `online` event, invoice create falls back to the queue only on
+  NETWORK_ERROR/TIMEOUT.
+
+### Two production bugs the ITs found (both the BUG-BE-002 species)
+
+1. `UnexpectedRollbackException` on any conflicting sync row:
+   `InvoiceServiceImpl.create()` (plain `@Transactional`) joined the
+   executor's REQUIRES_NEW transaction and, on INSUFFICIENT_STOCK, marked it
+   rollback-only before the catch ran; the CONFLICT row was then discarded at
+   commit and the whole batch returned 500. Fixed by running the attempt in
+   `SyncInvoiceCreator`'s own REQUIRES_NEW and leaving the executor
+   non-transactional. `OfflineSyncIT.insufficientStockAtSyncTimeIsAConflictNotASilentRetry`.
+2. **CR-088 regression, pre-existing on this branch:** every automatic
+   customer notification (`@Async notifyInvoiceCreated`) died with
+   `TransactionRequiredException` before reaching the provider, because
+   `UsageTrackingServiceImpl.tryConsume(tenant, key)` self-invoked the
+   REQUIRES_NEW three-arg overload, bypassing the proxy. Fixed by annotating
+   the two-arg overload too. It was logged as "Async method
+   notifyInvoiceCreated failed" on every invoice created in every IT run.
+
+### Honest deviations / pending
+
+"Available = Physical − Reserved − Pending Allocation" is not implemented:
+nothing in this system reserves stock, so availability is
+`stock.quantity_on_hand` (rule 12 - no invented numbers). Offline sync is
+INVOICE only, no cached catalogue, no service worker (the brief's own
+recommended first scope; the mobile brief excludes PWA/offline). No
+Playwright spec drops the network yet - the outbox is exercised by
+`OfflineSyncIT` server-side and manually client-side.
+
+### Verified
+
+`mvn clean verify` on this exact tree: **616 unit + 271 integration, BUILD
+SUCCESS** (new: `GstSplitTest` 6, `CustomerLedgerIT` 2, `ProfitHistoricalCostIT` 1,
+`OfflineSyncIT` 2). Frontend `tsc -b --force` clean, `vite build` clean,
+`tests/run.mjs` **272/272** against a private `dist-cr091/`.
+`registry/static_check.py`: not executed (no python3 on this machine).

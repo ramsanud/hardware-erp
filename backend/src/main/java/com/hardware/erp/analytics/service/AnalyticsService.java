@@ -4,6 +4,7 @@ import com.hardware.erp.analytics.dto.AnalyticsDtos.ActivityMatrix;
 import com.hardware.erp.analytics.dto.AnalyticsDtos.CategoryBreakdown;
 import com.hardware.erp.analytics.dto.AnalyticsDtos.LowStockTrend;
 import com.hardware.erp.analytics.dto.AnalyticsDtos.ProductPerformanceList;
+import com.hardware.erp.analytics.dto.AnalyticsDtos.ProfitResponse;
 import com.hardware.erp.analytics.dto.AnalyticsDtos.Summary;
 import com.hardware.erp.analytics.dto.AnalyticsDtos.TrendSeries;
 import com.hardware.erp.analytics.dto.AnalyticsDtos.ValueDistribution;
@@ -43,4 +44,7 @@ public interface AnalyticsService {
     ValueDistribution invoiceValueDistribution(LocalDate from, LocalDate to, int buckets);
 
     ActivityMatrix salesActivity(LocalDate from, LocalDate to);
+
+    /** CR-091 Phase 6. Revenue, COGS, gross profit, expenses, net profit - from recorded rows only, never fabricated. */
+    ProfitResponse profit(LocalDate from, LocalDate to);
 }

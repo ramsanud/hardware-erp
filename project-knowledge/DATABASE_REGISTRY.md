@@ -1335,3 +1335,21 @@ first run.
 
 **pg_trgm** (installed by V60) provides the name-similarity fallback
 (`> 0.45`) behind exact code/model/manufacturer-code matching.
+
+## V62 — GST split, invoice cancellation, frozen cost, customer ledger, sync (CR-091, 2026-09-21)
+
+| Table / column | Purpose |
+|---|---|
+| `invoice` + `supply_type` CHECK (INTRA/INTER), `place_of_supply_state_code` CHAR(2), `cgst_paise`, `sgst_paise`, `igst_paise` | The split decided once at sale by `GstSplit` (customer state → GSTIN prefix → shop state). Backfilled for every existing invoice with the same precedence; rows whose state could not be resolved keep NULL `supply_type`. |
+| `invoice_item` + `cgst_paise`, `sgst_paise`, `igst_paise` | Per-line split; backfilled from `line_gst_paise`. |
+| `invoice` + `cancelled_at`, `cancelled_by` (FK `app_user`), `cancellation_reason` VARCHAR(255) | Who, when, why. Only set on CANCELLED rows. |
+| `stock` + `average_cost_paise` BIGINT | Weighted average cost, moved only by `StockService.applyPurchaseReceipt()` on a positive receipt. Backfilled from `product.purchase_price_paise`. |
+| `invoice_item` + `cost_price_paise` BIGINT | The cost frozen at the moment of sale - the one figure profit reads. Backfilled from `product.purchase_price_paise` (the best historical estimate available; every new line records the real average). |
+| `customer_ledger_entry` | Append-only. `entry_type` CHECK (INVOICE/PAYMENT/SALES_RETURN/INVOICE_CANCELLATION/ADJUSTMENT), `entry_date`, `debit_paise`, `credit_paise` (exactly one non-zero), `reference_type`/`reference_id`/`reference_number`, `notes`, `created_by`. **`UNIQUE (tenant_id, entry_type, reference_type, reference_id)`** - the same payment cannot be posted twice; the service checks `existsBy…` first so callers never see the constraint. Index `(tenant_id, customer_id, entry_date)`. Backfilled from `invoice`, `payment`, `credit_note` and cancelled invoices. There is deliberately no `customer.balance` column. |
+| `sync_transaction` | One row per offline transaction received: `client_uuid` UUID, `device_id`, `transaction_type` CHECK (INVOICE), `payload` JSONB, `status` CHECK (PENDING/SYNCED/FAILED/CONFLICT), `result_reference_type/id/number`, `conflict_reason`, `client_created_at`, `received_at`, `synced_at`, `attempt_count`, `created_by`. **`UNIQUE (tenant_id, client_uuid)`** is the idempotency guarantee; a race between two uploads of the same UUID is settled here and the loser returns the winner's row. JSONB via `@JdbcTypeCode(SqlTypes.JSON)`, the `ActivityLog` pattern. |
+
+Transaction shape that matters (found by `OfflineSyncIT`): the sync
+executor holds **no** transaction of its own; each row's invoice attempt
+runs in `SyncInvoiceCreator`'s REQUIRES_NEW and the outcome row is saved in
+a separate short transaction, so a rolled-back attempt cannot poison the
+transaction that records it.

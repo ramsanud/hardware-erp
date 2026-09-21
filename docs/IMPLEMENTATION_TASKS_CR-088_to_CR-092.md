@@ -59,12 +59,12 @@ entry exist. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas`
 
 ## CR-091 — Business logic completion (V62)
 
-- [ ] GST: `supply_type` INTRA/INTER + `place_of_supply_state_code` on invoice; `cgst/sgst/igst_paise` per line and per invoice; `GstCalculator` unit tests; historical invoices untouched (backfilled from their own frozen rate)
-- [ ] Invoice cancellation: reason (required), `cancelled_by`, `cancelled_at`; ledger reversal
-- [ ] `customer_ledger_entry` + backfill; `CustomerLedgerService`; statement + ageing + balance endpoints; outstanding = Σ debit − Σ credit
-- [ ] Cost basis: `stock.average_cost_paise` (weighted average on PURCHASE_RECEIPT), `invoice_item.cost_price_paise` frozen at sale, backfill from product purchase price; `GET /v1/analytics/profit` = revenue, COGS, gross, expenses, net
-- [ ] Offline sync: `sync_transaction`, `POST /v1/sync/transactions` (batch, per-tenant client UUID unique, replay returns stored result), conflict detection (stock short, price changed, customer changed) → CONFLICT row, never a silent overwrite; frontend outbox (IndexedDB) + Sync page
-- [ ] Tests: `GstCalculatorTest`, `CustomerLedgerIT` (10,000 − 3,000 − 2,000 − 1,000 return = 4,000), `ProfitHistoricalCostIT`, `OfflineSyncIT` (duplicate upload → one invoice, one movement, one ledger row)
+- [x] GST: `supply_type` INTRA/INTER + `place_of_supply_state_code` on invoice; `cgst/sgst/igst_paise` per line and per invoice (`GstSplit`, `GstSplitTest` 6); historical invoices backfilled from their own frozen `line_gst_paise`; split rows shown on the invoice detail
+- [x] Invoice cancellation: reason (required, `InvoiceCancelRequest`), `cancelled_by`, `cancelled_at`; ledger reversal; frontend cancel dialog collects the reason and the detail page shows it
+- [x] `customer_ledger_entry` + backfill; `CustomerLedgerService` (idempotent posts); balance / statement / ageing / adjust endpoints; outstanding = Σ debit − Σ credit; Ledger tab on the customer page
+- [x] Cost basis: `stock.average_cost_paise` (weighted average via `StockService.applyPurchaseReceipt()`), `invoice_item.cost_price_paise` frozen at sale, backfill from product purchase price; `GET /v1/analytics/profit` = revenue, returns, COGS, gross, expenses, net; Accounting → Profit & loss page
+- [x] Offline sync: `sync_transaction`, `POST /v1/sync/transactions` (batch, per-tenant client UUID unique, replay returns stored result); conflict = any server rule that no longer holds (stock short is the real one - price/customer cannot conflict because the payload carries neither) → CONFLICT row, never a silent overwrite; frontend IndexedDB outbox + `/sync` page + auto-sync on `online`. **Pending by scope:** INVOICE only, no cached catalogue/service worker, no network-dropping Playwright spec
+- [x] Tests: `GstSplitTest` (6), `CustomerLedgerIT` (2 - the 10,000 − 3,000 − 2,000 − 1,000 = 4,000 example, and adjustment), `ProfitHistoricalCostIT` (1), `OfflineSyncIT` (2 - duplicate upload → one invoice, one movement, one ledger row, stock decremented once; insufficient stock → CONFLICT). Found and fixed BUG-BE-006 (CR-088 notification metering self-invocation) and BUG-BE-007 (sync executor UnexpectedRollbackException)
 
 ## CR-092 — Premium growth pack (V63)
 
@@ -77,7 +77,7 @@ entry exist. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas`
 
 ## Final — verification & docs
 
-- [ ] `docs/BUSINESS_RULES_GST_STOCK_LEDGER_PROFIT.md`, `docs/SUBSCRIPTION_FEATURE_MATRIX.md`, `docs/OFFLINE_SYNC.md`
-- [ ] Registries: DATABASE_REGISTRY (V57–V61), API_REGISTRY, SECURITY_REGISTRY, FEATURE_REGISTRY, CHANGE_REQUEST bodies, RESUME_POINT
-- [ ] `mvn -o clean verify` (needs Docker) — result quoted in RESUME_POINT
-- [ ] `tsc -b --force`, `vite build`, `node tests/run.mjs` — results quoted
+- [x] `docs/BUSINESS_RULES_GST_STOCK_LEDGER_PROFIT.md`, `docs/SUBSCRIPTION_FEATURE_MATRIX.md`, `docs/OFFLINE_SYNC.md` (CR-092 docs still to write)
+- [ ] Registries: DATABASE_REGISTRY (V59–V62 done, V63 pending), API_REGISTRY, SECURITY_REGISTRY, BUG_REGISTRY, PROJECT_SKILLS, CHANGE_REQUEST bodies, RESUME_POINT — all current through CR-091; FEATURE_REGISTRY and CR-092 pending
+- [x] `mvn -o clean verify` (needs Docker) — 616 unit + 271 integration after CR-091, quoted in RESUME_POINT (re-run after CR-092)
+- [x] `tsc -b --force`, `vite build`, `node tests/run.mjs` — clean / clean / 272-272 after CR-091, quoted in RESUME_POINT (re-run after CR-092)

@@ -10,6 +10,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -104,6 +105,42 @@ public class Invoice extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "bank_account_qr_id")
     private TenantBankAccountQr bankAccountQr;
+
+    /**
+     * CR-091 Phase 1. Frozen at creation from GstSplit - the shop state and
+     * the customer state/GSTIN as they were THEN. A later change to either
+     * never rewrites an issued invoice (the same rule every other snapshot
+     * on this entity follows).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "supply_type", nullable = false, length = 10)
+    @Builder.Default
+    private com.hardware.erp.common.util.GstSplit.SupplyType supplyType = com.hardware.erp.common.util.GstSplit.SupplyType.INTRA;
+
+    @Column(name = "place_of_supply_state_code", length = 2)
+    private String placeOfSupplyStateCode;
+
+    @Column(name = "cgst_paise", nullable = false)
+    @Builder.Default
+    private Long cgstPaise = 0L;
+
+    @Column(name = "sgst_paise", nullable = false)
+    @Builder.Default
+    private Long sgstPaise = 0L;
+
+    @Column(name = "igst_paise", nullable = false)
+    @Builder.Default
+    private Long igstPaise = 0L;
+
+    /** CR-091 Phase 3. Who cancelled, when, and why - null until cancelled. Pre-CR-091 cancellations keep a null reason. */
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
+    @Column(name = "cancelled_by")
+    private Long cancelledBy;
+
+    @Column(name = "cancellation_reason", length = 255)
+    private String cancellationReason;
 
     @OneToMany(mappedBy = "invoice", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default

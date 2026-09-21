@@ -1,6 +1,47 @@
 # RESUME POINT
 
-**Updated:** 2026-09-16 (**CR-090 — Nearby Product Discovery, applied**). `SCOPE: BOTH`, migration **V61**. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas` (forked from `main`@`d676f6f`, before CR-085/086/087 landed there — this branch does not yet carry those, reconcile at merge time).
+**Updated:** 2026-09-21 (**CR-091 — Critical business logic, applied**). `SCOPE: BOTH`, migration **V62**. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas` (forked from `main`@`d676f6f`, before CR-085/086/087 landed there — this branch does not yet carry those, reconcile at merge time; the main checkout is on `feature/cr-086-reports` and its `/reports` module is not here, which is why the profit report lives under `modules/dashboard`).
+
+## CR-091 done (2026-09-21)
+
+GST split (`GstSplit`, per invoice and per line, backfilled), invoice
+cancellation with a mandatory reason (`cancelled_at/by/reason`), append-only
+`customer_ledger_entry` with balance/statement/ageing/adjust under
+`/v1/customers/{id}/ledger`, weighted-average cost on `stock` moved only by
+`StockService.applyPurchaseReceipt()` and frozen per line as
+`invoice_item.cost_price_paise`, `GET /v1/analytics/profit`
+(REPORT_FINANCIAL), and offline sync: `POST /v1/sync/transactions`
+(INVOICE only, client-UUID idempotent, conflicts recorded) + an IndexedDB
+outbox, `/sync` page, auto-sync on `online`, invoice create falls back to
+the queue on NETWORK_ERROR/TIMEOUT only. Frontend also: cancel dialog with
+reason, CGST/SGST/IGST rows and the cancellation note on the invoice
+detail, a Ledger tab on the customer page, Accounting → Profit & loss.
+
+**Verified on this exact tree**: `mvn clean verify` **616 unit + 271
+integration, BUILD SUCCESS**; frontend `tsc` clean, `vite build` clean
+(private `dist-cr091/`), `tests/run.mjs` 272/272. Write-ups: CR-091 body in
+`CHANGE_REQUEST_REGISTRY.md`, `docs/BUSINESS_RULES_GST_STOCK_LEDGER_PROFIT.md`,
+`docs/OFFLINE_SYNC.md`. BUG-BE-006 and BUG-BE-007 registered.
+
+**Two real bugs the ITs found, both the BUG-BE-002 species** (PROJECT_SKILLS
+20-22): (1) `UsageTrackingServiceImpl.tryConsume(tenant, key)` self-invoked
+its REQUIRES_NEW overload, so CR-088's notification metering threw inside
+`@Async notifyInvoiceCreated` and **no automatic customer notification was
+ever sent on this branch** - the "Async method … failed" line had been in
+every IT log since CR-088. (2) The sync executor's own REQUIRES_NEW was
+poisoned by `InvoiceService.create()` joining it and throwing; the CONFLICT
+row was discarded at commit and the batch returned 500. Fixed with
+`SyncInvoiceCreator` (its own REQUIRES_NEW) and a non-transactional executor.
+
+**Pending, by scope (recorded in the CR body)**: no stock reservation (nothing
+reserves stock, so nothing to subtract); sync is INVOICE only, no cached
+catalogue, no service worker; no Playwright spec that drops the network.
+
+**Remaining on this branch**: CR-092 (multi-branch + insights + daily
+summary + backup, V63) - not started. Then reconcile with `main` (CR-085/086/087,
+V57/V58 on that side) before merging.
+
+---
 
 ## CR-090 done (2026-09-16)
 

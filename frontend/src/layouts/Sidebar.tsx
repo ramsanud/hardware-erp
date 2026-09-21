@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import {
-  Bell, Boxes, Calculator, CalendarCheck, ChevronDown, ChevronRight, ClipboardList, Coins, CreditCard, FileClock, FileDown,
+  Bell, Boxes, Calculator, CalendarCheck, ChevronDown, ChevronRight, ClipboardList, CloudUpload, Coins, CreditCard, FileClock, FileDown,
   FileText, HardHat, History, KeyRound, Landmark, LayoutDashboard, Layers, LifeBuoy, MessageCircle, Package,
   PackageSearch, PanelLeftClose, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Store, Tags, TerminalSquare,
   Sparkles, Ticket, TrendingUp, Truck, UserCheck, Users, Wallet,
@@ -15,6 +15,7 @@ import { SETTINGS_ROUTES } from '@/modules/settings/constants';
 import { SUBSCRIPTION_ROUTES } from '@/modules/subscription/constants';
 import { SUBSTITUTE_ROUTES } from '@/modules/substitute/constants';
 import { DISCOVERY_ROUTES } from '@/modules/discovery/constants';
+import { SYNC_ROUTES } from '@/modules/sync/constants';
 import { brandService } from '@/modules/settings/services/brandService';
 import { avatarService } from '@/modules/auth/services/avatarService';
 import { whatsAppConnectionService } from '@/modules/settings/services/whatsAppConnectionService';
@@ -98,6 +99,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/stock-adjustments', label: 'Stock adjustments', icon: PackageSearch, permission: PERMISSIONS.INVENTORY_ADJUST, available: false },
       // CR-089 (Premium). Permission hides it for roles without it; the plan gate is the server's.
       { to: SUBSTITUTE_ROUTES.list, label: 'Product requests', icon: Sparkles, permission: PERMISSIONS.PRODUCT_REQUEST_VIEW, available: true },
+      { to: SYNC_ROUTES.outbox, label: 'Offline sync', icon: CloudUpload, permission: PERMISSIONS.INVOICE_CREATE, available: true },
     ],
   },
   {
@@ -107,6 +109,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/expenses', label: 'Expenses', icon: Coins, permission: PERMISSIONS.EXPENSE_VIEW, available: true },
       { to: '/ledgers', label: 'Ledgers', icon: Landmark, permission: PERMISSIONS.REPORT_FINANCIAL, available: false },
       { to: '/reports', label: 'Reports', icon: TrendingUp, permission: PERMISSIONS.REPORT_VIEW, available: false },
+      { to: '/reports/profit', label: 'Profit & loss', icon: TrendingUp, permission: PERMISSIONS.REPORT_FINANCIAL, available: true },
       // CR-053 backlog item 7 - pure client-side arithmetic, no permission
       // gate: it reads no tenant data, so there is nothing to protect.
       { to: '/tools/gst-calculator', label: 'GST calculator', icon: Calculator, available: true },

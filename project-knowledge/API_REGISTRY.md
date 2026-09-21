@@ -891,3 +891,20 @@ The one deliberately cross-tenant read in the system. Consent is enforced in the
 | POST | `/v1/owner-notifications/read-all` | authenticated | `{marked}`. |
 
 Regression tests: `ShopDiscoveryIT` (8).
+
+## CR-091 — Customer ledger, profit, invoice cancellation reason, offline sync
+
+Rules and proofs: `docs/BUSINESS_RULES_GST_STOCK_LEDGER_PROFIT.md`, `docs/OFFLINE_SYNC.md`.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/v1/invoices/{id}/cancel` | `INVOICE_CANCEL` | **Body now required:** `{reason}` (`@NotBlank`, ≤255). Stored as `cancelled_at/by/reason`, ledger reversed by an INVOICE_CANCELLATION credit. A bodiless call is 400. |
+| GET | `/v1/invoices/{id}` | `INVOICE_VIEW` | Response gains `supplyType` (INTRA/INTER), `placeOfSupplyStateCode`, `cgstDisplay`/`sgstDisplay`/`igstDisplay`, `cancelledAt`, `cancellationReason` (last two only when CANCELLED). |
+| GET | `/v1/customers/{customerId}/ledger/balance` | `CUSTOMER_VIEW` | `balancePaise` positive = customer owes; plus lifetime debit/credit totals, all with display strings. |
+| GET | `/v1/customers/{customerId}/ledger/statement?from&to` | `CUSTOMER_VIEW` | Opening balance, entries with running balance, closing balance. Entry types INVOICE/PAYMENT/SALES_RETURN/INVOICE_CANCELLATION/ADJUSTMENT. |
+| GET | `/v1/customers/{customerId}/ledger/ageing` | `CUSTOMER_VIEW` | Open invoice balances in 0-30/31-60/61-90/90+ buckets from the invoice date (no separate due date exists), plus the invoices themselves. |
+| POST | `/v1/customers/{customerId}/ledger/adjust` | `PAYMENT_MANAGE` | `{amountPaise ≥ 1, debit: bool, reason}`; reason mandatory (400 when blank). Written to `activity_log`. |
+| GET | `/v1/analytics/profit?from&to` | `REPORT_FINANCIAL` | Revenue, sales returns, net revenue, COGS (from `invoice_item.cost_price_paise` frozen at sale, net of returned units), gross profit, expenses, net profit - paise + display each. Same gate as the Tally export, not `REPORT_VIEW`. |
+| POST | `/v1/sync/transactions` | `INVOICE_CREATE` | `{transactions: [{clientUuid, deviceId, transactionType: INVOICE, clientCreatedAt, payload: <POST /v1/invoices body>}]}` → one result per row: `status` SYNCED/CONFLICT/FAILED, `replay` (UUID already seen - stored result returned, nothing created), `resultReferenceId/Number`, `conflictReason`. Always 200 for a well-formed batch; a bad row never fails its siblings. No tenant id accepted. |
+
+Regression tests: `CustomerLedgerIT` (2), `ProfitHistoricalCostIT` (1), `OfflineSyncIT` (2), `GstSplitTest` (6).

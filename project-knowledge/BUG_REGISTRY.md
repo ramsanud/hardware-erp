@@ -99,6 +99,8 @@ generating new code; never reintroduce a listed bug.
 | BUG-BE-003 | Backend / Inventory | High | Fixed 2026-09-09 |
 | BUG-BE-004 | Backend / Common | Medium | Fixed 2026-09-09 |
 | BUG-BE-005 | Backend / Quotation | Medium | Fixed 2026-09-14 |
+| BUG-BE-006 | Backend / Subscription + Notification | High | Fixed 2026-09-21 |
+| BUG-BE-007 | Backend / Sync | High | Fixed 2026-09-21 |
 
 **This index is complete and covers every entry in this file (verified
 2026-09-08).** It previously stopped at `BUG-ENV-003`, omitting 33 later
@@ -3723,3 +3725,59 @@ creates a live and an expired draft and asserts each filter returns only its
 own — against the real query, since a mocked repository has no opinion about
 JPQL. `QuotationServiceImplTest.searchTranslatesExpiredIntoComputedExpiry`
 pins the translation one level down.
+
+## BUG-BE-006 — every automatic customer notification failed before reaching the provider (FIXED, 2026-09-21)
+
+| | |
+|---|---|
+| **Severity** | High — SMS/WhatsApp/email on invoice creation and payment never sent; nothing surfaced to the user; the usage counter CR-088 meant to enforce was never written |
+| **Layer** | BACKEND ONLY |
+| **Found** | In the CR-091 IT logs: "Async method notifyInvoiceCreated failed … TransactionRequiredException: Executing an update/delete query" on every invoice created, in every run |
+| **Symptom** | `@Async notifyInvoiceCreated` → `NotificationServiceImpl.attempt()` → `usageTrackingService.tryConsume(tenantId, key)` threw before `provider.send()` was reached; the async exception handler logged it and the invoice flow carried on |
+
+**Root cause — BUG-BE-002's species, in the CR-088 metering.**
+`UsageTrackingServiceImpl.tryConsume(Long, UsageKey)` was a plain delegate to
+the three-arg overload that carries `@Transactional(REQUIRES_NEW)`. The
+delegate is `this.tryConsume(...)` - a same-class self-invocation that never
+passes through the Spring proxy - so no transaction was opened, and the
+`@Modifying` consume query threw. The only external caller uses the two-arg
+form, so the annotated overload was never reached through the proxy at all.
+
+**Fix.** The two-arg overload is annotated `@Transactional(REQUIRES_NEW)`
+too; the proxy opens the transaction on entry, and the inner self-invoked
+call runs inside it. Verified by the disappearance of the error from every
+IT run that creates an invoice (`CustomerLedgerIT`, `ProfitHistoricalCostIT`,
+`OfflineSyncIT`, `ProductRequestIT` …).
+
+**Lesson (PROJECT_SKILLS):** a convenience overload that delegates with
+`this.` must carry the same transactional annotation as its target, or be
+the annotated one itself.
+
+## BUG-BE-007 — a conflicting row turned a whole offline-sync batch into a 500 (FIXED, 2026-09-21)
+
+| | |
+|---|---|
+| **Severity** | High — the one case offline sync exists for (stock sold meanwhile) failed the request instead of recording a CONFLICT, and every other row in the same batch was reported as failed too |
+| **Layer** | BACKEND ONLY |
+| **Found** | `OfflineSyncIT.insufficientStockAtSyncTimeIsAConflictNotASilentRetry` on its first run, before CR-091 was committed |
+| **Symptom** | `POST /v1/sync/transactions` → 500 `UnexpectedRollbackException` when any row's invoice attempt threw a `BusinessException` |
+
+**Root cause — a catch block cannot un-mark rollback-only.**
+`SyncTransactionExecutor.processOne()` held a REQUIRES_NEW transaction and
+called `InvoiceServiceImpl.create()` inside it. `create()` is plain
+`@Transactional` (REQUIRED) so it *joined* that transaction; when it threw
+INSUFFICIENT_STOCK its interceptor marked the shared transaction
+rollback-only before the exception reached the catch in `processOne()`.
+The catch set the row to CONFLICT and `save()`d it - apparently fine - and
+the commit at the end of `processOne()` then threw and discarded the row.
+
+**Fix.** The attempt runs in a separate bean's own REQUIRES_NEW
+(`SyncInvoiceCreator.create()`), so its rollback is isolated; the executor
+holds no transaction of its own and records the outcome in a fresh short
+transaction via the repository. Same-batch isolation the design already
+wanted is now real.
+
+**Lesson (PROJECT_SKILLS):** "catch the exception and keep going" only
+works if the thing that threw ran in a *different* physical transaction.
+Inside the same one, the transaction is already dead - move the risky call
+into its own REQUIRES_NEW on another bean.

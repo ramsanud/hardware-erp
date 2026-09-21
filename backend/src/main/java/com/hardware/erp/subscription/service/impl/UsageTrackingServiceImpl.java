@@ -37,7 +37,22 @@ public class UsageTrackingServiceImpl implements UsageTrackingService {
     private final PlanUsageLimitRepository planUsageLimitRepository;
     private final FeatureAccessService featureAccessService;
 
+    /**
+     * Also REQUIRES_NEW, not just a plain delegate - BUG-BE-002's own
+     * trap. NotificationServiceImpl's async send path calls this two-arg
+     * overload through the Spring proxy (an external call, so its
+     * annotation is honoured), but the three-arg overload it delegates to
+     * is called as {@code this.tryConsume(...)} - a same-class
+     * self-invocation that bypasses the proxy and runs with no
+     * transaction at all, throwing TransactionRequiredException on every
+     * call (found by CR-091's OfflineSyncIT work turning up the resulting
+     * "Async method notifyInvoiceCreated failed" log on every invoice
+     * creation). Annotating this overload too means the proxy opens the
+     * transaction here, before the self-invoked call ever runs - the
+     * inner call executes inside it either way.
+     */
     @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean tryConsume(Long tenantId, UsageKey usageKey) {
         return tryConsume(tenantId, usageKey, 1L);
     }

@@ -564,3 +564,29 @@ are structural:
 Proven by `ShopDiscoveryIT` (8) against real PostgreSQL, including the
 whole-response-body assertion that a withheld name and phone appear
 nowhere in what the requester receives.
+
+## CR-091 — ledger, profit and offline sync
+
+- `/v1/customers/{id}/ledger/*` reads are `CUSTOMER_VIEW`; the manual
+  adjustment is `PAYMENT_MANAGE` (correcting a balance is a money action,
+  the same authority as recording a payment) and is written to
+  `activity_log` with the reason. Every query is `tenant_id`-scoped from
+  the JWT; the customer id in the path is resolved with
+  `findByIdAndTenantId`.
+- `/v1/analytics/profit` is `REPORT_FINANCIAL`, not `REPORT_VIEW` - margin
+  is owner/accountant information (the same line the Tally export draws).
+- `/v1/sync/transactions` is `INVOICE_CREATE`: syncing an offline invoice
+  is exactly the authority to create one. The endpoint accepts no tenant
+  id; the payload is replayed through the real `InvoiceService.create()`,
+  so every server-side rule (stock, pricing from the product row, coupon
+  validation) applies unchanged - an offline client cannot smuggle a price.
+  Conflicts are recorded and shown, never auto-resolved.
+- The browser outbox (IndexedDB) stores invoice payloads and a random
+  device id only - never a token (rule 9). A sync still needs a live
+  session.
+- Invoice cancellation now records `cancelled_by` and a mandatory reason on
+  the row, in addition to the existing `activity_log` entry.
+- Fixed on the way: `UsageTrackingServiceImpl.tryConsume(tenant, key)`
+  self-invoked its REQUIRES_NEW overload (BUG-BE-002 species), so CR-088's
+  notification metering threw before any message was sent - every
+  automatic customer notification on this branch was silently failing.

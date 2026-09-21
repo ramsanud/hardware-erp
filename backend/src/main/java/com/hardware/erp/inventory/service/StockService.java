@@ -35,4 +35,24 @@ public interface StockService {
      */
     StockMovement applyMovement(Long productId, BigDecimal quantityChange, MovementType type,
                                 String referenceType, Long referenceId, String notes);
+
+    /**
+     * CR-091 Phase 6. A purchase receipt, PLUS the weighted-average cost
+     * update that ordinary applyMovement() never does (every other
+     * MovementType leaves cost alone - a sale, adjustment or return does not
+     * change what the shelf's average unit cost is).
+     *
+     * A default method rather than a new parameter on applyMovement() -
+     * CLAUDE.md's own rule for growing a provider interface - so every
+     * existing SALE/ADJUSTMENT/RETURN caller is untouched. Not truly
+     * "default" (it needs the repositories), so it is declared abstract
+     * here and implemented once in StockServiceImpl, the only implementer.
+     *
+     * newAverage = (oldAverage * oldQty + unitCostPaise * receivedQty) / (oldQty + receivedQty),
+     * rounded to the nearest paisa. A shop that has never recorded a cost
+     * (average 0, e.g. straight off V62's product-price backfill) simply
+     * adopts this receipt's cost outright.
+     */
+    StockMovement applyPurchaseReceipt(Long productId, BigDecimal quantityChange, Long unitCostPaise,
+                                       String referenceType, Long referenceId, String notes);
 }

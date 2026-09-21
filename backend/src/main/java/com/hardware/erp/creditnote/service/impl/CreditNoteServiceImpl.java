@@ -70,6 +70,7 @@ public class CreditNoteServiceImpl implements CreditNoteService {
     private final ActivityLogService activityLog;
     private final StockService stockService;
     private final IdempotencyService idempotencyService;
+    private final com.hardware.erp.customer.ledger.CustomerLedgerService customerLedgerService;
 
     @Override
     @Transactional
@@ -129,6 +130,11 @@ public class CreditNoteServiceImpl implements CreditNoteService {
             stockService.applyMovement(item.getProduct().getId(), item.getQuantity(),
                     MovementType.SALES_RETURN, "CREDIT_NOTE", saved.getId(), null);
         }
+
+        // CR-091 Phase 4 - the return credited to the customer's account, in
+        // the same transaction as the credit note itself.
+        customerLedgerService.postSalesReturn(invoice.getTenant().getId(), invoice.getCustomer().getId(),
+                saved.getId(), saved.getCreditNoteNumber(), saved.getTotalPaise(), java.time.LocalDateTime.now());
 
         Map<String, Object> logged = new LinkedHashMap<>();
         logged.put("creditNoteNumber", saved.getCreditNoteNumber());

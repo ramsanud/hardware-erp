@@ -298,8 +298,10 @@ public class PurchaseImportServiceImpl implements PurchaseImportService {
         Purchase saved = purchaseRepository.save(purchase);
 
         for (PurchaseItem item : saved.getItems()) {
-            stockService.applyMovement(item.getProduct().getId(), item.getQuantity(),
-                    MovementType.PURCHASE_RECEIPT, "PURCHASE", saved.getId(),
+            // CR-091 Phase 6 - same weighted-average cost update as the
+            // manual purchase path.
+            stockService.applyPurchaseReceipt(item.getProduct().getId(), item.getQuantity(),
+                    item.getUnitPricePaise(), "PURCHASE", saved.getId(),
                     "Imported from " + file.getOriginalFilename());
         }
 

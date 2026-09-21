@@ -28,7 +28,8 @@ public interface InvoiceService {
 
     InvoiceResponse addPayment(Long invoiceId, PaymentRequest request);
 
-    InvoiceResponse cancel(Long id);
+    /** CR-091 Phase 3 - reason mandatory; who and when are recorded. */
+    InvoiceResponse cancel(Long id, com.hardware.erp.invoice.dto.InvoiceCancelRequest request);
 
     byte[] generatePdf(Long id);
 

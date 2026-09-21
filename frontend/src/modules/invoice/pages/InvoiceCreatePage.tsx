@@ -1,6 +1,10 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { useToast } from '@/modules/auth/hooks/useToast';
+import { ApiError } from '@/shared/types/api';
+import { outbox } from '@/modules/sync/lib/outbox';
+import { notifyOutboxChanged } from '@/modules/sync/hooks/useOutbox';
+import { SYNC_ROUTES } from '@/modules/sync/constants';
 import {
   InvoiceWizard, type InvoiceWizardInitialCustomer, type InvoiceWizardInitialItem,
 } from '../forms/InvoiceWizard';
@@ -46,9 +50,31 @@ export function InvoiceCreatePage() {
       navigate(INVOICE_ROUTES.detail(invoice.id), { replace: true });
       return;
     }
-    const invoice = await invoiceService.create(request);
-    toast.success(`Invoice ${invoice.invoiceNumber} created.`);
-    navigate(INVOICE_ROUTES.detail(invoice.id), { replace: true });
+    // CR-091 Phase 9. Unreachable server - queue it on this device rather
+    // than lose the sale. Only a NETWORK/TIMEOUT failure qualifies: a 4xx
+    // is the server's real answer and must be shown, never queued.
+    if (!navigator.onLine) {
+      await queueOffline(request);
+      return;
+    }
+    try {
+      const invoice = await invoiceService.create(request);
+      toast.success(`Invoice ${invoice.invoiceNumber} created.`);
+      navigate(INVOICE_ROUTES.detail(invoice.id), { replace: true });
+    } catch (caught) {
+      if (caught instanceof ApiError && (caught.status === 0 || caught.status === 408)) {
+        await queueOffline(request);
+        return;
+      }
+      throw caught;
+    }
+  };
+
+  const queueOffline = async (request: InvoiceRequest) => {
+    await outbox.queueInvoice(request);
+    notifyOutboxChanged();
+    toast.info('Saved on this device. It will be sent to the server when you are back online.');
+    navigate(SYNC_ROUTES.outbox, { replace: true });
   };
 
   return (

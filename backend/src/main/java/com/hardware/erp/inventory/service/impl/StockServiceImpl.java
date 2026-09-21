@@ -112,6 +112,58 @@ public class StockServiceImpl implements StockService {
                 .build());
     }
 
+    @Override
+    @Transactional
+    public StockMovement applyPurchaseReceipt(Long productId, BigDecimal quantityChange, Long unitCostPaise,
+                                              String referenceType, Long referenceId, String notes) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        Stock stock = stockRepository.lockByTenantIdAndProductId(tenantId, productId)
+                .orElseGet(() -> createStockRow(productId, tenantId));
+
+        BigDecimal oldQty = stock.getQuantityOnHand();
+        BigDecimal newBalance = oldQty.add(quantityChange);
+        if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException(
+                    "Not enough stock of " + stock.getProduct().getProductName()
+                            + ": " + oldQty.stripTrailingZeros().toPlainString()
+                            + " on hand, " + quantityChange.abs().stripTrailingZeros().toPlainString()
+                            + " requested",
+                    HttpStatus.UNPROCESSABLE_ENTITY, "INSUFFICIENT_STOCK");
+        }
+
+        // Weighted average, only moved by a real receipt with a real cost.
+        // A purchase return (a negative quantityChange, no cost supplied by
+        // its caller) leaves the average as it stands: the goods that leave
+        // were already costed at whatever the average was when they arrived.
+        Long currentAverage = stock.getAverageCostPaise();
+        long oldAverage = currentAverage == null ? 0L : currentAverage;
+        if (unitCostPaise != null && quantityChange.signum() > 0) {
+            if (oldQty.signum() <= 0 || oldAverage <= 0) {
+                stock.setAverageCostPaise(unitCostPaise);
+            } else {
+                BigDecimal oldValue = oldQty.multiply(BigDecimal.valueOf(oldAverage));
+                BigDecimal newValue = quantityChange.multiply(BigDecimal.valueOf(unitCostPaise));
+                stock.setAverageCostPaise(oldValue.add(newValue)
+                        .divide(newBalance, 0, java.math.RoundingMode.HALF_UP)
+                        .longValueExact());
+            }
+        }
+
+        stock.setQuantityOnHand(newBalance);
+        stockRepository.save(stock);
+
+        return movementRepository.save(StockMovement.builder()
+                .tenant(stock.getTenant())
+                .product(stock.getProduct())
+                .movementType(quantityChange.signum() > 0 ? MovementType.PURCHASE_RECEIPT : MovementType.PURCHASE_RETURN)
+                .quantityChange(quantityChange)
+                .balanceAfter(newBalance)
+                .referenceType(referenceType)
+                .referenceId(referenceId)
+                .notes(notes)
+                .build());
+    }
+
     private Stock createStockRow(Long productId, Long tenantId) {
         return stockRepository.save(zeroStock(productId, tenantId));
     }
