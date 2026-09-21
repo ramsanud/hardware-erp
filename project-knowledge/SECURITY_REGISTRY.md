@@ -502,6 +502,9 @@ it afterwards.
 frontend's `hasPermission` check only hides a card the server would refuse
 anyway. No endpoint in this feature accepts a tenant id, so the blast radius is
 structurally limited to the caller's own shop.
+
+## CR-088 — feature-level authorization is backend-only, never a frontend flag
+
 Every plan-gated capability is enforced by `FeatureAccessService
 .requireFeature(FeatureKey)` on the backend, inside the service method that
 does the work — never only by hiding a sidebar entry or disabling a button.
