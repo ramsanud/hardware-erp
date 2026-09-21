@@ -65,6 +65,7 @@ public class PurchaseServiceImpl implements PurchaseService {
     private final TenantRepository tenantRepository;
     private final PurchaseMapper purchaseMapper;
     private final ActivityLogService activityLog;
+    private final com.hardware.erp.branch.service.BranchContext branchContext;
 
     @Override
     @Transactional
@@ -76,6 +77,7 @@ public class PurchaseServiceImpl implements PurchaseService {
 
         Purchase purchase = Purchase.builder()
                 .tenant(tenantRepository.getReferenceById(tenantId))
+                .branchId(branchContext.actingBranchId(tenantId))
                 .purchaseNumber(nextPurchaseNumber(tenantId))
                 .supplier(supplier)
                 .supplierBillNumber(blankToNull(request.supplierBillNumber()))

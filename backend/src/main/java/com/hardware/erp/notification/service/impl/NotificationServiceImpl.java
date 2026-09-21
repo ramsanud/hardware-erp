@@ -294,6 +294,27 @@ public class NotificationServiceImpl implements NotificationService {
         }
     }
 
+    @Override
+    public NotificationStatus sendOwnerMessage(Long tenantId, String subject, String body, String relatedEntityType, Long relatedEntityId) {
+        Tenant tenant = tenantRepository.findById(tenantId).orElse(null);
+        if (tenant == null) {
+            return NotificationStatus.FAILED;
+        }
+        boolean hasPhone = tenant.getPhone() != null && !tenant.getPhone().isBlank();
+        boolean hasEmail = tenant.getEmail() != null && !tenant.getEmail().isBlank();
+        if (hasPhone && providersByChannel.get(NotificationChannel.WHATSAPP) != null) {
+            NotificationStatus status = attempt(tenantId, NotificationChannel.WHATSAPP, tenant.getPhone(), null, body, relatedEntityType, relatedEntityId);
+            if (status == NotificationStatus.SENT) {
+                return status;
+            }
+        }
+        if (hasEmail) {
+            return attempt(tenantId, NotificationChannel.EMAIL, tenant.getEmail(), subject, body, relatedEntityType, relatedEntityId);
+        }
+        log.info("Tenant {} has neither a phone nor an email on file - owner message not attempted", tenantId);
+        return NotificationStatus.FAILED;
+    }
+
     private NotificationStatus attempt(Long tenantId, NotificationChannel channel, String toAddress, String subject,
                                         String body, String relatedEntityType, Long relatedEntityId) {
         NotificationProvider provider = providersByChannel.get(channel);

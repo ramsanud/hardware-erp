@@ -142,6 +142,10 @@ public class Invoice extends BaseEntity {
     @Column(name = "cancellation_reason", length = 255)
     private String cancellationReason;
 
+    /** CR-092. The branch this sale was made at - the acting user's, else MAIN. Set server-side on create, never from the request. */
+    @Column(name = "branch_id", nullable = false)
+    private Long branchId;
+
     @OneToMany(mappedBy = "invoice", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<InvoiceItem> items = new ArrayList<>();

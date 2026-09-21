@@ -94,6 +94,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final TenantBankAccountRepository tenantBankAccountRepository;
     private final TenantBankAccountQrRepository tenantBankAccountQrRepository;
     private final CustomerLedgerService customerLedgerService;
+    private final com.hardware.erp.branch.service.BranchContext branchContext;
     private final StockRepository stockRepository;
 
     @Override
@@ -110,6 +111,7 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         Invoice invoice = Invoice.builder()
                 .tenant(tenantRepository.getReferenceById(tenantId))
+                .branchId(branchContext.actingBranchId(tenantId))
                 .invoiceNumber(nextInvoiceNumber(tenantId))
                 .customer(customer)
                 .invoiceDate(LocalDate.now())

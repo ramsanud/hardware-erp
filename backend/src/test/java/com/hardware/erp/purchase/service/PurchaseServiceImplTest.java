@@ -72,6 +72,8 @@ class PurchaseServiceImplTest {
 
     @Spy private PurchaseMapper purchaseMapper = new PurchaseMapper();
 
+    @Mock private com.hardware.erp.branch.service.BranchContext branchContext;
+
     @InjectMocks private PurchaseServiceImpl purchaseService;
 
     private Tenant tenant;

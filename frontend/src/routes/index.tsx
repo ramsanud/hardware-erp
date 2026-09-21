@@ -37,6 +37,10 @@ import { PurchaseCreatePage } from '@/modules/purchase/pages/PurchaseCreatePage'
 import { DashboardPage } from '@/modules/dashboard/pages/DashboardPage';
 import { ProfitReportPage } from '@/modules/dashboard/pages/ProfitReportPage';
 import { SyncPage } from '@/modules/sync/pages/SyncPage';
+import { BranchesPage } from '@/modules/branch/pages/BranchesPage';
+import { BRANCH_ROUTES } from '@/modules/branch/constants';
+import { InsightsPage } from '@/modules/insights/pages/InsightsPage';
+import { INSIGHTS_ROUTES } from '@/modules/insights/constants';
 import { SYNC_ROUTES } from '@/modules/sync/constants';
 import { SETTINGS_ROUTES } from '@/modules/settings/constants';
 import { ShopSettingsPage } from '@/modules/settings/pages/ShopSettingsPage';
@@ -306,6 +310,14 @@ export function AppRoutes() {
 
           {/* CR-090 - the shop's own notifications; any signed-in user, tenant-scoped server-side. */}
           <Route path={DISCOVERY_ROUTES.notifications} element={<NotificationsPage />} />
+
+          {/* CR-092 - branches (every role sees them; managing is owner-only inside the page) and insights (a report). */}
+          <Route element={<RequirePermission permission={PERMISSIONS.BRANCH_VIEW} />}>
+            <Route path={BRANCH_ROUTES.list} element={<BranchesPage />} />
+          </Route>
+          <Route element={<RequirePermission permission={PERMISSIONS.REPORT_VIEW} />}>
+            <Route path={INSIGHTS_ROUTES.overview} element={<InsightsPage />} />
+          </Route>
 
           <Route element={<RequirePermission permission={PERMISSIONS.REPORT_FINANCIAL} />}>
             <Route path={TOOLS_ROUTES.tallyExport} element={<TallyExportPage />} />

@@ -1353,3 +1353,16 @@ executor holds **no** transaction of its own; each row's invoice attempt
 runs in `SyncInvoiceCreator`'s REQUIRES_NEW and the outcome row is saved in
 a separate short transaction, so a rolled-back attempt cannot poison the
 transaction that records it.
+
+## V63 — Premium growth pack: branches, branch stock, transfers, backups (CR-092, 2026-09-21)
+
+| Table / column | Purpose |
+|---|---|
+| `branch` | Per-tenant branch master. `branch_code` UNIQUE per tenant; `is_main` with **`UNIQUE INDEX … WHERE is_main`** - exactly one MAIN per shop. One MAIN inserted for every existing tenant; `AFTER INSERT ON tenant` trigger `tenant_create_main_branch()` does it for new ones. `VARCHAR(2)`/`VARCHAR(6)` for state/pincode, not CHAR - `ddl-auto: validate` rejects `bpchar` against a `String` field (caught on the first IT run). |
+| `app_user.branch_id` (nullable FK) | The branch a user works at; null = every branch (the owner). |
+| `invoice.branch_id`, `purchase.branch_id`, `stock_movement.branch_id` (NOT NULL FK, backfilled to MAIN) | Where the document happened. Set by the application from the acting user; a `BEFORE INSERT` trigger `branch_default_main()` fills NULL with MAIN so seed scripts (V9xx, never edited) and direct SQL still insert. |
+| `stock_movement.movement_type` CHECK | + `STOCK_TRANSFER_OUT`, `STOCK_TRANSFER_IN`. |
+| `branch_stock` | `UNIQUE (branch_id, product_id)`. A measured breakdown of `stock.quantity_on_hand` written by `StockServiceImpl` on every movement via an upsert (`addQuantity`), seeded from the shop row while the shop is single-branch and snapshotted once (`snapshotMainFromShopStock`) when the second branch is created. **Never the availability authority.** May be negative. |
+| `stock_transfer`, `stock_transfer_item` | The transfer document: `transfer_number` UNIQUE per tenant (`ST-` from `document_sequence`, `doc_type` CHECK extended), from/to (CHECK different), COMPLETED only, lines with a name snapshot. |
+| `tenant_backup` | One row per backup: format (JSON/CSV), trigger (MANUAL/SCHEDULED), status, record count, size, **`file_data BYTEA`** (the snapshot itself, so it can be re-downloaded), error detail. Pruned to the newest 7 per tenant by the nightly job. |
+| `permission` + `role_permission` | `BRANCH_VIEW` (all four roles), `STOCK_TRANSFER_MANAGE` (OWNER, MANAGER), `BRANCH_MANAGE`, `BACKUP_MANAGE` (OWNER). |

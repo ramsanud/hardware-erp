@@ -55,4 +55,16 @@ public interface StockService {
      */
     StockMovement applyPurchaseReceipt(Long productId, BigDecimal quantityChange, Long unitCostPaise,
                                        String referenceType, Long referenceId, String notes);
+
+    /**
+     * CR-092. Moves {@code quantity} of a product from one branch to another:
+     * one STOCK_TRANSFER_OUT movement at the source and one STOCK_TRANSFER_IN
+     * at the destination, the branch breakdown adjusted for both, and the
+     * tenant-level stock row untouched - a transfer changes where goods are,
+     * not how many the shop has. Refused when the source branch does not
+     * hold enough (the one place branch_stock IS enforced, because a
+     * transfer is exactly a claim about a branch's own holding).
+     */
+    void applyBranchTransfer(Long productId, BigDecimal quantity, Long fromBranchId, Long toBranchId,
+                             Long transferId, String transferNumber);
 }

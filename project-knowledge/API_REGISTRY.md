@@ -908,3 +908,27 @@ Rules and proofs: `docs/BUSINESS_RULES_GST_STOCK_LEDGER_PROFIT.md`, `docs/OFFLIN
 | POST | `/v1/sync/transactions` | `INVOICE_CREATE` | `{transactions: [{clientUuid, deviceId, transactionType: INVOICE, clientCreatedAt, payload: <POST /v1/invoices body>}]}` → one result per row: `status` SYNCED/CONFLICT/FAILED, `replay` (UUID already seen - stored result returned, nothing created), `resultReferenceId/Number`, `conflictReason`. Always 200 for a well-formed batch; a bad row never fails its siblings. No tenant id accepted. |
 
 Regression tests: `CustomerLedgerIT` (2), `ProfitHistoricalCostIT` (1), `OfflineSyncIT` (2), `GstSplitTest` (6).
+
+## CR-092 — Branches, smart insights, daily summary, backups
+
+Write-up: `docs/PREMIUM_GROWTH_PACK.md`. Plan gates are inside the services; every path is tenant-scoped from the JWT and no branch id on a document is ever taken from a request.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/branches` | `BRANCH_VIEW` | This shop's branches, MAIN first. Every shop has one. |
+| POST | `/v1/branches` | `BRANCH_MANAGE` + `MULTI_BRANCH` | Creating the second branch snapshots MAIN's holding from the shop stock. 409 on a duplicate code. |
+| GET | `/v1/branches/{id}` · PUT | `BRANCH_VIEW` · `BRANCH_MANAGE` | MAIN cannot be made inactive (422 `MAIN_BRANCH_REQUIRED`). |
+| PUT | `/v1/branches/users/{userId}` | `BRANCH_MANAGE` + feature | `{branchId}` or null = every branch. Changes where that user's documents land. |
+| GET | `/v1/branches/summary?from&to` | `BRANCH_VIEW` + feature | Per branch: invoice count/sales, purchase count/amount (cancelled excluded), users, products in stock. |
+| GET | `/v1/branches/stock?branchId&search` | `BRANCH_VIEW` + feature | The breakdown; non-zero rows only, up to 500. Negative = sold from a branch that never received it. |
+| GET | `/v1/branches/transfers` · `/{id}` | `BRANCH_VIEW` | Newest first. |
+| POST | `/v1/branches/transfers` | `STOCK_TRANSFER_MANAGE` + feature | `{fromBranchId, toBranchId, items[{productId, quantity}], notes}`. 422 `INSUFFICIENT_BRANCH_STOCK` when the source does not hold it; `SAME_BRANCH`; `BRANCH_INACTIVE`. Shop total unchanged. |
+| GET | `/v1/insights/slow-moving?days` · `overstock?days&coverDays` · `reorder?days&leadTimeDays` · `demand-trend?days` · `bought-together?days` | `REPORT_VIEW` + `SMART_INSIGHTS` | Each returns `{window, items/pairs, summary}`; empty is empty with a reason. |
+| GET | `/v1/insights/pricing?days` | `REPORT_VIEW` + `PRODUCT_VIEW_COST` + feature | Below cost / low margin / heavily discounted. |
+| GET | `/v1/daily-summary/today` | `REPORT_VIEW` | `{day, body}` - today's summary text. |
+| POST | `/v1/daily-summary/send` | `SETTINGS_MANAGE` | Sends now; returns the delivery `NotificationStatus` (LOGGED_ONLY below Premium). Always leaves the in-app notification. |
+| GET | `/v1/backups` | `BACKUP_MANAGE` | Newest 20, without file bytes. |
+| POST | `/v1/backups?format=JSON,CSV` | `BACKUP_MANAGE` + `DATA_EXPORT` | Takes one now; 201 with the summary row. Activity-logged. |
+| GET | `/v1/backups/{id}/download` | `BACKUP_MANAGE` | The stored file; another shop's id is 404. |
+
+Regression tests: `BranchStockTransferIT` (3), `InsightsIT` (2), `TenantBackupIT` (3).

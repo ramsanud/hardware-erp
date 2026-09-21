@@ -72,6 +72,7 @@ public class PurchaseImportServiceImpl implements PurchaseImportService {
     private final TenantRepository tenantRepository;
     private final PurchaseMapper purchaseMapper;
     private final ActivityLogService activityLog;
+    private final com.hardware.erp.branch.service.BranchContext branchContext;
 
     @Override
     @Transactional(readOnly = true)
@@ -207,6 +208,7 @@ public class PurchaseImportServiceImpl implements PurchaseImportService {
 
         Purchase purchase = Purchase.builder()
                 .tenant(tenantRepository.getReferenceById(tenantId))
+                .branchId(branchContext.actingBranchId(tenantId))
                 .purchaseNumber(nextPurchaseNumber(tenantId))
                 .supplier(supplier)
                 .supplierBillNumber(blankToNull(request.supplierBillNumber()))

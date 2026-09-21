@@ -107,7 +107,9 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 "SALES_ORDER_VIEW", "SALES_ORDER_MANAGE",
                 "DELIVERY_CHALLAN_VIEW", "DELIVERY_CHALLAN_MANAGE",
                 "CREDIT_NOTE_VIEW", "CREDIT_NOTE_MANAGE",
-                "PRODUCT_REQUEST_VIEW", "PRODUCT_REQUEST_MANAGE"));
+                "PRODUCT_REQUEST_VIEW", "PRODUCT_REQUEST_MANAGE",
+                // CR-092 - moves stock between the branches it runs; creating a branch stays with the owner.
+                "BRANCH_VIEW", "STOCK_TRANSFER_MANAGE"));
         ROLE_PERMISSIONS.put("ACCOUNTANT", Set.of(
                 "CUSTOMER_VIEW", "CUSTOMER_MANAGE", "SUPPLIER_VIEW",
                 "PRODUCT_VIEW", "PRODUCT_VIEW_COST", "PRODUCT_VIEW_STOCK",
@@ -126,7 +128,8 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 "CREDIT_NOTE_VIEW", "CREDIT_NOTE_MANAGE",
                 // Sees the queue for billing/reporting context but does not
                 // run the counter - same reasoning as SALES_ORDER_VIEW above.
-                "PRODUCT_REQUEST_VIEW"));
+                "PRODUCT_REQUEST_VIEW",
+                "BRANCH_VIEW"));
         // STAFF deliberately excludes PRODUCT_VIEW_COST - counter staff must
         // not see purchase cost or margin, enforced server-side (see V1's
         // identical comment on the seed data this mirrors).
@@ -143,7 +146,8 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 "PRODUCT_REQUEST_VIEW", "PRODUCT_REQUEST_MANAGE",
                 // Counter staff takes orders the same way it raises
                 // quotations and invoices.
-                "SALES_ORDER_VIEW", "SALES_ORDER_MANAGE"));
+                "SALES_ORDER_VIEW", "SALES_ORDER_MANAGE",
+                "BRANCH_VIEW"));
     }
 
     private final TenantRepository tenantRepository;

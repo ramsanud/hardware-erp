@@ -74,6 +74,8 @@ class InvoiceServiceImplTest {
 
     @Spy private InvoiceMapper invoiceMapper = new InvoiceMapper();
 
+    @Mock private com.hardware.erp.branch.service.BranchContext branchContext;
+
     @InjectMocks private InvoiceServiceImpl invoiceService;
 
     private Tenant tenant;

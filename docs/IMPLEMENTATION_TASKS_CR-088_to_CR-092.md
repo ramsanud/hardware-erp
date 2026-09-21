@@ -68,16 +68,16 @@ entry exist. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas`
 
 ## CR-092 — Premium growth pack (V63)
 
-- [ ] `branch` (one MAIN per tenant backfilled), `branch_stock`, `branch_id` on invoice/purchase/stock_movement/app_user; STOCK_TRANSFER_IN/OUT; `/v1/branches`, `/v1/branches/transfers`, branch-wise summary
-- [ ] `/v1/insights/*`: slow-moving, overstock, reorder suggestion, demand trend, frequently-bought-together, pricing insight — computed from invoice/stock rows, "—" when the window is empty
-- [ ] Daily business summary job (Premium, 20:30 IST) over the tenant's own channel; counted as usage
-- [ ] `tenant_backup` history + `POST /v1/backups` snapshot (reuses the CR-057 tenant export) + download; job for Premium nightly
-- [ ] Frontend: Branches page, Insights page, Backups card
-- [ ] Tests: `BranchStockTransferIT`, `InsightsServiceIT`, `TenantBackupIT`
+- [x] `branch` (one MAIN per tenant backfilled + tenant trigger), `branch_stock` (measured breakdown of `stock`, never the availability authority - see doc), `branch_id` on invoice/purchase/stock_movement/app_user stamped server-side; STOCK_TRANSFER_IN/OUT; `/v1/branches`, `/v1/branches/transfers`, `/v1/branches/stock`, branch-wise summary. **Pending by scope:** branch-keyed availability, Users-page control for user↔branch assignment (API exists)
+- [x] `/v1/insights/*`: slow-moving, overstock, reorder suggestion, demand trend, frequently-bought-together, pricing insight — computed from invoice/stock rows; an empty window is an empty list with a summary that says why
+- [x] Daily business summary job (20:30 IST): in-app notification for every shop; owner WhatsApp/email with ADVANCED_NOTIFICATIONS via the metered `attempt()` path; `/v1/daily-summary/today` + `/send`
+- [x] `tenant_backup` history with stored bytes + `POST /v1/backups` (reuses the CR-057 export via `buildSnapshot()`) + download; 01:30 IST job for AUTO_BACKUP shops, pruned to 7
+- [x] Frontend: Branches page (list/create/edit, stock by branch, transfers), Smart insights page, Backups & daily summary card in Shop settings
+- [x] Tests: `BranchStockTransferIT` (3), `InsightsIT` (2), `TenantBackupIT` (3, includes the daily summary)
 
 ## Final — verification & docs
 
-- [x] `docs/BUSINESS_RULES_GST_STOCK_LEDGER_PROFIT.md`, `docs/SUBSCRIPTION_FEATURE_MATRIX.md`, `docs/OFFLINE_SYNC.md` (CR-092 docs still to write)
-- [ ] Registries: DATABASE_REGISTRY (V59–V62 done, V63 pending), API_REGISTRY, SECURITY_REGISTRY, BUG_REGISTRY, PROJECT_SKILLS, CHANGE_REQUEST bodies, RESUME_POINT — all current through CR-091; FEATURE_REGISTRY and CR-092 pending
-- [x] `mvn -o clean verify` (needs Docker) — 616 unit + 271 integration after CR-091, quoted in RESUME_POINT (re-run after CR-092)
-- [x] `tsc -b --force`, `vite build`, `node tests/run.mjs` — clean / clean / 272-272 after CR-091, quoted in RESUME_POINT (re-run after CR-092)
+- [x] `docs/BUSINESS_RULES_GST_STOCK_LEDGER_PROFIT.md`, `docs/SUBSCRIPTION_FEATURE_MATRIX.md`, `docs/OFFLINE_SYNC.md`, `docs/PREMIUM_GROWTH_PACK.md`
+- [x] Registries: DATABASE_REGISTRY (V59–V63), API_REGISTRY, SECURITY_REGISTRY, BUG_REGISTRY, PROJECT_SKILLS, CHANGE_REQUEST bodies, RESUME_POINT — current through CR-092 in both the worktree and the main checkout. FEATURE_REGISTRY: not updated (the plan/feature matrix lives in `docs/SUBSCRIPTION_FEATURE_MATRIX.md`) - **pending** a pass if the owner wants it mirrored there
+- [x] `mvn -o clean verify` (needs Docker) — **616 unit + 279 integration** after CR-092, BUILD SUCCESS, quoted in RESUME_POINT
+- [x] `tsc -b --force`, `vite build`, `node tests/run.mjs` — clean / clean / **272/272** after CR-092, quoted in RESUME_POINT

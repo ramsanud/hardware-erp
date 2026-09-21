@@ -97,7 +97,7 @@ Nothing is implemented from conversation memory.
 | CR-089 | 2026-09-15 | User | Smart Substitute Product Suggestion (PREMIUM): structured product attributes, `product_relationship` manual mappings, `product_request` + `product_request_suggestion` audit, rule-based + manual-mapping strategies behind `RecommendationStrategy`, configurable weights/threshold, pg_trgm fuzzy name match, compare/select flow. `SCOPE: BOTH`, migration V60. | **APPLIED, 2026-09-16** |
 | CR-090 | 2026-09-15 | User | Owner-side Nearby Product Discovery (PREMIUM, opt-in, OFF by default): `shop_discovery_setting` consent flags + coordinates + radius, Haversine radius search over opted-in shops' availability (Available/Likely/Unavailable, never quantities or prices), `product_request_discovery_match`, owner-only notification, Call/WhatsApp contact with only the permitted fields. Consent changes audited. `SCOPE: BOTH`, migration V61. | **APPLIED, 2026-09-16** |
 | CR-091 | 2026-09-15 | User | Critical business logic completion: CGST/SGST/IGST split per line & invoice with place of supply frozen on the invoice; invoice cancellation reason/by/at; `customer_ledger_entry` (invoice, payment, credit note, cancellation) with statement + ageing computed from the ledger; weighted-average cost frozen on each invoice line (`cost_price_paise`) and a revenue/COGS/gross/expenses/net profit endpoint; offline sync (`sync_transaction`, client UUID idempotency, conflict detection) with an IndexedDB outbox on the frontend. `SCOPE: BOTH`, migration V62. | **APPLIED, 2026-09-21** |
-| CR-092 | 2026-09-15 | User | PREMIUM growth pack: multi-branch (`branch`, `branch_stock`, stock transfer, branch-wise sales/purchases/users/reports), smart insights (slow-moving, overstock, reorder, demand trend, frequently-bought-together, pricing insight — all measured), daily business summary notification, tenant backup history + on-demand export snapshot. `SCOPE: BOTH`, migration V63. | **IN PROGRESS, 2026-09-15** |
+| CR-092 | 2026-09-15 | User | PREMIUM growth pack: multi-branch (`branch`, `branch_stock`, stock transfer, branch-wise sales/purchases/users/reports), smart insights (slow-moving, overstock, reorder, demand trend, frequently-bought-together, pricing insight — all measured), daily business summary notification, tenant backup history + on-demand export snapshot. `SCOPE: BOTH`, migration V63. | **APPLIED, 2026-09-21** |
 ---
 
 
@@ -5510,3 +5510,58 @@ SUCCESS** (new: `GstSplitTest` 6, `CustomerLedgerIT` 2, `ProfitHistoricalCostIT`
 `OfflineSyncIT` 2). Frontend `tsc -b --force` clean, `vite build` clean,
 `tests/run.mjs` **272/272** against a private `dist-cr091/`.
 `registry/static_check.py`: not executed (no python3 on this machine).
+
+## CR-092 — Premium growth pack: multi-branch, smart insights, daily summary, backups (2026-09-21, APPLIED)
+
+**Raised by:** User (the SaaS brief's PREMIUM tier). **Type:** new
+features, both layers. `SCOPE: BOTH`, migration **V63**. Branch
+`feature/cr-088-saas-platform`. Full write-up: `docs/PREMIUM_GROWTH_PACK.md`.
+
+### What it is
+
+- **Multi-branch** (`MULTI_BRANCH`): `branch` master with exactly one MAIN
+  per tenant (backfilled; a tenant trigger creates it for new ones);
+  `branch_id` on invoice / purchase / stock_movement / app_user, stamped
+  server-side from the acting user (never a request field); `branch_stock`
+  as a measured breakdown of `stock` maintained by the same movement code
+  (sums to the shop; may go negative and says so); `stock_transfer`
+  documents with OUT/IN movements, the one place the breakdown is enforced;
+  branch-wise summary. **Availability stays the shop's `stock` row** - see
+  the doc for why re-keying it is its own CR.
+- **Smart insights** (`SMART_INSIGHTS`, REPORT_VIEW): slow-moving,
+  overstock, reorder, demand trend, bought together, pricing (+
+  PRODUCT_VIEW_COST) - each a count/sum/ratio over recorded rows; empty
+  windows say why.
+- **Daily summary**: 20:30 IST job, in-app notification for every shop,
+  owner's WhatsApp/email with `ADVANCED_NOTIFICATIONS`, metered; preview
+  and send-now endpoints.
+- **Backups** (`BACKUP_MANAGE`, nightly with `AUTO_BACKUP`): `tenant_backup`
+  with the snapshot bytes, on-demand + 01:30 IST job, pruned to 7, reusing
+  the CR-057 export via a new `buildSnapshot()`.
+- Permissions `BRANCH_VIEW` (all roles), `STOCK_TRANSFER_MANAGE` (owner,
+  manager), `BRANCH_MANAGE` and `BACKUP_MANAGE` (owner); `DocumentType
+  .STOCK_TRANSFER`; `MovementType.STOCK_TRANSFER_OUT/IN`.
+- Frontend: Branches page (list, create/edit, stock by branch, transfers),
+  Smart insights page (six tabs), Backups & daily summary card in Shop
+  settings.
+
+### Caught on the way
+
+`ddl-auto: validate` refused `CHAR(2)`/`CHAR(6)` on `branch` against the
+entity's `String` (Tenant uses `VARCHAR`; V63 now does too). The seed
+(V902) inserts `stock_movement` without a branch after V63 - the
+`branch_default_main()` trigger resolves it to MAIN rather than editing an
+applied seed.
+
+### Pending, by scope
+
+Branch-keyed availability; a Users-page control for `PUT /v1/branches/users/{id}`;
+in-transit transfers; per-user summary recipients; images in backups; object
+storage for snapshots. All listed in `docs/PREMIUM_GROWTH_PACK.md`.
+
+### Verified
+
+`mvn clean verify` on this exact tree: **616 unit + 279 integration, BUILD
+SUCCESS** (new: `BranchStockTransferIT` 3, `InsightsIT` 2, `TenantBackupIT` 3).
+Frontend `tsc -b --force` clean, `vite build` clean, `tests/run.mjs`
+**272/272**. `registry/static_check.py`: not executed (no python3).

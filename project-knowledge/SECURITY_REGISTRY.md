@@ -590,3 +590,30 @@ nowhere in what the requester receives.
   self-invoked its REQUIRES_NEW overload (BUG-BE-002 species), so CR-088's
   notification metering threw before any message was sent - every
   automatic customer notification on this branch was silently failing.
+
+## CR-092 — branches, insights, backups
+
+- **A document's branch is never client-supplied.** `BranchContext
+  .actingBranchId()` reads the acting user's `branch_id` from the JWT-backed
+  `AppUserDetails` (sourced fresh per request, like tenantId) and falls
+  back to MAIN. Only a transfer names branches explicitly, and both are
+  resolved with `findByIdAndTenantId`.
+- Assigning a user to a branch (`PUT /v1/branches/users/{id}`) is
+  `BRANCH_MANAGE` because it changes where that user's sales land; the
+  change is activity-logged with before/after.
+- `BRANCH_MANAGE` and `BACKUP_MANAGE` are owner-only by default
+  (`RoleGrantDriftTest` pins the withholding for MANAGER, ACCOUNTANT,
+  STAFF); `STOCK_TRANSFER_MANAGE` is owner + manager.
+- Insights are `REPORT_VIEW`; the pricing view additionally requires
+  `PRODUCT_VIEW_COST` - the same line STAFF is kept behind everywhere cost
+  or margin appears.
+- A backup is the CR-057 tenant export scoped to the caller's tenant;
+  `GET /v1/backups/{id}/download` resolves the row with
+  `findByIdAndTenantId`, so another shop's id is 404 (`TenantBackupIT`).
+  Taking one is activity-logged with counts only, never content.
+- The daily summary goes to the shop's own `tenant.phone` / `tenant.email`
+  through the metered `attempt()` path; it contains totals, never a
+  customer's name or number.
+- Jobs (`DailyBusinessSummaryJob`, `TenantBackupJob`) run with no user
+  context and take the tenant id explicitly per iteration; each tenant is
+  its own REQUIRES_NEW on a separate bean.

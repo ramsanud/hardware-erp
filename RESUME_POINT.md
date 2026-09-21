@@ -1,6 +1,56 @@
 # RESUME POINT
 
-**Updated:** 2026-09-21 (**CR-091 — Critical business logic, applied**). `SCOPE: BOTH`, migration **V62**. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas` (forked from `main`@`d676f6f`, before CR-085/086/087 landed there — this branch does not yet carry those, reconcile at merge time; the main checkout is on `feature/cr-086-reports` and its `/reports` module is not here, which is why the profit report lives under `modules/dashboard`).
+**Updated:** 2026-09-21 (**CR-092 — Premium growth pack, applied. CR-088 → CR-092 all applied on this branch.**). `SCOPE: BOTH`, migration **V63**. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas` (forked from `main`@`d676f6f`, before CR-085/086/087 landed there — this branch does not yet carry those; the main checkout is on `feature/cr-086-reports`, whose `/reports` module is not here). **Next step is the reconcile/merge, not more features.**
+
+## CR-092 done (2026-09-21)
+
+Multi-branch (`branch` with one MAIN per tenant + a tenant trigger for new
+ones; `branch_id` stamped server-side on invoice/purchase/stock_movement
+from the acting user; `branch_stock` as a measured breakdown of `stock`
+maintained by `StockServiceImpl.recordBranchDelta()` and snapshotted once
+when the second branch is created; `stock_transfer` documents with OUT/IN
+movements - the one place the breakdown is enforced; branch-wise summary),
+Smart insights (six read-only queries under `/v1/insights/*`, empty windows
+say why), daily business summary (20:30 IST job, in-app for every shop,
+owner WhatsApp/email with ADVANCED_NOTIFICATIONS through the metered
+`attempt()`), backups (`tenant_backup` with stored bytes, on-demand +
+01:30 IST job for AUTO_BACKUP shops, pruned to 7, reusing the CR-057 export
+via `TenantDataExportService.buildSnapshot()`). Permissions BRANCH_VIEW /
+BRANCH_MANAGE / STOCK_TRANSFER_MANAGE / BACKUP_MANAGE. Frontend: Branches
+page, Smart insights page, Backups & daily summary card in Shop settings.
+
+**Deliberately not done, and why:** stock availability is still the shop's
+`stock` row - every stock check in the system reads it, re-keying it by
+branch would touch all of them and change single-branch behaviour for no
+gain; `branch_stock` gives a multi-branch shop the truth about where goods
+are and transfers the tool to fix it. Own CR. Full pending list in
+`docs/PREMIUM_GROWTH_PACK.md`.
+
+**Verified on this exact tree**: `mvn clean verify` **616 unit + 279
+integration, BUILD SUCCESS**; frontend `tsc` clean, `vite build` clean
+(private `dist-cr091/`), `tests/run.mjs` 272/272. Write-ups: CR-092 body in
+`CHANGE_REQUEST_REGISTRY.md`, `docs/PREMIUM_GROWTH_PACK.md`.
+
+**Caught on the way**: `ddl-auto: validate` rejects `CHAR(n)` columns
+against `String` fields (bpchar vs varchar) - V63 uses VARCHAR like
+`tenant`. The seed V902 inserts `stock_movement` with no branch after
+V63; a `BEFORE INSERT` trigger defaults it to MAIN rather than editing an
+applied seed (rule 1).
+
+**Whole-branch state**: CR-088 (`18e4086`), CR-089 (`2901a59`), CR-090
+(`fb8a29e`), CR-091 (`eaabf73`), CR-092 (this commit). Migrations V59–V63.
+BUG-BE-006/007 fixed in CR-091. `frontend/dist-cr091/` is an untracked
+private build output - delete it.
+
+**To merge**: rebase or merge `feature/cr-088-saas-platform` onto `develop`
+after `feature/cr-086-reports` lands. Expect conflicts in
+`project-knowledge/*` (both sides appended - keep both), `routes/index.tsx`
+and `Sidebar.tsx` (both added entries), and the migration numbering is
+already disjoint (V57/V58 there, V59–V63 here). The profit report
+(`modules/dashboard/pages/ProfitReportPage`) should move under the CR-086
+`/reports` module once both are on one branch.
+
+---
 
 ## CR-091 done (2026-09-21)
 
