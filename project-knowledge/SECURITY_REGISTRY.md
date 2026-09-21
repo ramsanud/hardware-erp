@@ -502,3 +502,118 @@ it afterwards.
 frontend's `hasPermission` check only hides a card the server would refuse
 anyway. No endpoint in this feature accepts a tenant id, so the blast radius is
 structurally limited to the caller's own shop.
+Every plan-gated capability is enforced by `FeatureAccessService
+.requireFeature(FeatureKey)` on the backend, inside the service method that
+does the work — never only by hiding a sidebar entry or disabling a button.
+The frontend's lock badges and `useFeatureGate` upgrade dialog are UX only;
+the spec's own hard rule ("frontend hiding is only for user experience and
+is NOT security") is enforced structurally here, not by convention: a Basic
+shop that crafts a raw `POST /v1/ai/chat` gets `403 FEATURE_NOT_AVAILABLE`
+regardless of what the sidebar shows it, proven by `SubscriptionControllerIT`
+calling the API directly with no UI in the loop.
+
+**No tenant id is ever accepted** on `/v1/subscriptions/*` or
+`/v1/features/*` — every read and write resolves the caller's own tenant from
+`SecurityUtils.requireCurrentTenantId()`, the same pattern every other
+tenant-scoped controller in this codebase follows. `SubscriptionControllerIT
+.currentSubscriptionIsTenantIsolated` proves two shops on different plans
+each see only their own.
+
+**Expiry never deletes data.** `EXPIRED`/`CANCELLED`/`SUSPENDED` fall back to
+the Basic feature set (`FeatureAccessServiceImpl.effectivePlan()`), and
+`DATA_EXPORT` is deliberately a Basic-tier feature so an expired shop can
+still take its own records away — matching the project's existing "financial
+records are never hard-deleted" invariant, extended to "a subscription
+lapsing is not a data-loss event."
+
+**Metered usage** (`UsageTrackingService`) is checked and incremented
+atomically in SQL *before* any paid external provider (WhatsApp/SMS/email/AI)
+is ever called — a shop at its plan's included limit is refused
+(`429 USAGE_LIMIT_REACHED` for AI, logged `QUOTA_EXCEEDED` for
+notifications) rather than the platform silently absorbing the extra cost.
+Two concurrent sends cannot both squeeze under the limit: the increment is a
+single `INSERT … ON CONFLICT DO UPDATE … WHERE used_count + :units <=
+:includedCount`, not a read-then-write in Java.
+
+## CR-090 — the one deliberately cross-tenant read, and why it is safe
+
+Nearby Product Discovery lets one shop learn that another shop *may have a
+product*. Everything else about that shop stays invisible, and the rules
+are structural:
+
+- **Consent is in the SQL SELECT list**, not in a mapper: `CASE WHEN
+  d.share_shop_name THEN … ELSE NULL END` per field. A withheld field is
+  never read from the source row. Nothing but the availability bucket
+  (`AVAILABLE`/`LIKELY_AVAILABLE`), the matched product name and the
+  consented name/phone/distance is selected - no price, no quantity, no
+  supplier, no other product, no customer, and no source tenant id in any
+  response.
+- **Opt-in, all off by default**, enforced by `DEFAULT FALSE` on every flag
+  and a `CHECK` that forbids `discovery_enabled` without coordinates.
+  Disabling clears every sub-flag server-side so re-enabling cannot
+  silently re-share. Takes effect on the next search anyone runs.
+- **Reciprocity**: a shop that has not opted in cannot search, and its
+  refusal carries no match data (`ShopDiscoveryIT.nonParticipantCannotSearch`).
+- **The customer never crosses the boundary**: the request's customer
+  name/mobile are not in the search, the snapshot, the owner notification
+  or the wa.me link (which is a bare number with no pre-filled text).
+- **Every consent change is audited** with before/after in `activity_log`.
+- **Plan-gated** on `NEARBY_PRODUCT_DISCOVERY` (PREMIUM) inside the
+  service, so an internal caller is refused exactly like an HTTP one.
+
+Proven by `ShopDiscoveryIT` (8) against real PostgreSQL, including the
+whole-response-body assertion that a withheld name and phone appear
+nowhere in what the requester receives.
+
+## CR-091 — ledger, profit and offline sync
+
+- `/v1/customers/{id}/ledger/*` reads are `CUSTOMER_VIEW`; the manual
+  adjustment is `PAYMENT_MANAGE` (correcting a balance is a money action,
+  the same authority as recording a payment) and is written to
+  `activity_log` with the reason. Every query is `tenant_id`-scoped from
+  the JWT; the customer id in the path is resolved with
+  `findByIdAndTenantId`.
+- `/v1/analytics/profit` is `REPORT_FINANCIAL`, not `REPORT_VIEW` - margin
+  is owner/accountant information (the same line the Tally export draws).
+- `/v1/sync/transactions` is `INVOICE_CREATE`: syncing an offline invoice
+  is exactly the authority to create one. The endpoint accepts no tenant
+  id; the payload is replayed through the real `InvoiceService.create()`,
+  so every server-side rule (stock, pricing from the product row, coupon
+  validation) applies unchanged - an offline client cannot smuggle a price.
+  Conflicts are recorded and shown, never auto-resolved.
+- The browser outbox (IndexedDB) stores invoice payloads and a random
+  device id only - never a token (rule 9). A sync still needs a live
+  session.
+- Invoice cancellation now records `cancelled_by` and a mandatory reason on
+  the row, in addition to the existing `activity_log` entry.
+- Fixed on the way: `UsageTrackingServiceImpl.tryConsume(tenant, key)`
+  self-invoked its REQUIRES_NEW overload (BUG-BE-002 species), so CR-088's
+  notification metering threw before any message was sent - every
+  automatic customer notification on this branch was silently failing.
+
+## CR-092 — branches, insights, backups
+
+- **A document's branch is never client-supplied.** `BranchContext
+  .actingBranchId()` reads the acting user's `branch_id` from the JWT-backed
+  `AppUserDetails` (sourced fresh per request, like tenantId) and falls
+  back to MAIN. Only a transfer names branches explicitly, and both are
+  resolved with `findByIdAndTenantId`.
+- Assigning a user to a branch (`PUT /v1/branches/users/{id}`) is
+  `BRANCH_MANAGE` because it changes where that user's sales land; the
+  change is activity-logged with before/after.
+- `BRANCH_MANAGE` and `BACKUP_MANAGE` are owner-only by default
+  (`RoleGrantDriftTest` pins the withholding for MANAGER, ACCOUNTANT,
+  STAFF); `STOCK_TRANSFER_MANAGE` is owner + manager.
+- Insights are `REPORT_VIEW`; the pricing view additionally requires
+  `PRODUCT_VIEW_COST` - the same line STAFF is kept behind everywhere cost
+  or margin appears.
+- A backup is the CR-057 tenant export scoped to the caller's tenant;
+  `GET /v1/backups/{id}/download` resolves the row with
+  `findByIdAndTenantId`, so another shop's id is 404 (`TenantBackupIT`).
+  Taking one is activity-logged with counts only, never content.
+- The daily summary goes to the shop's own `tenant.phone` / `tenant.email`
+  through the metered `attempt()` path; it contains totals, never a
+  customer's name or number.
+- Jobs (`DailyBusinessSummaryJob`, `TenantBackupJob`) run with no user
+  context and take the tenant id explicitly per iteration; each tenant is
+  its own REQUIRES_NEW on a separate bean.

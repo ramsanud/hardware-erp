@@ -1,5 +1,215 @@
 # RESUME POINT
 
+**Updated:** 2026-09-21 (**CR-092 — Premium growth pack, applied. CR-088 → CR-092 all applied on this branch.**). `SCOPE: BOTH`, migration **V63**. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas` (forked from `main`@`d676f6f`, before CR-085/086/087 landed there — this branch does not yet carry those; the main checkout is on `feature/cr-086-reports`, whose `/reports` module is not here). **Next step is the reconcile/merge, not more features.**
+
+## CR-092 done (2026-09-21)
+
+Multi-branch (`branch` with one MAIN per tenant + a tenant trigger for new
+ones; `branch_id` stamped server-side on invoice/purchase/stock_movement
+from the acting user; `branch_stock` as a measured breakdown of `stock`
+maintained by `StockServiceImpl.recordBranchDelta()` and snapshotted once
+when the second branch is created; `stock_transfer` documents with OUT/IN
+movements - the one place the breakdown is enforced; branch-wise summary),
+Smart insights (six read-only queries under `/v1/insights/*`, empty windows
+say why), daily business summary (20:30 IST job, in-app for every shop,
+owner WhatsApp/email with ADVANCED_NOTIFICATIONS through the metered
+`attempt()`), backups (`tenant_backup` with stored bytes, on-demand +
+01:30 IST job for AUTO_BACKUP shops, pruned to 7, reusing the CR-057 export
+via `TenantDataExportService.buildSnapshot()`). Permissions BRANCH_VIEW /
+BRANCH_MANAGE / STOCK_TRANSFER_MANAGE / BACKUP_MANAGE. Frontend: Branches
+page, Smart insights page, Backups & daily summary card in Shop settings.
+
+**Deliberately not done, and why:** stock availability is still the shop's
+`stock` row - every stock check in the system reads it, re-keying it by
+branch would touch all of them and change single-branch behaviour for no
+gain; `branch_stock` gives a multi-branch shop the truth about where goods
+are and transfers the tool to fix it. Own CR. Full pending list in
+`docs/PREMIUM_GROWTH_PACK.md`.
+
+**Verified on this exact tree**: `mvn clean verify` **616 unit + 279
+integration, BUILD SUCCESS**; frontend `tsc` clean, `vite build` clean
+(private `dist-cr091/`), `tests/run.mjs` 272/272. Write-ups: CR-092 body in
+`CHANGE_REQUEST_REGISTRY.md`, `docs/PREMIUM_GROWTH_PACK.md`.
+
+**Caught on the way**: `ddl-auto: validate` rejects `CHAR(n)` columns
+against `String` fields (bpchar vs varchar) - V63 uses VARCHAR like
+`tenant`. The seed V902 inserts `stock_movement` with no branch after
+V63; a `BEFORE INSERT` trigger defaults it to MAIN rather than editing an
+applied seed (rule 1).
+
+**Whole-branch state**: CR-088 (`18e4086`), CR-089 (`2901a59`), CR-090
+(`fb8a29e`), CR-091 (`eaabf73`), CR-092 (this commit). Migrations V59–V63.
+BUG-BE-006/007 fixed in CR-091. `frontend/dist-cr091/` is an untracked
+private build output - delete it.
+
+**To merge**: rebase or merge `feature/cr-088-saas-platform` onto `develop`
+after `feature/cr-086-reports` lands. Expect conflicts in
+`project-knowledge/*` (both sides appended - keep both), `routes/index.tsx`
+and `Sidebar.tsx` (both added entries), and the migration numbering is
+already disjoint (V57/V58 there, V59–V63 here). The profit report
+(`modules/report/pages/ProfitReportPage`) was moved under the CR-086
+`/reports` module in the merge to `develop`.
+
+---
+
+## CR-091 done (2026-09-21)
+
+GST split (`GstSplit`, per invoice and per line, backfilled), invoice
+cancellation with a mandatory reason (`cancelled_at/by/reason`), append-only
+`customer_ledger_entry` with balance/statement/ageing/adjust under
+`/v1/customers/{id}/ledger`, weighted-average cost on `stock` moved only by
+`StockService.applyPurchaseReceipt()` and frozen per line as
+`invoice_item.cost_price_paise`, `GET /v1/analytics/profit`
+(REPORT_FINANCIAL), and offline sync: `POST /v1/sync/transactions`
+(INVOICE only, client-UUID idempotent, conflicts recorded) + an IndexedDB
+outbox, `/sync` page, auto-sync on `online`, invoice create falls back to
+the queue on NETWORK_ERROR/TIMEOUT only. Frontend also: cancel dialog with
+reason, CGST/SGST/IGST rows and the cancellation note on the invoice
+detail, a Ledger tab on the customer page, Accounting → Profit & loss.
+
+**Verified on this exact tree**: `mvn clean verify` **616 unit + 271
+integration, BUILD SUCCESS**; frontend `tsc` clean, `vite build` clean
+(private `dist-cr091/`), `tests/run.mjs` 272/272. Write-ups: CR-091 body in
+`CHANGE_REQUEST_REGISTRY.md`, `docs/BUSINESS_RULES_GST_STOCK_LEDGER_PROFIT.md`,
+`docs/OFFLINE_SYNC.md`. BUG-BE-006 and BUG-BE-007 registered.
+
+**Two real bugs the ITs found, both the BUG-BE-002 species** (PROJECT_SKILLS
+20-22): (1) `UsageTrackingServiceImpl.tryConsume(tenant, key)` self-invoked
+its REQUIRES_NEW overload, so CR-088's notification metering threw inside
+`@Async notifyInvoiceCreated` and **no automatic customer notification was
+ever sent on this branch** - the "Async method … failed" line had been in
+every IT log since CR-088. (2) The sync executor's own REQUIRES_NEW was
+poisoned by `InvoiceService.create()` joining it and throwing; the CONFLICT
+row was discarded at commit and the batch returned 500. Fixed with
+`SyncInvoiceCreator` (its own REQUIRES_NEW) and a non-transactional executor.
+
+**Pending, by scope (recorded in the CR body)**: no stock reservation (nothing
+reserves stock, so nothing to subtract); sync is INVOICE only, no cached
+catalogue, no service worker; no Playwright spec that drops the network.
+
+**Remaining on this branch**: CR-092 (multi-branch + insights + daily
+summary + backup, V63) - not started. Then reconcile with `main` (CR-085/086/087,
+V57/V58 on that side) before merging.
+
+---
+
+## CR-090 done (2026-09-16)
+
+PREMIUM, opt-in, everything off by default. The one deliberately
+cross-tenant read in the system: `ShopDiscoveryRepository` is a native
+query whose SELECT list IS the consent policy (`CASE WHEN share_x THEN …
+ELSE NULL END` per field; only the AVAILABLE/LIKELY_AVAILABLE bucket ever
+selected; zero-stock shops absent; one row per shop; never the requester).
+Coordinates live on the consent row with a CHECK forbidding
+enabled-without-location. Disabling clears every sub-flag. Reciprocity: a
+shop not in the network cannot search it. The customer never crosses the
+boundary. Every consent change audited. Frontend: `DiscoverySharingCard`
+in Shop settings (explanation, five flags, geolocation, double confirm -
+list then type ENABLE), `NearbyAvailabilityPanel` on the request page
+(Call / WhatsApp, withheld fields say so), `/notifications` page.
+
+**Verified on this exact tree**: `mvn clean verify` **610 unit + 266
+integration, BUILD SUCCESS**; frontend `tsc` clean, `vite build` clean,
+`tests/run.mjs` 272/272. Write-up: CR-090 body in
+`CHANGE_REQUEST_REGISTRY.md`, `docs/NEARBY_PRODUCT_DISCOVERY.md`.
+
+**Caught by `ShopDiscoveryIT` on its first run**: `could not determine
+data type of parameter $3` - an untyped JDBC NULL in `? IS NOT NULL` for
+the nullable model/manufacturer-code parameters. `CAST(? AS VARCHAR)` at
+all four sites. Also: Jackson is `non_null`, so a withheld field is
+*absent* rather than `null` - `hasNonNull()` is the right assertion, and
+absent is the better privacy outcome anyway.
+
+**Remaining on this branch**: CR-091 (GST split / ledger / profit /
+offline sync, V62 - reuse ebafec6's split and place-of-supply rule),
+CR-092 (multi-branch + insights + backup, V63).
+
+---
+
+## CR-089 done (2026-09-16)
+
+PREMIUM feature, gated on `FeatureKey.SMART_SUBSTITUTE` inside the service.
+`RecommendationStrategy` with a manual-mapping strategy (priority 10) and a
+rule-based scorer (priority 100, weights from `app.substitute.scoring.*`,
+110 max, bands 90/75/60/40). `product_request` + `product_request_suggestion`
+persist every suggestion with score, level, reason and source; the owner's
+"select" records who chose what and touches no invoice. `pg_trgm` installed.
+Frontend: `/product-requests` list + detail (unavailable card, top 3 + show
+all, compare dialog, select, recalculate), sidebar entry under Inventory.
+
+**Verified on this exact tree**: `mvn clean verify` **610 unit + 258
+integration, BUILD SUCCESS**; frontend `tsc` clean, `vite build` clean,
+`tests/run.mjs` 272/272. Full write-up: CR-089 body in
+`CHANGE_REQUEST_REGISTRY.md`, `docs/SMART_SUBSTITUTE.md`.
+
+**A real bug `ProductRequestIT` caught on its first run**: the final sort
+was by score alone, so a 110-scoring lookalike outranked a 100-scoring
+manual mapping - the opposite of the brief's §17. Now source-rank first
+(`SuggestionSource.rank()`, shared with the strategies' `priority()`), score
+second. The nine scorer unit tests were green throughout; only the real
+orchestration run exposed it.
+
+**Small follow-ups left deliberately, not silently**: the seven product
+attribute inputs are not yet on the React product form (the API accepts and
+returns them; the substitute screens render them); a "mappings" card on the
+product detail page. Both are UI-only; the backend is complete.
+
+**Remaining on this branch**: CR-090 (Nearby Discovery, V61), CR-091
+(GST split / ledger / profit / offline sync, V62 - reuse ebafec6's
+`InvoicePdfService` split rule and `Gstr1Service` place-of-supply, do not
+write a second one), CR-092 (multi-branch + insights + backup, V63).
+
+---
+
+## CR-088 done — see `docs/IMPLEMENTATION_TASKS_CR-088_to_CR-092.md`
+
+The five-CR plan behind this branch is the `hallo.txt` brief (Nearby
+Product Discovery, Smart Substitute, SaaS Subscription Plans, Critical
+Business Logic completion). **CR-088 is fully done and verified**: plan
+catalogue, `FeatureAccessService`, usage metering, lifecycle service, the
+`/v1/subscriptions/*` + `/v1/features/*` API, the pricing page + upgrade
+dialog. `mvn clean verify` on this exact tree: **601 unit + 250
+integration, BUILD SUCCESS**; frontend `tsc -b --force` clean, `vite
+build` clean, `node tests/run.mjs` **272/272** (no dedicated Playwright
+suite yet for the new Subscription page — the existing 9 suites are
+unaffected). Full write-up: `project-knowledge/CHANGE_REQUEST_REGISTRY.md`'s
+CR-088 entry, `docs/SUBSCRIPTION_FEATURE_MATRIX.md`.
+
+**One real bug the integration test caught that the unit tests could not**:
+`TenantSubscription.plan` (lazy `@ManyToOne`) crossed a transaction/session
+boundary from `currentFor()`'s `REQUIRES_NEW` back into
+`effectivePlan()`'s own transaction and threw `LazyInitializationException`
+on the very first real HTTP call. Fixed with `JOIN FETCH` in
+`TenantSubscriptionRepository.findByTenantId`. Lesson: a plan/feature
+service this central needs at least one real `@SpringBootTest` IT, not
+only mocked-repository unit tests, before it is trusted.
+
+**Migration numbering coordination, 2026-09-15/16**: this branch forked
+before CR-086/087 (which used V57/V58 on `feature/cr-086-reports`), so
+V59-V63 are reserved for CR-088-092 here to avoid a collision at merge
+time — confirmed with the concurrent session on that branch. CR-093+ is
+free for whoever picks up CR-085's Collections/barcode/i18n items. CR-096
+(Render keep-alive) is also taken and merged to `main`, unrelated to this
+branch's numbers.
+
+**Node modules**: this worktree's `frontend/node_modules` is a symlink to
+`E:/Project/hardware-erp/frontend/node_modules` (identical `package-lock
+.json`, confirmed by diff) rather than a fresh `npm install` — faster, and
+safe as long as the lockfiles stay identical between the two checkouts.
+Re-run `npm ci` here instead if they ever diverge.
+
+**Next**: CR-089 (Smart Substitute Product Suggestion) — product attribute
+columns, `pg_trgm`, manual mappings, rule-based scoring engine, product
+requests. Then CR-090 (Nearby Discovery), CR-091 (GST split/ledger/profit/
+offline sync — reuse the existing CGST/SGST split and place-of-supply rule
+from `InvoicePdfService`/`Gstr1Service` rather than a second
+implementation, per the concurrent session's note), CR-092 (multi-branch +
+insights + backup). Each follows CR-088's shape: migration, entities,
+service, controller, unit tests, at least one real `@SpringBootTest` IT,
+frontend page, registry body, tick the task-doc checkboxes, commit.
+
+---
+
 **Updated:** 2026-09-16 (**BUG-OPS-001 — production schema drift fixed and verified; `origin/main` push still pending confirmation**). `SCOPE: BACKEND ONLY`.
 
 ## BUG-OPS-001 — production schema drift, and `origin/main` was 38 commits stale (2026-09-16)

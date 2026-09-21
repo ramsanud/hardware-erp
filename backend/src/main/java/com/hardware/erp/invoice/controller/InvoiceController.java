@@ -74,8 +74,9 @@ public class InvoiceController {
 
     @PostMapping("/{id}/cancel")
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).INVOICE_CANCEL)")
-    public ApiResponse<InvoiceResponse> cancel(@PathVariable Long id) {
-        return ApiResponse.ok(invoiceService.cancel(id));
+    public ApiResponse<InvoiceResponse> cancel(@PathVariable Long id,
+                                               @Valid @RequestBody com.hardware.erp.invoice.dto.InvoiceCancelRequest request) {
+        return ApiResponse.ok(invoiceService.cancel(id, request));
     }
 
     @GetMapping("/{id}/pdf")

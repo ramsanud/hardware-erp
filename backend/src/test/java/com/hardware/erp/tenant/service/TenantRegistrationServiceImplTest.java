@@ -44,6 +44,7 @@ class TenantRegistrationServiceImplTest {
     @Mock private UserRepository userRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private com.hardware.erp.legal.repository.UserConsentRepository userConsentRepository;
+    @Mock private com.hardware.erp.subscription.service.SubscriptionLifecycleService subscriptionLifecycleService;
 
     @InjectMocks private TenantRegistrationServiceImpl service;
 

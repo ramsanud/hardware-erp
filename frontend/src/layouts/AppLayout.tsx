@@ -26,10 +26,13 @@ import { AppChromeProvider, useAppChrome } from './AppChromeProvider';
 import { MobileMoreMenu } from './MobileMoreMenu';
 import { MobileTabBar } from './MobileTabBar';
 import { SidebarBrand, SidebarFooter, SidebarNav } from './Sidebar';
+import { OutboxAutoSync } from '@/modules/sync/components/OutboxAutoSync';
 
 export function AppLayout() {
   return (
     <AppChromeProvider>
+      {/* CR-091 Phase 9 - pushes queued offline invoices the moment the browser is back online. */}
+      <OutboxAutoSync />
       <AppLayoutInner />
     </AppChromeProvider>
   );

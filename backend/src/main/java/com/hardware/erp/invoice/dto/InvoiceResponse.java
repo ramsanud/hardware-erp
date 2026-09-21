@@ -38,5 +38,14 @@ public record InvoiceResponse(
         /** Null when this invoice uses the shop's single default bank fields instead of a saved account (CR-036). */
         Long bankAccountId,
         String bankAccountLabel,
-        Long bankAccountQrId
+        Long bankAccountQrId,
+        /** CR-091 Phase 1. INTRA (CGST+SGST) or INTER (IGST); null only on rows older than V62's backfill could resolve. */
+        String supplyType,
+        String placeOfSupplyStateCode,
+        String cgstDisplay,
+        String sgstDisplay,
+        String igstDisplay,
+        /** CR-091 Phase 3. Both null unless status is CANCELLED. */
+        LocalDateTime cancelledAt,
+        String cancellationReason
 ) {}

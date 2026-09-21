@@ -18,4 +18,15 @@ public interface TenantDataExportService {
     byte[] export(Long tenantId, TenantExportFormat format, Long adminId, HttpServletRequest request);
 
     List<TenantExportLogResponse> history(Long tenantId);
+
+    /**
+     * CR-092. The same snapshot bytes as export(), with none of the
+     * platform-admin audit trail around it - the tenant-facing backup
+     * (TenantBackupService) keeps its own history row and activity-log entry.
+     * A new method rather than a flag on export(), so no existing caller
+     * changes (coding-rules: a provider gains a capability via a new method).
+     */
+    Snapshot buildSnapshot(Long tenantId, TenantExportFormat format);
+
+    record Snapshot(byte[] body, int recordCount) {}
 }

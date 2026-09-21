@@ -79,6 +79,8 @@ export function InvoiceDetailPage() {
   const toast = useToast();
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [submittingCancel, setSubmittingCancel] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [previewingPdf, setPreviewingPdf] = useState(false);
   const { tcsEnabled, tcsRatePercent, einvoiceEnabled } = useAppChrome();
@@ -250,14 +252,21 @@ export function InvoiceDetailPage() {
     }
   };
 
+  /** CR-091 Phase 3 - cancellation needs a reason; it is stored on the invoice and in the customer ledger. */
   const handleCancel = async () => {
+    const reason = cancelReason.trim();
+    if (!reason) return;
+    setSubmittingCancel(true);
     try {
-      await invoiceService.cancel(id);
+      await invoiceService.cancel(id, reason);
       toast.success('Invoice cancelled and stock restored.');
+      setCancelling(false);
+      setCancelReason('');
       await reload();
     } catch (caught) {
       toast.error(caught, 'Could not cancel this invoice.');
-      throw caught;
+    } finally {
+      setSubmittingCancel(false);
     }
   };
 
@@ -456,6 +465,17 @@ export function InvoiceDetailPage() {
                 </div>
               ) : null}
               <div className="flex justify-between"><span className="text-muted-foreground">GST</span><span className="tabular">₹{invoice.gstAmountDisplay}</span></div>
+              {invoice.supplyType === 'INTER' ? (
+                <div className="flex justify-between pl-4 text-xs text-muted-foreground">
+                  <span>IGST (place of supply {invoice.placeOfSupplyStateCode})</span>
+                  <span className="tabular">₹{invoice.igstDisplay}</span>
+                </div>
+              ) : invoice.supplyType === 'INTRA' ? (
+                <>
+                  <div className="flex justify-between pl-4 text-xs text-muted-foreground"><span>CGST</span><span className="tabular">₹{invoice.cgstDisplay}</span></div>
+                  <div className="flex justify-between pl-4 text-xs text-muted-foreground"><span>SGST</span><span className="tabular">₹{invoice.sgstDisplay}</span></div>
+                </>
+              ) : null}
               <div className="flex justify-between font-semibold"><span>Total</span><span className="tabular">₹{invoice.totalDisplay}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span className="tabular">₹{invoice.paidDisplay}</span></div>
               <div className="flex justify-between font-semibold"><span>Balance</span><span className="tabular">₹{invoice.balanceDisplay}</span></div>
@@ -463,6 +483,12 @@ export function InvoiceDetailPage() {
                 <span className="text-muted-foreground">Status</span>
                 <InvoiceStatusBadge status={invoice.status} />
               </div>
+              {invoice.status === 'CANCELLED' && invoice.cancellationReason ? (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs">
+                  <div className="font-medium text-destructive">Cancelled{invoice.cancelledAt ? ` on ${formatDateTime(invoice.cancelledAt)}` : ''}</div>
+                  <div className="mt-0.5 text-muted-foreground">{invoice.cancellationReason}</div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -602,15 +628,25 @@ export function InvoiceDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog
-        open={cancelling}
-        onOpenChange={setCancelling}
-        title="Cancel this invoice?"
-        description="Stock for every item on this invoice will be restored. This cannot be undone."
-        confirmLabel="Cancel invoice"
-        destructive
-        onConfirm={handleCancel}
-      />
+      <Dialog open={cancelling} onOpenChange={(open) => { setCancelling(open); if (!open) setCancelReason(''); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Cancel this invoice?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Stock for every item on this invoice will be restored and the customer&apos;s ledger reversed. This cannot be undone.
+          </p>
+          <FormField id="cancelReason" label="Reason" required hint="Kept with the invoice and shown on the customer statement.">
+            <Input id="cancelReason" autoFocus maxLength={255} placeholder="e.g. Customer changed order"
+                   value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} />
+          </FormField>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCancelling(false)} disabled={submittingCancel}>Keep invoice</Button>
+            <Button type="button" variant="destructive" onClick={() => void handleCancel()} loading={submittingCancel} disabled={!cancelReason.trim()}>
+              <Ban className="h-4 w-4" />
+              Cancel invoice
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={sendWhatsAppConfirmOpen}

@@ -41,6 +41,8 @@ import { SubscriptionCouponsCard } from '../components/SubscriptionCouponsCard';
 import { BillingUpgradeCard } from '../components/BillingUpgradeCard';
 import { BankAccountsCard } from '../components/BankAccountsCard';
 import { DataResetCard } from '../components/DataResetCard';
+import { DiscoverySharingCard } from '@/modules/discovery/components/DiscoverySharingCard';
+import { BackupsCard } from '../components/BackupsCard';
 import type { InvoiceTheme, SubscriptionTier, TenantSettingsResponse, UsageSummaryResponse } from '../types';
 
 const SETTINGS_FORM_ID = 'shop-settings-form';
@@ -588,6 +590,15 @@ export function ShopSettingsPage() {
               <p className="text-sm">{settings.signatoryName || '—'}</p>
             </CardContent>
           </Card>
+
+          {/* CR-090. The shop's consent to nearby product discovery - OFF
+              by default, double-confirmed on the way on, one click off.
+              Its own card outside the settings form for the same reason
+              as the reset card below: it is a consent, not an edit. */}
+          <DiscoverySharingCard />
+
+          {/* CR-092. Backups and the daily summary - owner-only, outside the form for the same reason. */}
+          <BackupsCard />
 
           {/* CR-067. Last card on the page, and only for a role that actually
               holds DATA_RESET - by default the owner alone. Deliberately

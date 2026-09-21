@@ -115,6 +115,10 @@ public class User extends BaseEntity {
     @Column(name = "deleted_by")
     private Long deletedBy;
 
+    /** CR-092. The branch this user works at; null = not restricted to one (the owner). A plain id - the hot paths that stamp it on a document need nothing more. */
+    @Column(name = "branch_id")
+    private Long branchId;
+
     @Version
     @Column(name = "version", nullable = false)
     @Builder.Default

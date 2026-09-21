@@ -429,3 +429,29 @@ Lessons learned. Read before every module; append after every module.
     on `el`; it then runs when the element is really there and cleans up
     when it goes. Applies to anything that measures or mounts into a dialog
     — maps, canvases, charts, signature pads.
+
+## CR-091 lessons (transactions, again)
+
+20. **A convenience overload that delegates with `this.` must carry the
+    same `@Transactional` as its target.** `tryConsume(a, b)` → `this
+    .tryConsume(a, b, 1L)` never reaches the proxy, so the REQUIRES_NEW on
+    the three-arg method is decoration; the only external caller used the
+    two-arg form and every automatic customer notification on the branch
+    died with `TransactionRequiredException` before the provider was called
+    (BUG-BE-006). Annotate the overload the callers actually hit, or make
+    the annotated method the one they hit.
+
+21. **Catching an exception does not resurrect the transaction it killed.**
+    If the thing that threw ran in the *same* physical transaction (a
+    REQUIRED method joining yours), its interceptor already marked it
+    rollback-only; everything you write afterwards is discarded at commit
+    with `UnexpectedRollbackException` (BUG-BE-007). To "try, record the
+    outcome, carry on", the try must run in its own REQUIRES_NEW on a
+    separate bean and the recording in another transaction. Only a real
+    integration test sees this - a mocked service throws without ever
+    touching a transaction.
+
+22. **The "Async method X failed" line in an IT log is a bug, not noise.**
+    It appeared on every invoice created in every IT run for two CRs before
+    anyone read it; the notifications it reported were genuinely never
+    sent. When a log line repeats on every run, it is describing production.

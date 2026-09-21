@@ -45,6 +45,7 @@ public class SubscriptionBillingServiceImpl implements SubscriptionBillingServic
     private final PlatformSubscriptionOrderRepository orderRepository;
     private final PlatformSubscriptionPaymentRepository paymentRepository;
     private final TenantRepository tenantRepository;
+    private final com.hardware.erp.subscription.service.SubscriptionLifecycleService subscriptionLifecycleService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
@@ -196,6 +197,12 @@ public class SubscriptionBillingServiceImpl implements SubscriptionBillingServic
         if (tenant.getSubscriptionTier().ordinal() < order.getRequestedTier().ordinal()) {
             tenant.setSubscriptionTier(order.getRequestedTier());
             tenant.setSubscriptionTrialExpiresAt(null); // a paid tier is not a trial
+            // CR-088 - keeps tenant_subscription/subscription_history in
+            // step with this verified payment. Plain REQUIRED, joins this
+            // transaction (see SubscriptionLifecycleServiceImpl.applyTier()).
+            subscriptionLifecycleService.applyTier(tenant.getId(), order.getRequestedTier(),
+                    com.hardware.erp.subscription.entity.SubscriptionStatus.ACTIVE, null,
+                    "Razorpay payment verified, order " + order.getId(), razorpayPaymentId);
             tenantRepository.save(tenant);
         }
     }

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import {
-  Boxes, Calculator, CalendarCheck, ChevronDown, ChevronRight, ClipboardList, Coins, FileClock, FileDown, FileText,
-  HardHat, History, KeyRound, Landmark, LayoutDashboard, Layers, LifeBuoy, MessageCircle, Package, PackageSearch,
-  PanelLeftClose, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Store, Tags, TerminalSquare, Ticket, TrendingUp,
-  Truck, UserCheck, Users, Wallet,
+  Bell, Boxes, Building2, Calculator, CalendarCheck, ChevronDown, ChevronRight, ClipboardList, CloudUpload, Coins, CreditCard, FileClock, FileDown,
+  Lightbulb,
+  FileText, HardHat, History, KeyRound, Landmark, LayoutDashboard, Layers, LifeBuoy, MessageCircle, Package,
+  PackageSearch, PanelLeftClose, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Store, Tags, TerminalSquare,
+  Sparkles, Ticket, TrendingUp, Truck, UserCheck, Users, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
@@ -12,6 +13,13 @@ import { AUTH_ROUTES, PERMISSIONS } from '@/modules/auth/constants';
 import { DEVELOPER_ROUTES } from '@/modules/developer/constants';
 import { SUPPORT_ROUTES } from '@/modules/support/constants';
 import { SETTINGS_ROUTES } from '@/modules/settings/constants';
+import { SUBSCRIPTION_ROUTES } from '@/modules/subscription/constants';
+import { SUBSTITUTE_ROUTES } from '@/modules/substitute/constants';
+import { DISCOVERY_ROUTES } from '@/modules/discovery/constants';
+import { SYNC_ROUTES } from '@/modules/sync/constants';
+import { REPORT_ROUTES } from '@/modules/report/constants';
+import { BRANCH_ROUTES } from '@/modules/branch/constants';
+import { INSIGHTS_ROUTES } from '@/modules/insights/constants';
 import { brandService } from '@/modules/settings/services/brandService';
 import { avatarService } from '@/modules/auth/services/avatarService';
 import { whatsAppConnectionService } from '@/modules/settings/services/whatsAppConnectionService';
@@ -93,6 +101,10 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/brands', label: 'Brands', icon: Tags, permission: PERMISSIONS.PRODUCT_VIEW, available: true },
       { to: '/stock', label: 'Stock', icon: Boxes, permission: PERMISSIONS.INVENTORY_VIEW, available: true },
       { to: '/stock-adjustments', label: 'Stock adjustments', icon: PackageSearch, permission: PERMISSIONS.INVENTORY_ADJUST, available: false },
+      // CR-089 (Premium). Permission hides it for roles without it; the plan gate is the server's.
+      { to: SUBSTITUTE_ROUTES.list, label: 'Product requests', icon: Sparkles, permission: PERMISSIONS.PRODUCT_REQUEST_VIEW, available: true },
+      { to: SYNC_ROUTES.outbox, label: 'Offline sync', icon: CloudUpload, permission: PERMISSIONS.INVOICE_CREATE, available: true },
+      { to: BRANCH_ROUTES.list, label: 'Branches', icon: Building2, permission: PERMISSIONS.BRANCH_VIEW, available: true },
     ],
   },
   {
@@ -102,6 +114,8 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/expenses', label: 'Expenses', icon: Coins, permission: PERMISSIONS.EXPENSE_VIEW, available: true },
       { to: '/ledgers', label: 'Ledgers', icon: Landmark, permission: PERMISSIONS.REPORT_FINANCIAL, available: false },
       { to: '/reports', label: 'Reports', icon: TrendingUp, permission: PERMISSIONS.REPORT_VIEW, available: true },
+      { to: REPORT_ROUTES.profit, label: 'Profit & loss', icon: TrendingUp, permission: PERMISSIONS.REPORT_FINANCIAL, available: true },
+      { to: INSIGHTS_ROUTES.overview, label: 'Smart insights', icon: Lightbulb, permission: PERMISSIONS.REPORT_VIEW, available: true },
       // CR-053 backlog item 7 - pure client-side arithmetic, no permission
       // gate: it reads no tenant data, so there is nothing to protect.
       { to: '/tools/gst-calculator', label: 'GST calculator', icon: Calculator, available: true },
@@ -118,6 +132,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: AUTH_ROUTES.auditLog, label: 'Security log', icon: FileClock, permission: PERMISSIONS.AUDIT_VIEW, available: true },
       { to: AUTH_ROUTES.activityLog, label: 'Activity log', icon: History, permission: PERMISSIONS.AUDIT_VIEW, available: true },
       { to: SETTINGS_ROUTES.shop, label: 'Shop settings', icon: Settings, permission: PERMISSIONS.SETTINGS_VIEW, available: true },
+      { to: SUBSCRIPTION_ROUTES.pricing, label: 'Subscription', icon: CreditCard, permission: PERMISSIONS.SETTINGS_VIEW, available: true },
     ],
   },
   {
@@ -142,6 +157,7 @@ const NAV_GROUPS: NavGroup[] = [
  */
 const UTILITY: NavItem[] = [
   { to: SETTINGS_ROUTES.whatsapp, label: 'WhatsApp Reminders', icon: MessageCircle, permission: PERMISSIONS.SETTINGS_VIEW, available: true },
+  { to: DISCOVERY_ROUTES.notifications, label: 'Notifications', icon: Bell, available: true },
   { to: SUPPORT_ROUTES.list, label: 'Help & Support', icon: LifeBuoy, available: true },
 ];
 

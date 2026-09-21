@@ -142,6 +142,14 @@ public class TenantDataExportServiceImpl implements TenantDataExportService {
                 .toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Snapshot buildSnapshot(Long tenantId, TenantExportFormat format) {
+        Map<String, List<Map<String, Object>>> data = collectData(tenantId);
+        byte[] body = format == TenantExportFormat.JSON ? toJson(data) : toCsvZip(data);
+        return new Snapshot(body, data.values().stream().mapToInt(List::size).sum());
+    }
+
     private Map<String, List<Map<String, Object>>> collectData(Long tenantId) {
         Map<String, List<Map<String, Object>>> data = new LinkedHashMap<>();
         data.put("products", productRepository.findByTenantId(tenantId).stream().map(this::row).toList());

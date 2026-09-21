@@ -65,6 +65,7 @@ public class PurchaseServiceImpl implements PurchaseService {
     private final TenantRepository tenantRepository;
     private final PurchaseMapper purchaseMapper;
     private final ActivityLogService activityLog;
+    private final com.hardware.erp.branch.service.BranchContext branchContext;
 
     @Override
     @Transactional
@@ -76,6 +77,7 @@ public class PurchaseServiceImpl implements PurchaseService {
 
         Purchase purchase = Purchase.builder()
                 .tenant(tenantRepository.getReferenceById(tenantId))
+                .branchId(branchContext.actingBranchId(tenantId))
                 .purchaseNumber(nextPurchaseNumber(tenantId))
                 .supplier(supplier)
                 .supplierBillNumber(blankToNull(request.supplierBillNumber()))
@@ -116,8 +118,11 @@ public class PurchaseServiceImpl implements PurchaseService {
         // Stock arrives after the purchase has an id, so the movement's
         // reference_id points at a row that already exists.
         for (PurchaseItem item : saved.getItems()) {
-            stockService.applyMovement(item.getProduct().getId(), item.getQuantity(),
-                    MovementType.PURCHASE_RECEIPT, "PURCHASE", saved.getId(), null);
+            // CR-091 Phase 6 - the weighted-average cost that COGS is
+            // computed from moves here, not by cloning applyMovement's
+            // PURCHASE_RECEIPT call.
+            stockService.applyPurchaseReceipt(item.getProduct().getId(), item.getQuantity(),
+                    item.getUnitPricePaise(), "PURCHASE", saved.getId(), null);
             if (request.updateProductCost()) {
                 Product product = item.getProduct();
                 product.setPurchasePricePaise(item.getUnitPricePaise());

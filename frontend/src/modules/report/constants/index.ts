@@ -7,6 +7,8 @@ export const REPORT_ROUTES = {
   purchaseRegister: '/reports/purchase-register',
   gstSummary: '/reports/gst-summary',
   gstr1: '/reports/gstr1',
+  /** CR-091. Its own page, REPORT_FINANCIAL, not one of the ReportsPage tabs. */
+  profit: '/reports/profit',
 } as const;
 
 export type ReportKey =

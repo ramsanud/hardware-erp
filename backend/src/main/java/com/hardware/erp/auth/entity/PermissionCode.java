@@ -37,6 +37,16 @@ public final class PermissionCode {
     public static final String PRODUCT_MANAGE     = "PRODUCT_MANAGE";
     public static final String PRODUCT_VIEW_COST  = "PRODUCT_VIEW_COST";
     public static final String PRODUCT_VIEW_STOCK = "PRODUCT_VIEW_STOCK";
+    /** CR-089 - PREMIUM (Smart Substitute). Recording a customer's request and browsing/acting on the queue is its own capability, not implied by selling the product. */
+    public static final String PRODUCT_REQUEST_VIEW   = "PRODUCT_REQUEST_VIEW";
+    public static final String PRODUCT_REQUEST_MANAGE = "PRODUCT_REQUEST_MANAGE";
+
+    // BRANCH (CR-092, PREMIUM multi-branch). BRANCH_VIEW is held by every role - a branch name is printed on documents.
+    public static final String BRANCH_VIEW           = "BRANCH_VIEW";
+    public static final String BRANCH_MANAGE         = "BRANCH_MANAGE";
+    public static final String STOCK_TRANSFER_MANAGE = "STOCK_TRANSFER_MANAGE";
+    /** CR-092. Taking and downloading a full copy of the shop's data is owner-only, like DATA_RESET. */
+    public static final String BACKUP_MANAGE         = "BACKUP_MANAGE";
 
     // PURCHASE
     public static final String PURCHASE_VIEW   = "PURCHASE_VIEW";

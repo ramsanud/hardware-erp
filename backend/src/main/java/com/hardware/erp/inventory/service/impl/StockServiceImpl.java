@@ -1,5 +1,9 @@
 package com.hardware.erp.inventory.service.impl;
 
+import com.hardware.erp.branch.entity.Branch;
+import com.hardware.erp.branch.repository.BranchRepository;
+import com.hardware.erp.branch.repository.BranchStockRepository;
+import com.hardware.erp.branch.service.BranchContext;
 import com.hardware.erp.common.dto.PageResponse;
 import com.hardware.erp.common.exception.BusinessException;
 import com.hardware.erp.common.exception.ResourceNotFoundException;
@@ -40,6 +44,9 @@ public class StockServiceImpl implements StockService {
     private final ProductRepository productRepository;
     private final TenantRepository tenantRepository;
     private final StockMapper stockMapper;
+    private final BranchContext branchContext;
+    private final BranchStockRepository branchStockRepository;
+    private final BranchRepository branchRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -97,6 +104,8 @@ public class StockServiceImpl implements StockService {
                             + " requested",
                     HttpStatus.UNPROCESSABLE_ENTITY, "INSUFFICIENT_STOCK");
         }
+        Long branchId = branchContext.actingBranchId(tenantId);
+        recordBranchDelta(tenantId, branchId, productId, stock.getQuantityOnHand(), quantityChange);
         stock.setQuantityOnHand(newBalance);
         stockRepository.save(stock);
 
@@ -109,7 +118,129 @@ public class StockServiceImpl implements StockService {
                 .referenceType(referenceType)
                 .referenceId(referenceId)
                 .notes(notes)
+                .branchId(branchId)
                 .build());
+    }
+
+    @Override
+    @Transactional
+    public StockMovement applyPurchaseReceipt(Long productId, BigDecimal quantityChange, Long unitCostPaise,
+                                              String referenceType, Long referenceId, String notes) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        Stock stock = stockRepository.lockByTenantIdAndProductId(tenantId, productId)
+                .orElseGet(() -> createStockRow(productId, tenantId));
+
+        BigDecimal oldQty = stock.getQuantityOnHand();
+        BigDecimal newBalance = oldQty.add(quantityChange);
+        if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException(
+                    "Not enough stock of " + stock.getProduct().getProductName()
+                            + ": " + oldQty.stripTrailingZeros().toPlainString()
+                            + " on hand, " + quantityChange.abs().stripTrailingZeros().toPlainString()
+                            + " requested",
+                    HttpStatus.UNPROCESSABLE_ENTITY, "INSUFFICIENT_STOCK");
+        }
+
+        // Weighted average, only moved by a real receipt with a real cost.
+        // A purchase return (a negative quantityChange, no cost supplied by
+        // its caller) leaves the average as it stands: the goods that leave
+        // were already costed at whatever the average was when they arrived.
+        Long currentAverage = stock.getAverageCostPaise();
+        long oldAverage = currentAverage == null ? 0L : currentAverage;
+        if (unitCostPaise != null && quantityChange.signum() > 0) {
+            if (oldQty.signum() <= 0 || oldAverage <= 0) {
+                stock.setAverageCostPaise(unitCostPaise);
+            } else {
+                BigDecimal oldValue = oldQty.multiply(BigDecimal.valueOf(oldAverage));
+                BigDecimal newValue = quantityChange.multiply(BigDecimal.valueOf(unitCostPaise));
+                stock.setAverageCostPaise(oldValue.add(newValue)
+                        .divide(newBalance, 0, java.math.RoundingMode.HALF_UP)
+                        .longValueExact());
+            }
+        }
+
+        Long branchId = branchContext.actingBranchId(tenantId);
+        recordBranchDelta(tenantId, branchId, productId, oldQty, quantityChange);
+        stock.setQuantityOnHand(newBalance);
+        stockRepository.save(stock);
+
+        return movementRepository.save(StockMovement.builder()
+                .tenant(stock.getTenant())
+                .product(stock.getProduct())
+                .movementType(quantityChange.signum() > 0 ? MovementType.PURCHASE_RECEIPT : MovementType.PURCHASE_RETURN)
+                .quantityChange(quantityChange)
+                .balanceAfter(newBalance)
+                .referenceType(referenceType)
+                .referenceId(referenceId)
+                .notes(notes)
+                .branchId(branchId)
+                .build());
+    }
+
+    @Override
+    @Transactional
+    public void applyBranchTransfer(Long productId, BigDecimal quantity, Long fromBranchId, Long toBranchId,
+                                    Long transferId, String transferNumber) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        if (quantity.signum() <= 0) {
+            throw new BusinessException("Transfer quantity must be greater than zero");
+        }
+        // Lock the tenant row so two transfers of the same product serialise,
+        // exactly as a sale and a purchase do.
+        Stock stock = stockRepository.lockByTenantIdAndProductId(tenantId, productId)
+                .orElseGet(() -> createStockRow(productId, tenantId));
+
+        BigDecimal atSource = branchStockRepository.findByBranchIdAndProductId(fromBranchId, productId)
+                .map(bs -> bs.getQuantityOnHand())
+                // A branch with no row yet: in a single-branch shop that row IS the
+                // shop stock; once there are several branches an absent row is zero.
+                .orElseGet(() -> branchContext.singleBranch(tenantId) ? stock.getQuantityOnHand() : BigDecimal.ZERO);
+        if (atSource.compareTo(quantity) < 0) {
+            throw new BusinessException(
+                    "Not enough stock of " + stock.getProduct().getProductName() + " at "
+                            + branchName(fromBranchId) + ": " + atSource.stripTrailingZeros().toPlainString()
+                            + " on hand, " + quantity.stripTrailingZeros().toPlainString() + " requested",
+                    HttpStatus.UNPROCESSABLE_ENTITY, "INSUFFICIENT_BRANCH_STOCK");
+        }
+
+        recordBranchDelta(tenantId, fromBranchId, productId, stock.getQuantityOnHand(), quantity.negate());
+        recordBranchDelta(tenantId, toBranchId, productId, BigDecimal.ZERO, quantity);
+
+        String note = "Transfer " + transferNumber + " " + branchName(fromBranchId) + " -> " + branchName(toBranchId);
+        movementRepository.save(StockMovement.builder()
+                .tenant(stock.getTenant()).product(stock.getProduct())
+                .movementType(MovementType.STOCK_TRANSFER_OUT)
+                .quantityChange(quantity.negate()).balanceAfter(stock.getQuantityOnHand())
+                .referenceType("STOCK_TRANSFER").referenceId(transferId).notes(note)
+                .branchId(fromBranchId).build());
+        movementRepository.save(StockMovement.builder()
+                .tenant(stock.getTenant()).product(stock.getProduct())
+                .movementType(MovementType.STOCK_TRANSFER_IN)
+                .quantityChange(quantity).balanceAfter(stock.getQuantityOnHand())
+                .referenceType("STOCK_TRANSFER").referenceId(transferId).notes(note)
+                .branchId(toBranchId).build());
+    }
+
+    /**
+     * CR-092. Keeps branch_stock in step with the tenant row it breaks down.
+     * A branch's first row for a product starts from the shop's pre-movement
+     * quantity while the shop still has only its MAIN branch (that quantity
+     * is, by definition, all at MAIN - V63 backfilled the rows that existed
+     * then, this covers rows created since, e.g. by seed data), and from
+     * zero once there are several branches.
+     */
+    private void recordBranchDelta(Long tenantId, Long branchId, Long productId, BigDecimal shopQuantityBefore,
+                                   BigDecimal delta) {
+        BigDecimal seed = BigDecimal.ZERO;
+        if (!branchStockRepository.existsByBranchIdAndProductId(branchId, productId)
+                && branchContext.singleBranch(tenantId)) {
+            seed = shopQuantityBefore;
+        }
+        branchStockRepository.addQuantity(tenantId, branchId, productId, seed, delta);
+    }
+
+    private String branchName(Long branchId) {
+        return branchRepository.findById(branchId).map(Branch::getBranchName).orElse("branch " + branchId);
     }
 
     private Stock createStockRow(Long productId, Long tenantId) {

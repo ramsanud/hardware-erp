@@ -14,6 +14,7 @@ import com.hardware.erp.legal.LegalDocumentVersions;
 import com.hardware.erp.legal.entity.ConsentType;
 import com.hardware.erp.legal.entity.UserConsent;
 import com.hardware.erp.legal.repository.UserConsentRepository;
+import com.hardware.erp.subscription.service.SubscriptionLifecycleService;
 import org.springframework.http.HttpStatus;
 import com.hardware.erp.tenant.dto.IdentifierAvailabilityResponse;
 import com.hardware.erp.tenant.dto.TenantRegistrationRequest;
@@ -105,7 +106,10 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 "LABOUR_VIEW", "LABOUR_MANAGE",
                 "SALES_ORDER_VIEW", "SALES_ORDER_MANAGE",
                 "DELIVERY_CHALLAN_VIEW", "DELIVERY_CHALLAN_MANAGE",
-                "CREDIT_NOTE_VIEW", "CREDIT_NOTE_MANAGE"));
+                "CREDIT_NOTE_VIEW", "CREDIT_NOTE_MANAGE",
+                "PRODUCT_REQUEST_VIEW", "PRODUCT_REQUEST_MANAGE",
+                // CR-092 - moves stock between the branches it runs; creating a branch stays with the owner.
+                "BRANCH_VIEW", "STOCK_TRANSFER_MANAGE"));
         ROLE_PERMISSIONS.put("ACCOUNTANT", Set.of(
                 "CUSTOMER_VIEW", "CUSTOMER_MANAGE", "SUPPLIER_VIEW",
                 "PRODUCT_VIEW", "PRODUCT_VIEW_COST", "PRODUCT_VIEW_STOCK",
@@ -121,7 +125,11 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 "SALES_ORDER_VIEW", "DELIVERY_CHALLAN_VIEW",
                 // A credit note is a financial document, same footing as
                 // INVOICE_CREATE.
-                "CREDIT_NOTE_VIEW", "CREDIT_NOTE_MANAGE"));
+                "CREDIT_NOTE_VIEW", "CREDIT_NOTE_MANAGE",
+                // Sees the queue for billing/reporting context but does not
+                // run the counter - same reasoning as SALES_ORDER_VIEW above.
+                "PRODUCT_REQUEST_VIEW",
+                "BRANCH_VIEW"));
         // STAFF deliberately excludes PRODUCT_VIEW_COST - counter staff must
         // not see purchase cost or margin, enforced server-side (see V1's
         // identical comment on the seed data this mirrors).
@@ -133,9 +141,13 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 "PAYMENT_VIEW", "INVENTORY_VIEW",
                 "COUPON_VIEW",
                 "PROJECT_VIEW",
+                // Counter staff is exactly who hits an out-of-stock item and
+                // needs an alternative - same footing as raising an invoice.
+                "PRODUCT_REQUEST_VIEW", "PRODUCT_REQUEST_MANAGE",
                 // Counter staff takes orders the same way it raises
                 // quotations and invoices.
-                "SALES_ORDER_VIEW", "SALES_ORDER_MANAGE"));
+                "SALES_ORDER_VIEW", "SALES_ORDER_MANAGE",
+                "BRANCH_VIEW"));
     }
 
     private final TenantRepository tenantRepository;
@@ -144,6 +156,7 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
     private final UserConsentRepository userConsentRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SubscriptionLifecycleService subscriptionLifecycleService;
 
     @Override
     @Transactional
@@ -165,6 +178,19 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 .status(TenantStatus.ACTIVE)
                 .subscriptionTier(request.subscriptionTier() != null ? request.subscriptionTier() : SubscriptionTier.FREE)
                 .build());
+
+        // CR-088. subscriptionTier on the request is the legacy self-declared
+        // choice (CR-027, predates the plan catalogue) - honoured as an
+        // immediate ACTIVE plan with no trial. Every other new shop gets the
+        // configured trial policy (app.subscription.trial-days/-tier). Either
+        // way this call joins THIS transaction rather than starting its own -
+        // see SubscriptionLifecycleService.startForNewTenant()'s own note on
+        // why: tenant is not committed yet.
+        if (request.subscriptionTier() != null) {
+            subscriptionLifecycleService.startForNewTenant(tenant.getId(), request.subscriptionTier());
+        } else {
+            subscriptionLifecycleService.startForNewTenant(tenant.getId());
+        }
 
         // "OWNER gets every permission that exists" - except the DEVELOPER
         // module, which is not an ERP capability (CR-045). Without this

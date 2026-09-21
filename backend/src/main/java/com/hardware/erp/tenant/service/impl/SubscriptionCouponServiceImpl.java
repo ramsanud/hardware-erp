@@ -34,6 +34,7 @@ public class SubscriptionCouponServiceImpl implements SubscriptionCouponService 
     private final SubscriptionCouponRepository couponRepository;
     private final TenantRepository tenantRepository;
     private final ActivityLogService activityLog;
+    private final com.hardware.erp.subscription.service.SubscriptionLifecycleService subscriptionLifecycleService;
 
     @Override
     @Transactional
@@ -133,6 +134,11 @@ public class SubscriptionCouponServiceImpl implements SubscriptionCouponService 
         LocalDateTime expiresAt = LocalDateTime.now().plusDays(coupon.getTrialDays());
         tenant.setSubscriptionTier(coupon.getGrantedTier());
         tenant.setSubscriptionTrialExpiresAt(expiresAt);
+        // CR-088 - keeps tenant_subscription/subscription_history in step
+        // with the redeemed trial. Plain REQUIRED, joins this transaction.
+        subscriptionLifecycleService.applyTier(tenantId, coupon.getGrantedTier(),
+                com.hardware.erp.subscription.entity.SubscriptionStatus.TRIAL, expiresAt,
+                "Subscription coupon redeemed: " + coupon.getCode(), null);
         tenantRepository.save(tenant);
 
         coupon.setTimesUsed(coupon.getTimesUsed() + 1);

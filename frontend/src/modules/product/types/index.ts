@@ -74,6 +74,15 @@ export interface ProductRequest {
   /** CR-053 backlog item 1. Both set together or both left blank - see the form's own validation. */
   altUnitLabel?: string | null;
   altUnitConversionFactor?: number | null;
+
+  /** CR-089. Structured attributes for Smart Substitute matching - all optional. */
+  subcategory?: string | null;
+  sizeLabel?: string | null;
+  material?: string | null;
+  colorFinish?: string | null;
+  shape?: string | null;
+  usageType?: string | null;
+  productType?: string | null;
 }
 
 export interface ProductResponse {
@@ -116,6 +125,15 @@ export interface ProductResponse {
   /** CR-053 backlog item 1. */
   altUnitLabel?: string | null;
   altUnitConversionFactor?: number | null;
+
+  /** CR-089. Structured attributes for Smart Substitute matching - all optional. */
+  subcategory?: string | null;
+  sizeLabel?: string | null;
+  material?: string | null;
+  colorFinish?: string | null;
+  shape?: string | null;
+  usageType?: string | null;
+  productType?: string | null;
 }
 
 /** CR-053 backlog item 1 - one row per past invoice line for this product, newest first. */
