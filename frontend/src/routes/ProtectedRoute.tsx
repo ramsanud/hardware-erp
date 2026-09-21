@@ -1,7 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { AUTH_ROUTES } from '@/modules/auth/constants';
+import { LoadingState } from '@/shared/components/LoadingState';
 
 /** Every screen that exists to get the user signed in, rather than to be visited. */
 const AUTH_PATHS: string[] = [
@@ -25,11 +25,7 @@ export function ProtectedRoute() {
   // Blocking here avoids a flash of the login screen while the startup
   // refresh is still in flight.
   if (initialising) {
-    return (
-      <div className="flex h-dvh items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label="Loading" />
-      </div>
-    );
+    return <LoadingState variant="page" />;
   }
 
   if (!isAuthenticated) {

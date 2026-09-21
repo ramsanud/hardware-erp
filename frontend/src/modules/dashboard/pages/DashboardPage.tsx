@@ -8,6 +8,7 @@ import {
   Card, CardContent, CardHeader, CardTitle,
 } from '@/shared/components/ui/card';
 import { EmptyState } from '@/shared/components/EmptyState';
+import { PartialDataNotice } from '@/shared/components/PartialDataNotice';
 import { PermissionGate } from '@/routes/RequirePermission';
 import { SalesTrendChart } from '../components/SalesTrendChart';
 import { SalesByCategoryChart } from '../components/SalesByCategoryChart';
@@ -83,39 +84,52 @@ export function DashboardPage() {
   const [pendingQuotations, setPendingQuotations] = useState<QuotationSummaryResponse[] | null>(null);
   const [recentCustomers, setRecentCustomers] = useState<CustomerSummaryResponse[] | null>(null);
   const [lowStock, setLowStock] = useState<StockResponse[] | null>(null);
+  /*
+   * CR-100. Which sections' requests failed, by the name the user sees.
+   * Every loader below already swallows its own error so one dead endpoint
+   * cannot blank the page; this is the part that was missing - saying so.
+   * `reloadKey` re-runs the whole effect from the notice's Retry.
+   */
+  const [failed, setFailed] = useState<string[]>([]);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    setFailed([]);
+    const fail = (label: string) => setFailed((prev) => (prev.includes(label) ? prev : [...prev, label]));
+    /** A catch handler that records the failure and yields the fallback. */
+    const failing = <T,>(label: string, fallback: T) => (): T => { fail(label); return fallback; };
+
     const loaders: Array<Promise<Count>> = [];
     if (hasPermission(PERMISSIONS.PRODUCT_VIEW)) {
       loaders.push(productService.search({ size: 1 })
         .then((page) => ({ id: 'products' as const, label: 'Items Catalog', value: page.totalElements, icon: Package, to: PRODUCT_ROUTES.list }))
-        .catch(() => ({ id: 'products' as const, label: 'Items Catalog', value: null, icon: Package, to: PRODUCT_ROUTES.list })));
+        .catch(failing('Items Catalog', { id: 'products' as const, label: 'Items Catalog', value: null, icon: Package, to: PRODUCT_ROUTES.list })));
     }
     if (hasPermission(PERMISSIONS.SUPPLIER_VIEW)) {
       loaders.push(supplierService.search({ size: 1 })
         .then((page) => ({ id: 'suppliers' as const, label: 'Wholesalers & Dealers', value: page.totalElements, icon: Truck, to: SUPPLIER_ROUTES.list }))
-        .catch(() => ({ id: 'suppliers' as const, label: 'Wholesalers & Dealers', value: null, icon: Truck, to: SUPPLIER_ROUTES.list })));
+        .catch(failing('Wholesalers & Dealers', { id: 'suppliers' as const, label: 'Wholesalers & Dealers', value: null, icon: Truck, to: SUPPLIER_ROUTES.list })));
     }
     if (hasPermission(PERMISSIONS.INVENTORY_VIEW)) {
       loaders.push(stockService.search({ lowStockOnly: true, size: 1 })
         .then((page) => ({ id: 'low-stock' as const, label: 'Low Stock Alerts', value: page.totalElements, icon: AlertTriangle, to: INVENTORY_ROUTES.stock, tone: 'warning' as const }))
-        .catch(() => ({ id: 'low-stock' as const, label: 'Low Stock Alerts', value: null, icon: AlertTriangle, to: INVENTORY_ROUTES.stock, tone: 'warning' as const })));
+        .catch(failing('Low Stock Alerts', { id: 'low-stock' as const, label: 'Low Stock Alerts', value: null, icon: AlertTriangle, to: INVENTORY_ROUTES.stock, tone: 'warning' as const })));
     }
     if (hasPermission(PERMISSIONS.INVOICE_VIEW)) {
       loaders.push(invoiceService.search({ size: 1 })
         .then((page) => ({ id: 'invoices' as const, label: 'Bills Raised', value: page.totalElements, icon: FileText, to: INVOICE_ROUTES.list }))
-        .catch(() => ({ id: 'invoices' as const, label: 'Bills Raised', value: null, icon: FileText, to: INVOICE_ROUTES.list })));
+        .catch(failing('Bills Raised', { id: 'invoices' as const, label: 'Bills Raised', value: null, icon: FileText, to: INVOICE_ROUTES.list })));
     }
     if (hasPermission(PERMISSIONS.CUSTOMER_VIEW)) {
       loaders.push(customerService.search({ size: 1 })
         .then((page) => ({ id: 'customers' as const, label: 'Customer List', value: page.totalElements, icon: Users, to: CUSTOMER_ROUTES.list }))
-        .catch(() => ({ id: 'customers' as const, label: 'Customer List', value: null, icon: Users, to: CUSTOMER_ROUTES.list })));
+        .catch(failing('Customer List', { id: 'customers' as const, label: 'Customer List', value: null, icon: Users, to: CUSTOMER_ROUTES.list })));
     }
     void Promise.all(loaders).then(setCounts);
 
     if (hasPermission(PERMISSIONS.INVOICE_VIEW)) {
-      invoiceService.search({ size: 5 }).then((page) => setRecentInvoices(page.content)).catch(() => setRecentInvoices([]));
-      dashboardService.salesSummary().then(setSales).catch(() => setSales(null));
+      invoiceService.search({ size: 5 }).then((page) => setRecentInvoices(page.content)).catch(() => { fail('Recent bills'); setRecentInvoices([]); });
+      dashboardService.salesSummary().then(setSales).catch(() => { fail('Sales summary'); setSales(null); });
     }
     // The same endpoint the Sales Growth chart reads, gated the same way.
     if (hasPermission(PERMISSIONS.REPORT_VIEW)) {
@@ -124,7 +138,7 @@ export function DashboardPage() {
       from.setDate(to.getDate() - (LOOKBACK_DAYS - 1));
       analyticsService.revenueTrend(iso(from), iso(to), 'day')
         .then((series) => setTrend(series?.points ?? []))
-        .catch(() => setTrend(null));
+        .catch(() => { fail('Sales growth'); setTrend(null); });
       // Pending Payments "vs last week": outstanding raised this week against
       // the week before, from the same analytics summary the reports use.
       const weekAgo = new Date(); weekAgo.setDate(to.getDate() - 6);
@@ -134,25 +148,25 @@ export function DashboardPage() {
         analyticsService.summary(iso(weekAgo), iso(to)),
         analyticsService.summary(iso(twoWeeksAgo), iso(dayBefore)),
       ]).then(([now, before]) => setOutstanding(now && before ? { now, before } : null))
-        .catch(() => setOutstanding(null));
+        .catch(() => { fail('Pending payments'); setOutstanding(null); });
     }
     if (hasPermission(PERMISSIONS.QUOTATION_VIEW)) {
       // "Pending Estimates" means it: quotations sent and not yet answered,
       // not the last five of any status.
-      quotationService.search({ status: 'SENT', size: 5 }).then((page) => setPendingQuotations(page.content)).catch(() => setPendingQuotations([]));
+      quotationService.search({ status: 'SENT', size: 5 }).then((page) => setPendingQuotations(page.content)).catch(() => { fail('Pending estimates'); setPendingQuotations([]); });
     }
     if (hasPermission(PERMISSIONS.CUSTOMER_VIEW)) {
-      customerService.search({ size: 5 }).then((page) => setRecentCustomers(page.content)).catch(() => setRecentCustomers([]));
+      customerService.search({ size: 5 }).then((page) => setRecentCustomers(page.content)).catch(() => { fail('Recent customers'); setRecentCustomers([]); });
     }
     if (hasPermission(PERMISSIONS.INVENTORY_VIEW)) {
-      stockService.search({ lowStockOnly: true, size: 5 }).then((page) => setLowStock(page.content)).catch(() => setLowStock([]));
+      stockService.search({ lowStockOnly: true, size: 5 }).then((page) => setLowStock(page.content)).catch(() => { fail('Low stock items'); setLowStock([]); });
       // CR-084: the daily snapshot series behind the Low Stock Alerts sparkline.
       analyticsService.lowStockTrend(LOOKBACK_DAYS)
         .then((trend) => setLowStockTrend(trend?.points ?? []))
-        .catch(() => setLowStockTrend(null));
+        .catch(() => { fail('Low stock trend'); setLowStockTrend(null); });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reloadKey]);
 
   /*
    * Week-over-week from the 14-day series. Buckets arrive oldest first; a
@@ -220,6 +234,8 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <PartialDataNotice failed={failed} onRetry={() => setReloadKey((k) => k + 1)} />
 
       {/* Row 1: the money and the one thing that needs attention. */}
       {sales || lowStockCount ? (

@@ -99,6 +99,7 @@ Nothing is implemented from conversation memory.
 | CR-090 | 2026-09-15 | User | Owner-side Nearby Product Discovery (PREMIUM, opt-in, OFF by default): `shop_discovery_setting` consent flags + coordinates + radius, Haversine radius search over opted-in shops' availability (Available/Likely/Unavailable, never quantities or prices), `product_request_discovery_match`, owner-only notification, Call/WhatsApp contact with only the permitted fields. Consent changes audited. `SCOPE: BOTH`, migration V61. | **APPLIED, 2026-09-16** |
 | CR-091 | 2026-09-15 | User | Critical business logic completion: CGST/SGST/IGST split per line & invoice with place of supply frozen on the invoice; invoice cancellation reason/by/at; `customer_ledger_entry` (invoice, payment, credit note, cancellation) with statement + ageing computed from the ledger; weighted-average cost frozen on each invoice line (`cost_price_paise`) and a revenue/COGS/gross/expenses/net profit endpoint; offline sync (`sync_transaction`, client UUID idempotency, conflict detection) with an IndexedDB outbox on the frontend. `SCOPE: BOTH`, migration V62. | **APPLIED, 2026-09-21** |
 | CR-092 | 2026-09-15 | User | PREMIUM growth pack: multi-branch (`branch`, `branch_stock`, stock transfer, branch-wise sales/purchases/users/reports), smart insights (slow-moving, overstock, reorder, demand trend, frequently-bought-together, pricing insight — all measured), daily business summary notification, tenant backup history + on-demand export snapshot. `SCOPE: BOTH`, migration V63. | **APPLIED, 2026-09-21** |
+| CR-100 | 2026-09-20 | User | Application states as one system: an `ErrorBoundary` crash screen with a copyable reference, an offline banner and a "cannot reach the server" error state, a session-expired notice on sign-in, a partial-data notice on the dashboard, `ErrorState` copy and icon keyed to the error code (403 / 404 / 429 / timeout / network), a shared `LoadingState`. Plus a public landing page at `/` (signed-out only; signed-in users still land on the dashboard) with an animated integrations card adapted from a 21st.dev component onto tokens and shipped integrations. Numbered 100 because 093/096/097/099 are held by sibling worktrees. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-20** |
 ---
 
 
@@ -5759,3 +5760,94 @@ storage for snapshots. All listed in `docs/PREMIUM_GROWTH_PACK.md`.
 SUCCESS** (new: `BranchStockTransferIT` 3, `InsightsIT` 2, `TenantBackupIT` 3).
 Frontend `tsc -b --force` clean, `vite build` clean, `tests/run.mjs`
 **272/272**. `registry/static_check.py`: not executed (no python3).
+
+
+## CR-100 — Application states as one system, and a public landing page (APPLIED 2026-09-20)
+
+`SCOPE: FRONTEND ONLY`. No endpoint, no migration. Branch
+`feature/cr-100-app-states-landing` from `main` at `de171b6`, in the
+worktree `E:/Project/hardware-erp-fe`. Numbered 100 because CR-093, 096, 097
+and 099 are held by sibling worktrees and branches that this checkout's
+registry does not show.
+
+### What was asked
+
+"Loading, empty, success, error, no-internet, permission-denied,
+partial-data, form-validation and session-expiry screens — add what is
+missing, like an enterprise application — and a landing page", plus a
+21st.dev `integration-card` block to integrate.
+
+### What already existed (left alone)
+
+`EmptyState`, `TableSkeleton`/`Skeleton`, `NotFoundPage`, `FormField`
+(`role="alert"` per field, server field errors mapped by every form),
+sonner toasts and the auth pages' inline confirmations for success,
+`RequirePermission` for route-level denial. Reported as covered; not
+rebuilt.
+
+### What was missing, and what was built
+
+| State | Before | Now |
+|---|---|---|
+| Crash | an uncaught render error white-screened the whole app | `shared/components/ErrorBoundary.tsx`: a class boundary with a `CrashScreen` (Try again / Dashboard / Copy details — message, stack, URL, version, time; nothing invented). Mounted twice: `page` around `AppRoutes` in `App.tsx`, and `RouteErrorBoundary` (resets on pathname) around the `AppLayout` outlet so a failing page keeps the shell. |
+| Offline | nothing until a request failed with a generic message | `shared/hooks/useOnlineStatus.ts` (`useSyncExternalStore` on `navigator.onLine`) and `OfflineBanner` — sticky under the app bar in `AppLayout`, above the card in `AuthLayout`; "Back online" for 2.5 s on recovery. `data-offline-banner="offline|recovered"`. |
+| Error | one red triangle over the raw message for every failure | `ErrorState` keeps its props and now keys icon, title, tone and copy to the error: `NETWORK_ERROR` splits into "You are offline" (WifiOff) vs "Cannot reach the server"; `TIMEOUT`; 429; 403 (ShieldX, "ask the shop owner"); 404; 502/503/504 ("being updated"). Request id still shown. `data-error-code`. |
+| Session expiry | silent bounce to `/login` | `AuthProvider.sessionExpired`, set by the `setSessionExpiredHandler` callback **only when a user was signed in** (a first-visit refresh failure is not an expiry) and cleared by a completed sign-in or a deliberate sign-out. `LoginPage` shows a warning `Alert` (`data-session-expired`). |
+| Partial data | the dashboard swallowed each failure into "—", indistinguishable from an empty shop | `PartialDataNotice` (warning `Alert`, names the failed sections, one Retry). `DashboardPage` records each loader's failure by its on-screen label and re-runs the effect from `reloadKey`. `data-partial-data`. |
+| Loading | three hand-rolled `Loader2`s | `LoadingState` (`page` / `section`, `role="status"`), used by `ProtectedRoute` and the lazy landing route. |
+| Permission denied | a dead end | `RequirePermission` gained a "Back to dashboard" action. |
+
+### Landing page
+
+`modules/landing/pages/LandingPage.tsx` at `/`, public. `LandingRoute` in
+`routes/index.tsx` waits on `initialising`, sends a signed-in user to
+`/dashboard`, and lazy-loads the page so `motion` (its only new dependency,
+`motion@13.4.0`, React 18 peer) ships in the landing chunk and never in
+the app bundle — verified: `LandingPage-*.js` 145 kB, `index-*.js`
+unchanged. The nested `index` / `/` redirects inside `AppLayout` were
+removed (they would have matched the same path).
+
+Same brand language as CR-081: `--sidebar` hero and closing band,
+`--sidebar-active` accent phrase and primary CTA (the `gradient` variant
+mixes toward amber and reads olive on a green surface — measured on the
+render, replaced), features in `--primary/10` tiles, the system cursive
+slogan. Every line was checked against `FEATURE_REGISTRY` before it was
+written; the registration step says "shop name, your name and mobile
+number" because that is what `RegisterPage`'s schema asks for. No counts,
+prices, testimonials or screenshots of data.
+
+### The 21st.dev block
+
+Landed as `shared/components/ui/integration-card.tsx` (this project's
+shadcn folder; `@/components/ui` does not exist here — the alias root is
+`src/`, and every primitive lives under `src/shared/components/ui`).
+Adapted rather than pasted: Tailwind v4 utilities rewritten for 3.4;
+`var(--color-*)` → `hsl(var(--*))`; its base-ui `Button` and cva dropped for
+the project's `Button asChild`; the Figma/Claude/React/Tailwind logos and
+two CDN-hosted centre images replaced by `BrandGlyph` and caller-supplied
+lucide tiles — on the landing page, the six things the product actually
+connects to (WhatsApp CR-080, email and SMS CR-074, Tally and PDF/Excel
+CR-086, GSTR-1 CR-087, map CR-076); `Math.random()` stagger made
+deterministic; loops switched off under `prefers-reduced-motion` (index.css
+neutralises CSS animation, not motion's JS values). `@base-ui/react` was
+**not** installed; `class-variance-authority` was already present.
+
+### Verified
+
+`tsc -b --force` 0 errors; `vite build` clean to a private `dist-iso`;
+Playwright on `E2E_BASE_URL=http://localhost:4199`: **324/324** — the 297
+existing plus a new `states` suite (27 assertions: landing at 1440 and 390
+with no errors and no horizontal scroll, the six tiles, signed-in `/` →
+dashboard, partial-data notice and Retry, offline and recovery, 403 drawn
+as permission, session-expiry notice and its absence on a plain visit,
+the denied route's way out). Committed as `da35a6d` on
+`feature/cr-100-app-states-landing` after the owner approved the render.
+Screenshots at 1440 (light and dark) and 390
+read against the copy. Self-review then changed four things (ref written
+from an effect, not during render; the startup loader no longer says
+"Signing you in"; the offline banner's sticky offset carries the notch inset
+like .app-bar; the online NETWORK_ERROR copy no longer repeats its title)
+and the suite was re-run: 323/324, the one failure a timing flake in the
+pre-existing quotations suite ("Clear filters" empty state) that passed 3/3
+in isolation and is untouched by this CR. Backend untouched — `mvn verify` not executed.
+`static_check.py` not executed (no python3).

@@ -208,6 +208,29 @@ insights + backup). Each follows CR-088's shape: migration, entities,
 service, controller, unit tests, at least one real `@SpringBootTest` IT,
 frontend page, registry body, tick the task-doc checkboxes, commit.
 
+**Updated:** 2026-09-20 (**CR-100 — application states + landing page, render approved, committed as `da35a6d`, not yet merged to `main`**). `SCOPE: FRONTEND ONLY`, no migration. Branch `feature/cr-100-app-states-landing` from `main` (`de171b6`) in worktree `E:/Project/hardware-erp-fe` (node_modules is a junction to the main checkout's; `rmdir` it before `git worktree remove`).
+
+## CR-100 — states and landing (2026-09-20)
+
+Built: `ErrorBoundary` + `CrashScreen` (root and per-route), `OfflineBanner` +
+`useOnlineStatus`, code-keyed `ErrorState`, `sessionExpired` on
+`AuthProvider` with the notice on `LoginPage`, `PartialDataNotice` wired
+into the dashboard with Retry, `LoadingState`, a way out of the denied
+route; the public landing page at `/` (lazy, `motion` only in its chunk)
+with the adapted `integration-card` in `shared/components/ui`.
+Registry body under CR-100 lists every file and the reasons.
+
+Verified on the isolated build: tsc 0, build clean, Playwright **324/324**
+(297 + the new `states` suite). Screenshots at 1440 light/dark and 390 in
+the session scratchpad. Backend untouched; `mvn verify` not executed.
+
+**Open:** merge — `git checkout main && git merge --no-ff feature/cr-100-app-states-landing`
+(the branch is one commit + this docs commit on top of `de171b6`, so it is
+a clean fast-forwardable merge unless another session has moved `main`). The main checkout also has a stray untracked
+root `package.json` / `package-lock.json` with `motion` from an
+`npm install` run at the repo root — not ours, not needed; the dependency
+lives in `frontend/package.json`.
+
 ---
 
 **Updated:** 2026-09-16 (**BUG-OPS-001 — production schema drift fixed and verified; `origin/main` push still pending confirmation**). `SCOPE: BACKEND ONLY`.

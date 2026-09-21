@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { ModeToggle } from '@/theme/ModeToggle';
 import { BrandMark } from '@/shared/components/BrandMark';
+import { OfflineBanner } from '@/shared/components/OfflineBanner';
 import { AUTH_ROUTES } from '@/modules/auth/constants';
 import { AuthHeroBackdrop } from './AuthHeroBackdrop';
 
@@ -203,6 +204,10 @@ export function AuthLayout() {
           </div>
           <ModeToggle />
         </header>
+
+        {/* CR-100: a sign-in attempt while offline fails for a reason the
+            form cannot see; say it above the card. */}
+        <OfflineBanner className="relative z-10" />
 
         {/* Desktop: the toggle floats top-right, off the card. */}
         <div className="absolute right-8 top-7 z-10 hidden lg:block">
