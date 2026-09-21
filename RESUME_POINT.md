@@ -52,6 +52,44 @@ already disjoint (V57/V58 there, V59–V63 here). The profit report
 
 ---
 
+## BUG-FE-042 — the auth pages carried a real scrollbar (2026-09-20)
+
+Asked to start the app and look at `/login` and `/register`; both showed a
+visible vertical + horizontal scrollbar over empty space. Root cause and fix
+are in the `BUG_REGISTRY.md` body — in short, `AuthLayout`'s two decorative
+glow circles bled past `<main>`'s edge with nothing to clip them, inflating
+the *document's* scrollable area (measured: 160px vertical + 128px
+horizontal overflow at 1920×1017, with nothing behind the extra space).
+Fixed by confining just those two circles to their own
+`absolute inset-0 overflow-hidden` layer — CR-081's approved design is
+otherwise untouched, confirmed by re-screenshotting both pages. One residual
+~5px overflow remains at exactly 1366×768 (a hero-column content/breakpoint
+interaction, not the same bug) — left alone because closing it means
+touching CR-081's approved spacing/type, which needs owner approval first
+(hard rule 13), not a silent tweak.
+
+Verified: `tsc -b --force` 0, `vite build` 0, frontend suite **297/297**
+(no new regression test added for this — see the registry body for why, and
+what a real one would need to assert). No BUG_REGISTRY test was added to
+`tests/run.mjs`.
+
+**Also fixed to get the app running at all, worth recording:**
+`frontend/node_modules` was empty on this checkout — `npm install` failed
+under Git Bash because npm's lifecycle scripts (esbuild's postinstall)
+spawn `cmd.exe`, and this machine's Git-Bash session has `node` only on
+*Bash's own* `PATH`, not the real Windows PATH `cmd.exe` sees. Worked around
+by running `npm install` via `powershell.exe` with
+`C:\Program Files\nodejs` prepended to `$env:PATH`. Backend was started with
+bare `mvn spring-boot:run -Dspring-boot.run.profiles=local` (not
+`scripts/run-local.sh`), so **`.env` was not loaded this session** — mail
+env vars never reached the process, so OTP/reset emails are LOGGED_ONLY,
+not sent, for as long as this backend instance stays up.
+
+Not committed. Only file touched: `frontend/src/layouts/AuthLayout.tsx`.
+Registry files touched: `BUG_REGISTRY.md` (this entry), `RESUME_POINT.md`.
+
+---
+
 ## CR-091 done (2026-09-21)
 
 GST split (`GstSplit`, per invoice and per line, backfilled), invoice

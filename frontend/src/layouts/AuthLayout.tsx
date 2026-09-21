@@ -177,17 +177,23 @@ export function AuthLayout() {
 
       {/* ================= RIGHT - sign in ================= */}
       <main className="relative flex flex-1 flex-col bg-muted/30">
-        {/* Soft ambient shapes in two corners, from the shop's accent. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-32 -top-36 hidden h-[460px] w-[460px] rounded-full lg:block"
-          style={{ background: 'radial-gradient(closest-side, hsl(var(--primary) / 0.12), transparent)' }}
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -bottom-40 -left-36 hidden h-[480px] w-[480px] rounded-full lg:block"
-          style={{ background: 'radial-gradient(closest-side, hsl(var(--primary) / 0.11), transparent)' }}
-        />
+        {/* Soft ambient shapes in two corners, from the shop's accent. Confined
+            to their own clipped layer - each blob is deliberately positioned
+            half off-canvas, and without a clipping boundary that pushed the
+            *document's* scrollable area past the viewport on every ordinary
+            screen size, forcing a real scrollbar under a page with nothing
+            left to show. Clipping here changes nothing visible: the blobs
+            still bleed to the same edges inside the frame. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div
+            className="absolute -right-32 -top-36 hidden h-[460px] w-[460px] rounded-full lg:block"
+            style={{ background: 'radial-gradient(closest-side, hsl(var(--primary) / 0.12), transparent)' }}
+          />
+          <div
+            className="absolute -bottom-40 -left-36 hidden h-[480px] w-[480px] rounded-full lg:block"
+            style={{ background: 'radial-gradient(closest-side, hsl(var(--primary) / 0.11), transparent)' }}
+          />
+        </div>
 
         {/* Below lg the hero collapses to this band: the mark, the name and
             the one line that says who it is for. The pitch stays on desktop. */}
