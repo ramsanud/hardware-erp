@@ -98,3 +98,7 @@ frontend/vite.config.audit.ts
 # session's `vite build` cannot rewrite it mid-suite. Neither is a deliverable.
 .docker-iso/
 frontend/dist-iso/
+
+# docs/how-to-start/build.mjs inlines a 420 KB PNG into this before rendering
+# and deletes it afterwards; it exists only mid-build.
+docs/how-to-start/.final.html
