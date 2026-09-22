@@ -1,6 +1,59 @@
 # RESUME POINT
 
-**Updated:** 2026-09-16 (**CR-097 pg_trgm product search built and verified on `feature/cr-096-pg-trgm-search`; CR-098 infrastructure stack written up as a proposal, nothing built**). `SCOPE: BOTH`. Uncommitted.
+**Updated:** 2026-09-22 (**Consolidation + enterprise audit: every feature branch merged into `develop`, audit fixes applied, `develop` merged into `main` and pushed.**) Worktree `E:/Project/hardware-erp-develop` on `develop`.
+
+## Consolidation (2026-09-22)
+
+`develop` now carries, in this order: CR-088→092 (b9e190a) · `main`'s CR-100 ·
+BUG-FE-042 (auth-page scrollbar, preserved from the cr-086 working tree) ·
+CR-101 document engine (**V62 → V65**, CR-091 held V62) · CR-078 email OTP
+backend **+ the frontend half preserved as b6c6bc6** and CR-085 channel
+testing (**V57**; its BUG-BE-006 → **BUG-BE-008**, CR-091 held 006) ·
+CR-097 pg_trgm search (**V64**, preserved from an uncommitted worktree,
+renumbered from CR-096 which is the keep-alive; its proposal is CR-098).
+The `hardware-erp-auth` worktree's 44 uncommitted files were a strict
+predecessor of CR-078 and are kept as a named stash there, not deleted.
+Migrations now run V1–V57, V59–V65 with no gaps that matter: production is
+at V56, so everything new applies in order; dev/local have `out-of-order`.
+
+## Audit findings fixed (all with tests)
+
+- **CR-102** financial idempotency: `Idempotency-Key` on invoice, invoice
+  payment, purchase and purchase payment (frontend always sends one).
+  `FinancialIdempotencyIT`.
+- **BUG-BE-009** concurrent first-time invoices for one new customer raced
+  `uk_customer_mobile` → advisory lock in `findOrCreate`. **BUG-BE-010**
+  concurrent payments deadlocked (FK share lock vs UPDATE) → `addPayment`
+  locks the document row. `ConcurrentStockIT` (8 threads, real PostgreSQL).
+- **BUG-FE-043** dashboard overflowed 75px at 1024–1279px → chart headers
+  wrap. `tests/responsive/viewports.spec.mjs`: 18 viewports × 15 screens,
+  270/270, in `tests/run.mjs`.
+- **BUG-FE-041** reports spec used the UTC date. `ProductAdversarialIT`
+  proves the validation table.
+
+## Verified on the final tree
+
+`mvn clean verify` **696 unit + 318 integration, BUILD SUCCESS**; `tsc -b
+--force` clean; `vite build` clean; `tests/run.mjs` **612/612**.
+`static_check.py` not executed (no python3).
+
+## Still pending, by scope (not bugs)
+
+Stock reservation · branch-keyed availability · offline sync beyond
+INVOICE / service worker · Users-page user↔branch control (API exists) ·
+FEATURE_REGISTRY mirror · N+1 profiling was not performed in this pass.
+
+## Production
+
+Render `hardware-erp-api` deploys from `main` (`render.yaml`, health
+`/api/actuator/health`); Vercel `hardware-erp-gilt.vercel.app` rewrites
+`/api` to it. Both answered 200 before the push. After the push the deploy
+must be watched: Flyway applies V57, V59–V65 on first boot, including
+`CREATE EXTENSION IF NOT EXISTS pg_trgm` (V60) - on Supabase this is
+expected to be a no-op, but it is the one migration step that depends on
+the hosted database's privileges.
+
+---
 
 ## CR-097 — pg_trgm product search, and CR-098 infra proposal (2026-09-16)
 
