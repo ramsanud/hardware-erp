@@ -66,6 +66,7 @@ public class PurchaseServiceImpl implements PurchaseService {
     private final PurchaseMapper purchaseMapper;
     private final ActivityLogService activityLog;
     private final com.hardware.erp.branch.service.BranchContext branchContext;
+    private final com.hardware.erp.common.idempotency.IdempotencyService idempotencyService;
 
     @Override
     @Transactional
@@ -182,6 +183,31 @@ public class PurchaseServiceImpl implements PurchaseService {
                 purchaseRepository.search(tenantId, search, status, pageable),
                 purchaseMapper::toSummary);
     }
+
+
+    @Override
+    @Transactional
+    public PurchaseResponse create(PurchaseRequest request, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return create(request);
+        }
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        return idempotencyService.execute(tenantId, "purchase.create", idempotencyKey, request,
+                PurchaseResponse.class, () -> create(request));
+    }
+
+    @Override
+    @Transactional
+    public PurchaseResponse addPayment(Long purchaseId, RecordPurchasePaymentRequest request, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return addPayment(purchaseId, request);
+        }
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        return idempotencyService.execute(tenantId, "purchase.payment", idempotencyKey, new IdempotencyPayload(purchaseId, request),
+                PurchaseResponse.class, () -> addPayment(purchaseId, request));
+    }
+
+    private record IdempotencyPayload(Long documentId, Object request) {}
 
     @Override
     @Transactional

@@ -16,6 +16,14 @@ public interface InvoiceService {
     InvoiceResponse create(InvoiceRequest request);
 
     /**
+     * CR-102. Same as the one-argument form, run exactly once per
+     * {@code Idempotency-Key}: a retry after a lost response returns the
+     * stored result instead of a second invoice. A null or blank key means
+     * "no key" and the call simply runs. See IdempotencyService.
+     */
+    InvoiceResponse create(InvoiceRequest request, String idempotencyKey);
+
+    /**
      * Amends an unpaid invoice in place, keeping its number and date. Refused
      * once any payment exists - see the impl for why.
      */
@@ -27,6 +35,14 @@ public interface InvoiceService {
                                                  LocalDate fromDate, LocalDate toDate, Pageable pageable);
 
     InvoiceResponse addPayment(Long invoiceId, PaymentRequest request);
+
+    /**
+     * CR-102. Same as the one-argument form, run exactly once per
+     * {@code Idempotency-Key}: a retry after a lost response returns the
+     * stored result instead of a second payment. A null or blank key means
+     * "no key" and the call simply runs. See IdempotencyService.
+     */
+    InvoiceResponse addPayment(Long invoiceId, PaymentRequest request, String idempotencyKey);
 
     /** CR-091 Phase 3 - reason mandatory; who and when are recorded. */
     InvoiceResponse cancel(Long id, com.hardware.erp.invoice.dto.InvoiceCancelRequest request);

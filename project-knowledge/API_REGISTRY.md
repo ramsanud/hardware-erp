@@ -964,3 +964,14 @@ Write-up: `docs/PREMIUM_GROWTH_PACK.md`. Plan gates are inside the services; eve
 | GET | `/v1/backups/{id}/download` | `BACKUP_MANAGE` | The stored file; another shop's id is 404. |
 
 Regression tests: `BranchStockTransferIT` (3), `InsightsIT` (2), `TenantBackupIT` (3).
+
+## CR-102 — Idempotency-Key on the financial writes
+
+| Method | Path | Header | Behaviour |
+|---|---|---|---|
+| POST | `/v1/invoices` | `Idempotency-Key` (optional) | Same key + same body → the stored 201 result; same key + different body → 409 `IDEMPOTENCY_KEY_REUSED`. |
+| POST | `/v1/invoices/{id}/payments` | `Idempotency-Key` (optional) | Keyed per invoice. Same rules. |
+| POST | `/v1/purchases` | `Idempotency-Key` (optional) | Same rules. |
+| POST | `/v1/purchases/{id}/payments` | `Idempotency-Key` (optional) | Keyed per purchase. Same rules. |
+
+The frontend always sends one (`useIdempotencyKey`). Regression test: `FinancialIdempotencyIT` (2).

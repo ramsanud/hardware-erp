@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { useToast } from '@/modules/auth/hooks/useToast';
 import { ApiError } from '@/shared/types/api';
+import { useIdempotencyKey } from '@/shared/hooks/useIdempotencyKey';
 import { outbox } from '@/modules/sync/lib/outbox';
 import { notifyOutboxChanged } from '@/modules/sync/hooks/useOutbox';
 import { SYNC_ROUTES } from '@/modules/sync/constants';
@@ -42,6 +43,7 @@ export function InvoiceCreatePage() {
   const initialItems = state?.items;
   const editId = state?.editInvoiceId;
   const isEdit = typeof editId === 'number';
+  const idempotency = useIdempotencyKey();
 
   const handleSubmit = async (request: InvoiceRequest) => {
     if (isEdit) {
@@ -58,7 +60,8 @@ export function InvoiceCreatePage() {
       return;
     }
     try {
-      const invoice = await invoiceService.create(request);
+      const invoice = await invoiceService.create(request, idempotency.current());
+      idempotency.renew();
       toast.success(`Invoice ${invoice.invoiceNumber} created.`);
       navigate(INVOICE_ROUTES.detail(invoice.id), { replace: true });
     } catch (caught) {

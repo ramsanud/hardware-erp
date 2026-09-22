@@ -95,6 +95,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final TenantBankAccountQrRepository tenantBankAccountQrRepository;
     private final CustomerLedgerService customerLedgerService;
     private final com.hardware.erp.branch.service.BranchContext branchContext;
+    private final com.hardware.erp.common.idempotency.IdempotencyService idempotencyService;
     private final StockRepository stockRepository;
 
     @Override
@@ -296,6 +297,32 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
         return qr;
     }
+
+
+    @Override
+    @Transactional
+    public InvoiceResponse create(InvoiceRequest request, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return create(request);
+        }
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        return idempotencyService.execute(tenantId, "invoice.create", idempotencyKey, request,
+                InvoiceResponse.class, () -> create(request));
+    }
+
+    @Override
+    @Transactional
+    public InvoiceResponse addPayment(Long invoiceId, PaymentRequest request, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return addPayment(invoiceId, request);
+        }
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        return idempotencyService.execute(tenantId, "invoice.payment", idempotencyKey, new IdempotencyPayload(invoiceId, request),
+                InvoiceResponse.class, () -> addPayment(invoiceId, request));
+    }
+
+    /** The key is scoped to one invoice: the same key against another invoice is a different request, not a replay. */
+    private record IdempotencyPayload(Long documentId, Object request) {}
 
     @Override
     @Transactional

@@ -29,6 +29,7 @@ import { ErrorState } from '@/shared/components/ErrorState';
 import { ConfirmDialog } from '@/shared/components/ConfirmDialog';
 import { FormField } from '@/shared/components/FormField';
 import { ApiError } from '@/shared/types/api';
+import { useIdempotencyKey } from '@/shared/hooks/useIdempotencyKey';
 import { downloadBlob, formatDateTime, previewBlob } from '@/shared/lib/utils';
 import { PermissionGate } from '@/routes/RequirePermission';
 import { WhatsAppButton } from '@/shared/components/WhatsAppButton';
@@ -78,6 +79,7 @@ export function InvoiceDetailPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const [payDialogOpen, setPayDialogOpen] = useState(false);
+  const paymentKey = useIdempotencyKey();
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [submittingCancel, setSubmittingCancel] = useState(false);
@@ -109,7 +111,8 @@ export function InvoiceDetailPage() {
         amountPaise: Math.round(Number(values.amountRupees) * 100),
         paymentMethod: values.paymentMethod,
         notes: values.notes || null,
-      });
+      }, paymentKey.current());
+      paymentKey.renew();
       toast.success('Payment recorded.');
       setPayDialogOpen(false);
       reset();
@@ -573,7 +576,7 @@ export function InvoiceDetailPage() {
         </div>
       </div>
 
-      <Dialog open={payDialogOpen} onOpenChange={(open) => { setPayDialogOpen(open); if (!open) reset(); }}>
+      <Dialog open={payDialogOpen} onOpenChange={(open) => { setPayDialogOpen(open); if (!open) { reset(); paymentKey.renew(); } }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle>Record a payment</DialogTitle></DialogHeader>
           <form onSubmit={submitPayment} className="space-y-4" noValidate>

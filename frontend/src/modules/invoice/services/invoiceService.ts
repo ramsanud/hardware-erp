@@ -11,13 +11,15 @@ export const invoiceService = {
 
   get: (id: number) => apiGet<InvoiceResponse>(`/v1/invoices/${id}`),
 
-  create: (body: InvoiceRequest) => apiPost<InvoiceResponse>('/v1/invoices', body),
+  /** CR-102 - `Idempotency-Key`: a retry with the same key returns the invoice already created, never a second one. */
+  create: (body: InvoiceRequest, idempotencyKey?: string) =>
+    apiPost<InvoiceResponse>('/v1/invoices', body, idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined),
 
   /** Amend an unpaid invoice in place. Refused by the server once any payment exists. */
   update: (id: number, body: InvoiceRequest) => apiPut<InvoiceResponse>(`/v1/invoices/${id}`, body),
 
-  addPayment: (id: number, body: PaymentRequest) =>
-    apiPost<InvoiceResponse>(`/v1/invoices/${id}/payments`, body),
+  addPayment: (id: number, body: PaymentRequest, idempotencyKey?: string) =>
+    apiPost<InvoiceResponse>(`/v1/invoices/${id}/payments`, body, idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined),
 
   /** CR-091 Phase 3 - a reason is mandatory; the server refuses a blank one. */
   cancel: (id: number, reason: string) => apiPost<InvoiceResponse>(`/v1/invoices/${id}/cancel`, { reason }),

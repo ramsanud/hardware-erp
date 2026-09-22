@@ -103,6 +103,7 @@ Nothing is implemented from conversation memory.
 | CR-085 | 2026-09-16 | User | Notification hygiene from the "missing modules" brief: a **Test SMS** endpoint and a Settings card that finally puts both `mail/test` and `sms/test` on screen; **Twilio status** and **SendGrid event** webhooks so `DELIVERED` / `READ` / `FAILED` are set for the app-wide channels, not only Meta's; one `DeliveryStatusService` holding the forward-only rule for all three. Rode along: BUG-FE-039, BUG-FE-040, BUG-BE-006. `SCOPE: BOTH`. | **APPLIED, 2026-09-16** |
 | CR-097 | 2026-09-16 | User | Typo-tolerant product search inside PostgreSQL: `pg_trgm` + partial GIN trigram indexes on `product.product_name` / `product_code` (V64). `GET /v1/products?search=` falls through to word-similarity matches only when the substring search finds nothing, each row carrying a `matchScore`; the list page says "No exact matches - showing the closest". No new endpoint, permission or infrastructure. `SCOPE: BOTH`. | **APPLIED, 2026-09-16** |
 | CR-098 | 2026-09-16 | User | Infrastructure stack proposal: Redis/Redisson, RabbitMQ, Kafka, MinIO/S3, Prometheus/Grafana/OpenTelemetry, GHCR publish. Written up item by item against the decisions it would reverse (CR-059 one-box self-hosted, bytea uploads, transactional audit log). **Nothing built** - each item needs an owner decision. | **PROPOSED 2026-09-16** |
+| CR-102 | 2026-09-22 | Claude (consolidation audit) | Financial idempotency: `POST /v1/invoices`, `/v1/invoices/{id}/payments`, `/v1/purchases`, `/v1/purchases/{id}/payments` honour an `Idempotency-Key` through the existing CR-051 `IdempotencyService` (credit notes, sales orders and challans already did); the frontend sends one key per attempted write (`useIdempotencyKey`) so a retry after a lost response can never create a second invoice, payment or receipt. `SCOPE: BOTH`, no migration. | **APPLIED, 2026-09-22** |
 ---
 
 
@@ -6153,3 +6154,42 @@ decision that the self-hosted product may ship as a multi-container stack
 with its own backup procedure for each store. Until both are true, each of
 those items is a service the client's box has to run for a benefit the
 single-instance app cannot show.
+
+## CR-102 — Financial idempotency for invoices, payments and purchases (2026-09-22, APPLIED)
+
+**Raised by:** the consolidation audit (idempotency stage). **Type:**
+correctness, both layers. `SCOPE: BOTH`, no migration.
+
+### The gap
+
+CR-051 gave the system an `IdempotencyService` and wired it to credit
+notes, sales orders and delivery challans. The four endpoints that create
+money or stock rows most often - invoice, invoice payment, purchase,
+purchase payment - never took a key, and `apiClient.ts` said so in its own
+comment ("no frontend call site uses it yet"), which is why its timeout
+retry is GET-only. A counter double-click or a retried POST after a lost
+response produced a second invoice with a second stock movement and a
+second ledger debit. CR-091's offline sync had its own client-UUID
+idempotency, so the offline path was safe and the online path was not.
+
+### What changed
+
+- `InvoiceService.create/addPayment` and `PurchaseService.create/addPayment`
+  gain a `(…, String idempotencyKey)` overload that wraps the existing
+  method in `IdempotencyService.execute()` under operations
+  `invoice.create`, `invoice.payment` (keyed with the invoice id so the
+  same key against another invoice is a different request),
+  `purchase.create`, `purchase.payment`. A null key runs the call as
+  before - every internal caller (quotation/sales-order convert, offline
+  sync) is untouched.
+- Controllers read the optional `Idempotency-Key` header.
+- Frontend: `useIdempotencyKey()` creates one key when the invoice wizard,
+  purchase form or a payment dialog opens, keeps it across a failed
+  submit, and renews it after success or when the dialog closes.
+
+### Verified
+
+`FinancialIdempotencyIT` (2): the same invoice request twice under one key
+→ one invoice, one movement, one ledger row, stock decremented once; the
+same key with a different payload → 409 `IDEMPOTENCY_KEY_REUSED`; a
+payment retried → recorded once; a purchase retried → received once.

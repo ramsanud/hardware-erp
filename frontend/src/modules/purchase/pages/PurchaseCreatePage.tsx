@@ -1,3 +1,4 @@
+import { useIdempotencyKey } from '@/shared/hooks/useIdempotencyKey';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { useToast } from '@/modules/auth/hooks/useToast';
@@ -10,8 +11,11 @@ export function PurchaseCreatePage() {
   const navigate = useNavigate();
   const toast = useToast();
 
+  const idempotency = useIdempotencyKey();
+
   const handleSubmit = async (request: PurchaseRequest) => {
-    const purchase = await purchaseService.create(request);
+    const purchase = await purchaseService.create(request, idempotency.current());
+    idempotency.renew();
     toast.success(`Purchase ${purchase.purchaseNumber} recorded, stock updated.`);
     navigate(PURCHASE_ROUTES.detail(purchase.id), { replace: true });
   };
