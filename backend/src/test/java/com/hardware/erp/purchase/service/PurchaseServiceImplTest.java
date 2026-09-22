@@ -209,7 +209,7 @@ class PurchaseServiceImplTest {
                 .subtotalPaise(50000L).gstAmountPaise(9000L).totalPaise(59000L)
                 .paidPaise(0L).balancePaise(59000L).status(PurchaseStatus.RECEIVED)
                 .items(new java.util.ArrayList<>()).build();
-        when(purchaseRepository.findByIdAndTenantId(10L, 1L)).thenReturn(Optional.of(existing));
+        when(purchaseRepository.lockByIdAndTenantId(10L, 1L)).thenReturn(Optional.of(existing));
 
         PurchaseResponse response = purchaseService.addPayment(10L,
                 new RecordPurchasePaymentRequest(59000L, PaymentMethod.UPI, "Full settlement"));
@@ -226,7 +226,7 @@ class PurchaseServiceImplTest {
                 .subtotalPaise(50000L).gstAmountPaise(9000L).totalPaise(59000L)
                 .paidPaise(30000L).balancePaise(29000L).status(PurchaseStatus.PARTIALLY_PAID)
                 .items(new java.util.ArrayList<>()).build();
-        when(purchaseRepository.findByIdAndTenantId(10L, 1L)).thenReturn(Optional.of(existing));
+        when(purchaseRepository.lockByIdAndTenantId(10L, 1L)).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> purchaseService.addPayment(10L,
                 new RecordPurchasePaymentRequest(40000L, PaymentMethod.CASH, null)))

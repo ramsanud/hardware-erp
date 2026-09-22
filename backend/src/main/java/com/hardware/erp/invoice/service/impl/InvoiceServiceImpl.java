@@ -328,7 +328,9 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Transactional
     public InvoiceResponse addPayment(Long invoiceId, PaymentRequest request) {
         Long tenantId = SecurityUtils.requireCurrentTenantId();
-        Invoice invoice = require(invoiceId, tenantId);
+        // BUG-BE-010 - row lock first; see InvoiceRepository.lockByIdAndTenantId.
+        Invoice invoice = invoiceRepository.lockByIdAndTenantId(invoiceId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Invoice", invoiceId));
 
         if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
             throw new BusinessException("A cancelled invoice cannot take a payment");

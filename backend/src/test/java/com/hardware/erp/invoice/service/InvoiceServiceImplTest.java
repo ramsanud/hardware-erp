@@ -228,7 +228,7 @@ class InvoiceServiceImplTest {
                 .subtotalPaise(30000L).gstAmountPaise(5400L).totalPaise(35400L)
                 .paidPaise(10000L).balancePaise(25400L).status(InvoiceStatus.PARTIALLY_PAID)
                 .build();
-        when(invoiceRepository.findByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(invoice));
+        when(invoiceRepository.lockByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(invoice));
 
         InvoiceResponse response = invoiceService.addPayment(1L,
                 new PaymentRequest(25400L, com.hardware.erp.invoice.entity.PaymentMethod.UPI, null));
@@ -245,7 +245,7 @@ class InvoiceServiceImplTest {
                 .subtotalPaise(30000L).gstAmountPaise(5400L).totalPaise(35400L)
                 .paidPaise(10000L).balancePaise(25400L).status(InvoiceStatus.PARTIALLY_PAID)
                 .build();
-        when(invoiceRepository.findByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(invoice));
+        when(invoiceRepository.lockByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(invoice));
 
         assertThatThrownBy(() -> invoiceService.addPayment(1L,
                 new PaymentRequest(30000L, com.hardware.erp.invoice.entity.PaymentMethod.CASH, null)))

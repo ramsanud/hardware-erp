@@ -26,6 +26,9 @@ public class CustomerLookupServiceImpl implements CustomerLookupService {
         String cleanGstNo = blankToNull(gstNo);
         String cleanStateCode = blankToNull(stateCode);
 
+        // BUG-BE-009 - serialise concurrent first-time invoices for the same
+        // number; see CustomerRepository.lockForFindOrCreate.
+        customerRepository.lockForFindOrCreate(lockKey(tenantId, mobile));
         return customerRepository.findByTenantIdAndMobileNo(tenantId, mobile)
                 .map(customer -> {
                     if (cleanGstNo != null) customer.setGstNo(cleanGstNo);
@@ -44,6 +47,11 @@ public class CustomerLookupServiceImpl implements CustomerLookupService {
                             .build();
                     return customerRepository.save(customer);
                 });
+    }
+
+    /** Stable 64-bit key: tenant in the high word, the mobile's hash in the low word. Collisions only cost a needless wait. */
+    private static long lockKey(Long tenantId, String mobile) {
+        return (tenantId << 32) ^ (mobile.hashCode() & 0xffffffffL);
     }
 
     private static String blankToNull(String value) {

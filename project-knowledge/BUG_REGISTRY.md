@@ -108,6 +108,8 @@ generating new code; never reintroduce a listed bug.
 | BUG-FE-042 | Frontend | Medium | Fixed 2026-09-20 |
 | BUG-FE-043 | Frontend / Dashboard | Medium | Fixed 2026-09-22 |
 | BUG-BE-008 | Backend / Architecture | Medium | Fixed 2026-09-16 |
+| BUG-BE-009 | Backend / Customer + Invoice | High | Fixed 2026-09-22 |
+| BUG-BE-010 | Backend / Invoice + Purchase | Medium | Fixed 2026-09-22 |
 
 **This index is complete and covers every entry in this file (verified
 2026-09-08).** It previously stopped at `BUG-ENV-003`, omitting 33 later
@@ -4005,3 +4007,36 @@ overflow, a rendered main landmark and no page error: 270/270. Wired into
 **Lesson (PROJECT_SKILLS):** a responsive spec that checks "a phone and a
 desktop" misses the breakpoint edges; measure at 639/640, 767/768 and
 1023/1024, where the layout actually changes.
+
+## BUG-BE-009 — two simultaneous first invoices for the same new customer: one died on uk_customer_mobile (FIXED, 2026-09-22)
+
+| | |
+|---|---|
+| **Severity** | High — a busy counter with two staff serving the same walk-in at once, or one client whose retry raced its own first attempt, got a 409 "integrity violation" instead of an invoice; the stock invariant held, the customer experience did not |
+| **Layer** | BACKEND ONLY |
+| **Found** | The consolidation audit's `ConcurrentStockIT`: eight simultaneous invoices for a new mobile number - one 201 and seven 409s, every loser `duplicate key value violates unique constraint "uk_customer_mobile"` |
+| **Symptom** | `CustomerLookupServiceImpl.findOrCreate` is check-then-insert: every transaction read "no customer", every one inserted, the constraint refused all but the first and PostgreSQL aborted their transactions |
+
+**Fix.** A transaction-scoped advisory lock keyed on (tenant, mobile) -
+`CustomerRepository.lockForFindOrCreate`, `pg_advisory_xact_lock` - taken
+before the lookup. Concurrent callers for one number queue on it; the
+second then finds the row the first inserted. Released at the caller's
+commit or rollback, the same discipline as the document-sequence row lock.
+No schema change. Proven by `ConcurrentStockIT.oneUnitCannotBeSoldTwice`:
+one 201, seven honest 422 INSUFFICIENT_STOCK, stock 0, one movement.
+
+## BUG-BE-010 — concurrent payments against one invoice deadlocked and returned 500 (FIXED, 2026-09-22)
+
+| | |
+|---|---|
+| **Severity** | Medium — no money was ever double-recorded (`Invoice.@Version` and the FK share lock saw to that), but the losing requests surfaced as `deadlock detected` 500s rather than the 422 the business rule owns |
+| **Layer** | BACKEND ONLY |
+| **Found** | `ConcurrentStockIT.paymentsCannotOverpayConcurrently` |
+| **Symptom** | Each payment transaction inserts a `payment` row (a share lock on the invoice, its FK target) and then updates the invoice (an exclusive lock). Two such transactions each hold a share lock and wait for the other's - PostgreSQL kills one |
+
+**Fix.** `addPayment` (invoice and purchase) now takes the document row
+`FOR UPDATE` first (`lockByIdAndTenantId`, PESSIMISTIC_WRITE), so payments
+against one document serialise: the second waits, re-reads the paid total
+and gets 422 PAYMENT_EXCEEDS_TOTAL or succeeds if it still fits. Eight
+simultaneous ₹600 payments on a ₹1,000 invoice: one 200, seven 422, one
+payment row, one ledger row.

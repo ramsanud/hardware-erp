@@ -213,7 +213,9 @@ public class PurchaseServiceImpl implements PurchaseService {
     @Transactional
     public PurchaseResponse addPayment(Long purchaseId, RecordPurchasePaymentRequest request) {
         Long tenantId = SecurityUtils.requireCurrentTenantId();
-        Purchase purchase = require(purchaseId, tenantId);
+        // BUG-BE-010 - row lock first; see PurchaseRepository.lockByIdAndTenantId.
+        Purchase purchase = purchaseRepository.lockByIdAndTenantId(purchaseId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Purchase", purchaseId));
 
         if (purchase.getStatus() == PurchaseStatus.CANCELLED) {
             throw new BusinessException("A cancelled purchase cannot take a payment");
