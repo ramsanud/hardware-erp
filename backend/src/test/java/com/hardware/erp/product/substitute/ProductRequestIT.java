@@ -45,7 +45,7 @@ class ProductRequestIT extends AbstractIntegrationTest {
         String body = mockMvc.perform(post("/v1/tenants/register").contentType(APPLICATION_JSON)
                         .content(json(new TenantRegistrationRequest(
                                 "Substitute Test Shop " + mobile, "Test Owner", mobile, email, password,
-                                SubscriptionTier.MAX, true, "1.0", "1.0", false))))
+                                SubscriptionTier.MAX, true, "1.0", "1.0", false, null))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         Long tenantId = tree(body).path("data").path("tenantId").asLong();
@@ -287,7 +287,7 @@ class ProductRequestIT extends AbstractIntegrationTest {
         String body = mockMvc.perform(post("/v1/tenants/register").contentType(APPLICATION_JSON)
                         .content(json(new TenantRegistrationRequest(
                                 "Basic Substitute Shop " + mobile, "Basic Owner", mobile, email, "Basic@2026",
-                                SubscriptionTier.FREE, true, "1.0", "1.0", false))))
+                                SubscriptionTier.FREE, true, "1.0", "1.0", false, null))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         Long tenantId = tree(body).path("data").path("tenantId").asLong();

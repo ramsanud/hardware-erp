@@ -42,7 +42,7 @@ class BranchStockTransferIT extends AbstractIntegrationTest {
         String body = mockMvc.perform(post("/v1/tenants/register").contentType(APPLICATION_JSON)
                         .content(json(new TenantRegistrationRequest("Branch Test Shop " + mobile.substring(5), "Owner",
                                 mobile, "owner" + mobile + "@branchtest.example", "Branch@2026",
-                                tier, true, "1.0", "1.0", false))))
+                                tier, true, "1.0", "1.0", false, null))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         Long tenantId = tree(body).path("data").path("tenantId").asLong();

@@ -46,7 +46,7 @@ class OfflineSyncIT extends AbstractIntegrationTest {
         String body = mockMvc.perform(post("/v1/tenants/register").contentType(APPLICATION_JSON)
                         .content(json(new TenantRegistrationRequest(
                                 "Sync Test Shop " + mobile.substring(5), "Owner", mobile, email, "Sync@2026",
-                                SubscriptionTier.MAX, true, "1.0", "1.0", false))))
+                                SubscriptionTier.MAX, true, "1.0", "1.0", false, null))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         Long tenantId = tree(body).path("data").path("tenantId").asLong();

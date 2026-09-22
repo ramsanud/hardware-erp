@@ -56,7 +56,8 @@ class ProductFuzzySearchIT extends AbstractIntegrationTest {
     private ProductRequest product(String code, String name) {
         return new ProductRequest(code, name, null, null, null, null, null, "PCS",
                 null, "7318", new BigDecimal("18.00"), 4_000L, 6_500L, 8_000L,
-                BigDecimal.ZERO, BigDecimal.ZERO, ProductStatus.ACTIVE, null, null);
+                BigDecimal.ZERO, BigDecimal.ZERO, ProductStatus.ACTIVE, null, null,
+                null, null, null, null, null, null, null);
     }
 
     /**
@@ -198,7 +199,7 @@ class ProductFuzzySearchIT extends AbstractIntegrationTest {
     void otherTenantSeesNothing() throws Exception {
         TenantRegistrationRequest request = new TenantRegistrationRequest(
                 "Fuzzy Search Tenant B", "Tenant B Owner", "9700096001", "fuzzy-b@example.in",
-                "TenantB@2026", null, true, "1.0", "1.0", false);
+                "TenantB@2026", null, true, "1.0", "1.0", false, null);
         mockMvc.perform(post("/v1/tenants/register").contentType(APPLICATION_JSON).content(json(request)))
                 .andExpect(status().isCreated());
         String tenantB = bearer("9700096001", "TenantB@2026");

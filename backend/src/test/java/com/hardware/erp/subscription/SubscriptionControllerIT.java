@@ -31,7 +31,7 @@ class SubscriptionControllerIT extends AbstractIntegrationTest {
         String email = "owner" + mobile + "@subtest.example";
         TenantRegistrationRequest request = new TenantRegistrationRequest(
                 tier.name() + " Test Shop", "Test Owner", mobile, email, password, tier,
-                true, "1.0", "1.0", false);
+                true, "1.0", "1.0", false, null);
         mockMvc.perform(post("/v1/tenants/register").contentType(APPLICATION_JSON).content(json(request)))
                 .andExpect(status().isCreated());
         return bearer(mobile, password);

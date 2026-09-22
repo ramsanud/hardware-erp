@@ -38,7 +38,7 @@ class InsightsIT extends AbstractIntegrationTest {
         String body = mockMvc.perform(post("/v1/tenants/register").contentType(APPLICATION_JSON)
                         .content(json(new TenantRegistrationRequest("Insights Shop " + mobile.substring(5), "Owner",
                                 mobile, "owner" + mobile + "@insightstest.example", "Insight@2026",
-                                tier, true, "1.0", "1.0", false))))
+                                tier, true, "1.0", "1.0", false, null))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return new Shop(bearer(mobile, "Insight@2026"), tree(body).path("data").path("tenantId").asLong());
