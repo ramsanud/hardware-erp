@@ -38,6 +38,7 @@ Flyway owns the schema. Hibernate is `ddl-auto: validate` and never `update`.
 | V26 | `V26__worker_payment_status.sql` | `worker_payment.status` (ACTIVE/CANCELLED) - a mistyped payment had no in-app correction (BUG-LAB-005, CR-037) | ALL |
 | V27 | `V27__backfill_labour_grants_for_registered_tenants.sql` | Data-only repair: grants `LABOUR_VIEW`/`LABOUR_MANAGE` to MANAGER/ACCOUNTANT roles of shops registered after V25, which never received them (BUG-LAB-006, CR-037). Anti-join, safe to re-run | ALL |
 | V28 | `V28__user_consent.sql` | `user_consent` - append-only record of which legal document version each user accepted; supports re-consent and marketing withdrawal, stores no IP/device data (CR-040) | ALL |
+| V64 | `V64__pg_trgm_product_search.sql` | `CREATE EXTENSION IF NOT EXISTS pg_trgm`; partial GIN trigram indexes `idx_product_name_trgm`, `idx_product_code_trgm` (CR-097). Numbered past V57–V63, claimed by branches in flight | ALL |
 | V900 | `db/seed/V900__seed_dev_data.sql` | Module 1 sample rows | DEV/TEST ONLY (CR-009) |
 | V901 | `db/seed/V901__seed_dev_supplier.sql` | 13 suppliers, 13 contacts, activity history | DEV/TEST ONLY |
 | V902 | `db/seed/V902__seed_dev_products.sql` | 12 products with opening stock, so an invoice can be raised immediately | DEV/TEST ONLY |
@@ -945,6 +946,17 @@ IS NULL AND barcode IS NOT NULL`.
 Indexes: `idx_product_tenant`, `idx_product_category`, `idx_product_brand`,
 `idx_product_status (status, deleted_at)`, and the partial
 `idx_product_active ON (product_id) WHERE deleted_at IS NULL`.
+
+CR-097 (V64) adds `pg_trgm` and two partial GIN trigram indexes,
+`idx_product_name_trgm ON (product_name gin_trgm_ops)` and
+`idx_product_code_trgm ON (product_code gin_trgm_ops)`, both `WHERE
+deleted_at IS NULL`. They serve only `ProductRepository.fuzzySearch` (the
+`<%` word-similarity operator); `tenant_id` is not in them - GIN cannot lead
+with a btree scalar without `btree_gin` - so the planner combines them with
+`idx_product_tenant`, and every query still opens with `tenant_id = ?`. On
+Supabase the extension normally pre-exists in the `extensions` schema and
+the `CREATE EXTENSION IF NOT EXISTS` is a no-op; nothing is schema-qualified
+because the postgres role's search_path already covers it.
 
 ## CR-058 — `deleted_at` / `deleted_by` behaviour, and why restore is safe
 

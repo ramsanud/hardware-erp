@@ -32,5 +32,13 @@ public record ProductSummaryResponse(
         @Schema(example = "ULP-60") String modelNo,
         @Schema(example = "8901234567890") String barcode,
         @Schema(example = "8301") String hsnCode,
-        @Schema(example = "780.00") String mrpDisplay
+        @Schema(example = "780.00") String mrpDisplay,
+        /**
+         * CR-097. Present only when the substring search found nothing and the
+         * page is pg_trgm's closest matches instead - the word_similarity of
+         * the query against the name or code, 0.0-1.0, highest first. Null on
+         * an ordinary page, so the client can tell "you asked for hammer" from
+         * "we think you meant hammer" without a second flag.
+         */
+        @Schema(example = "0.67", nullable = true) Double matchScore
 ) {}

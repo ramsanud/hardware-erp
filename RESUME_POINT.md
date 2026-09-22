@@ -1,5 +1,64 @@
 # RESUME POINT
 
+**Updated:** 2026-09-16 (**CR-097 pg_trgm product search built and verified on `feature/cr-096-pg-trgm-search`; CR-098 infrastructure stack written up as a proposal, nothing built**). `SCOPE: BOTH`. Uncommitted.
+
+## CR-097 — pg_trgm product search, and CR-098 infra proposal (2026-09-16)
+
+Branch `feature/cr-096-pg-trgm-search` in worktree
+`E:/Project/hardware-erp-search`, off `develop` (`7ec05e0`). `SCOPE: BOTH`.
+
+**Asked**: a "Principal Cloud Architect" brief — Redis, RabbitMQ, Kafka,
+MinIO/S3, Prometheus/Grafana/OTel/Jaeger, a seven-service compose file, a
+GHCR-publishing workflow, plus `pg_trgm` fuzzy search as a `V5` migration on
+`products(shop_id…)`. **Decided with the user**: build the search now, write
+the rest up as a proposal.
+
+**Built (CR-097)**: `V64__pg_trgm_product_search.sql` (extension + two
+partial GIN trigram indexes on `product_name` / `product_code`, `WHERE
+deleted_at IS NULL`); `ProductRepository.fuzzySearch` (native, `<%`
+word-similarity, `tenant_id` first, nullable filters cast, unsorted
+Pageable) with the `ProductFuzzyMatch` projection;
+`ProductServiceImpl.search` falls through to `fuzzySearch` only when the
+substring page is empty and the term is ≥ 3 chars, after `SET LOCAL
+pg_trgm.word_similarity_threshold` (config
+`app.search.fuzzy-word-similarity-threshold`, env
+`APP_SEARCH_FUZZY_THRESHOLD`, default 0.5); `ProductSummaryResponse.matchScore`
+(absent on an ordinary page); `ProductMapper.toSummary(product, hasImage,
+matchScore)` overload; TS type + a one-line "No exact matches … showing the
+closest" notice on `ProductListPage`.
+
+**Numbers, all in the worktree**: `ProductFuzzySearchIT` 7/7;
+`mvn -o clean verify` **579 unit (2 skipped, pre-existing) + 245 integration,
+0 failures**; frontend `tsc -b --force` clean, `vite build` clean to a
+private dist. Playwright not re-run (a conditional paragraph, no colour, no
+route). `static_check.py` not executed (no python3). V64 is deliberately
+past V57–V63 (claimed by `feature/cr-077-079-auth-stack` and
+`feature/cr-088-saas-platform`); dev databases apply it out of order.
+
+**Proposed only (CR-098)**: the infra stack, item by item against CR-059's
+two installations and the decisions each would reverse (bytea uploads,
+transactional audit log, one-box self-hosted). Recommendations: GHCR
+publish job — approve as a small CR; Prometheus endpoint behind
+`DEVELOPER_INSPECT` + `tenantId` in MDC — small CR; `@Async` +
+`notification_log` retry instead of RabbitMQ; Redis/Kafka/S3 — defer or
+decline as specified. Nothing built; each approved item gets its own CR.
+
+**Not committed.** The user has not asked for a commit. Stage by explicit
+pathspec when they do: the migration, `ProductRepository`,
+`ProductFuzzyMatch`, `ProductServiceImpl`, `ProductMapper`,
+`ProductSummaryResponse`, `application.yml`, `ProductFuzzySearchIT`,
+`frontend/src/modules/product/types/index.ts`, `ProductListPage.tsx`, the
+three registries and this file.
+
+**Other open threads from this session (unrelated to the branch)**: the
+Docker→Supabase data copy is prepared and blocked on the user running the
+`TRUNCATE`+load script themselves or approving it (backup at
+`backups/supabase_before_docker_copy_*.sql`, dump at
+`backups/docker_data_only_*.sql`, script in the session scratchpad); the
+Supabase database runs PostgreSQL 17, so `scripts/backup-db.sh` needs a
+`pg_dump` 17 on the machine (a `postgres:17-alpine` container works).
+
+
 **Updated:** 2026-09-21 (**CR-101 — document engine: image export, async export queue, sharing**). `SCOPE: BOTH`, migration **V65** (renumbered from V62 at consolidation - CR-091 holds V62). Branch `feature/cr-101-document-engine` from `main` (`2a582e4`), worktree `E:/Project/hardware-erp-doc` (frontend `node_modules` is a junction to `hardware-erp-fe`'s — the main checkout's is empty; `rmdir` it before `git worktree remove`).
 
 ## CR-101 — document engine extensions (2026-09-21)

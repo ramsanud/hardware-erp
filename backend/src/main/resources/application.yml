@@ -358,6 +358,15 @@ app:
     base-url: ${KEEP_ALIVE_BASE_URL:${RENDER_EXTERNAL_URL:}}
     interval-ms: 600000
 
+  # CR-097 - typo-tolerant product search (pg_trgm, V64). Runs only when the
+  # ordinary substring search finds nothing. The threshold is PostgreSQL's
+  # pg_trgm.word_similarity_threshold, applied with SET LOCAL per query:
+  # the share of the typed term's trigrams that must appear in a product's
+  # name or code. Lower is more forgiving and more noisy; 0.5 is one wrong
+  # letter in a five-letter word. Must be within (0, 1] or the SET fails.
+  search:
+    fuzzy-word-similarity-threshold: ${APP_SEARCH_FUZZY_THRESHOLD:0.5}
+
   cleanup:
     cron: "0 0 2 * * *"
     expired-token-grace-days: 7

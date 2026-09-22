@@ -90,7 +90,6 @@ Nothing is implemented from conversation memory.
 | CR-082 | 2026-09-13 | User | The approved dashboard design and app shell, implemented on tokens: shop identity card and grouped rail with a user footer, greeting eyebrow and live shop-time chip, eight KPI cards with real-series sparklines and week-over-week deltas, Quick actions and Recent actions cards. Widget titles renamed to counter-staff language. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-13** |
 | CR-083 | 2026-09-14 | User | Quotations list upgraded: four KPI cards from a new `GET /v1/quotations/stats`, status pills, date-range presets, CSV export, a row action menu (PDF, WhatsApp, convert, edit, delete), an illustrated empty state with CTAs. `DELETE /v1/quotations/{id}` for drafts only. The `status=EXPIRED` filter, which could never match (EXPIRED is computed, never stored), now works — BUG-BE-005. `SCOPE: BOTH`. | **APPLIED, 2026-09-14** |
 | CR-084 | 2026-09-15 | User | The two placeholder sparklines become measured. Pending Payments: `outstandingPaise` per bucket on the existing revenue-trend response (same invoices, `sum(balance_paise)`). Low Stock Alerts: a daily `low_stock_snapshot` per tenant (V56, scheduled job, lazily taken on first read) behind `GET /v1/analytics/low-stock-trend`. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
-| CR-085 | 2026-09-15 | User | *(claimed by the concurrent session on feature/cr-085-erp-completion — Test-SMS endpoint, DeliveryStatusService, Twilio/SendGrid status webhooks.)* | **IN PROGRESS** |
 | CR-086 | 2026-09-15 | User | Reports module: Day Book, Receivables Ageing, Stock Valuation, Purchase Register and GST Summary as tenant-scoped SQL aggregations under `GET /v1/reports/*`, each downloadable as PDF or Excel from the same figures the screen shows. Gated on `REPORT_VIEW`. Sidebar "Reports" goes live. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
 | CR-087 | 2026-09-15 | User | GSTR-1 offline-tool JSON (`b2b`, `b2cl`, `b2cs`, `cdnr`, `cdnur`, `hsn`) for a return period, and Modulo-36 GSTIN checksum validation shared by customer, supplier and shop settings on both layers. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
 | CR-096 | 2026-09-16 | User | Render free-tier keep-alive from inside the app: a scheduled self-ping of `/api/actuator/health` every 10 minutes, auto-configured from the `RENDER_EXTERNAL_URL` Render injects, off everywhere else. Complements — cannot replace — the external pingers in `docs/DEPLOYMENT.md` §4, because a scheduler inside a sleeping container cannot wake it. | **APPLIED, 2026-09-16** |
@@ -102,6 +101,8 @@ Nothing is implemented from conversation memory.
 | CR-100 | 2026-09-20 | User | Application states as one system: an `ErrorBoundary` crash screen with a copyable reference, an offline banner and a "cannot reach the server" error state, a session-expired notice on sign-in, a partial-data notice on the dashboard, `ErrorState` copy and icon keyed to the error code (403 / 404 / 429 / timeout / network), a shared `LoadingState`. Plus a public landing page at `/` (signed-out only; signed-in users still land on the dashboard) with an animated integrations card adapted from a 21st.dev component onto tokens and shipped integrations. Numbered 100 because 093/096/097/099 are held by sibling worktrees. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-20** |
 | CR-101 | 2026-09-20 | User | Document engine extensions: PNG/JPEG export from the existing report/invoice/quotation PDF pipeline, an async `report_job` queue for heavy exports (Party Statement, Day Book, GSTR-1) off the request thread, and a `ShareDispatcherService` assembling WhatsApp/email/download payloads for invoices, quotations and reports. Asked for as CR-091/V61: CR-091 and V61 are taken on `feature/cr-088-saas-platform`, so claimed as CR-101 on `main`; migration V62 is free there. `SCOPE: BOTH`. | **APPLIED, 2026-09-21** |
 | CR-085 | 2026-09-16 | User | Notification hygiene from the "missing modules" brief: a **Test SMS** endpoint and a Settings card that finally puts both `mail/test` and `sms/test` on screen; **Twilio status** and **SendGrid event** webhooks so `DELIVERED` / `READ` / `FAILED` are set for the app-wide channels, not only Meta's; one `DeliveryStatusService` holding the forward-only rule for all three. Rode along: BUG-FE-039, BUG-FE-040, BUG-BE-006. `SCOPE: BOTH`. | **APPLIED, 2026-09-16** |
+| CR-097 | 2026-09-16 | User | Typo-tolerant product search inside PostgreSQL: `pg_trgm` + partial GIN trigram indexes on `product.product_name` / `product_code` (V64). `GET /v1/products?search=` falls through to word-similarity matches only when the substring search finds nothing, each row carrying a `matchScore`; the list page says "No exact matches - showing the closest". No new endpoint, permission or infrastructure. `SCOPE: BOTH`. | **APPLIED, 2026-09-16** |
+| CR-098 | 2026-09-16 | User | Infrastructure stack proposal: Redis/Redisson, RabbitMQ, Kafka, MinIO/S3, Prometheus/Grafana/OpenTelemetry, GHCR publish. Written up item by item against the decisions it would reverse (CR-059 one-box self-hosted, bytea uploads, transactional audit log). **Nothing built** - each item needs an owner decision. | **PROPOSED 2026-09-16** |
 ---
 
 
@@ -6021,3 +6022,134 @@ Backend: `DeliveryStatusService(+Impl)`, `NotificationWebhookProperties`,
 See the commit bodies; the branch's `mvn clean verify` runs once in a
 detached worktree before the merge to `main`. `registry/static_check.py`
 **not executed** (no python3).
+
+## CR-097 — Typo-tolerant product search inside PostgreSQL (APPLIED 2026-09-16)
+
+**Raised by:** User, as the one buildable piece of a larger infrastructure
+brief (the rest is CR-098). **Type:** search quality, no new infrastructure.
+`SCOPE: BOTH`. Branch `feature/cr-096-pg-trgm-search`, worktree
+`E:/Project/hardware-erp-search`, based on `develop` (`7ec05e0`).
+
+### What was asked
+
+`pg_trgm` trigram search on the product catalogue so a mistyped term
+("towr bolt", "hammr") still finds the item, without deploying
+Elasticsearch/OpenSearch; strict tenant scoping; exact matches first with a
+transparent fallback to similarity; DTOs carrying a confidence score; an
+integration suite covering ranking, typos and cross-tenant isolation.
+
+### What the brief said and what was built instead
+
+| Brief | Built | Why |
+|---|---|---|
+| `V5__enable_pg_trgm…` | `V64__pg_trgm_product_search.sql` | V5 is applied everywhere (hard rule 1); V57–V63 are claimed by the two branches in flight on 2026-09-16 |
+| `products(shop_id, product_code)`, `shop_product_discovery` | `product(tenant_id, product_code)`; no discovery table | Naming law; the discovery table is CR-090's on another branch and does not exist on `develop` |
+| Composite trigram indexes on category/brand/size | Two partial GIN indexes: `product_name`, `product_code` | Category and brand are FKs to their own tables, `size` does not exist; the fuzzy query only ever matches name and code |
+| `SET pg_trgm.similarity_threshold` | `SET LOCAL pg_trgm.word_similarity_threshold` from `app.search.fuzzy-word-similarity-threshold` (default 0.5) | `SET`/`set_limit()` are session state and would leak through Hikari and Supabase's session pooler to the next request; `LOCAL` dies with the transaction. `word_similarity` over `similarity` because a five-letter typo against a 25-character catalogue name is diluted to nothing by plain similarity (measured: "hammr" vs "Stanley Claw Hammer 450g" is 0.67 vs 0.15) |
+| Separate `ProductSearchRepository` / `ProductCatalogSearchService` | One native query on `ProductRepository`, one private method in `ProductServiceImpl` | Extend the existing search path; a parallel service is a second place for the tenant filter to be forgotten |
+| Sanitisation against SQL injection / regex DoS | Bind parameter + whitespace collapse, 100-char cap, 3-char minimum | There is no string concatenation and `<%` is not a regex; the only real hazards were noise trigrams from double spaces and a pasted paragraph being decomposed per keystroke |
+
+### How it works
+
+`GET /v1/products?search=` is unchanged for every term the substring search
+can place. When that page has **zero** matches and the term is at least
+three characters, `ProductServiceImpl.fuzzySearch` runs
+`ProductRepository.fuzzySearch`: `tenant_id = ? AND deleted_at IS NULL AND
+(? <% product_name OR ? <% product_code)`, with the same status/category/
+brand filters, ordered by `greatest(word_similarity(name), word_similarity(code))`
+descending. The ids come back paged; the entities are loaded through the
+tenant-guarded `findAllByIdInAndTenantId`; the summary is built by the same
+`ProductMapper.toSummary` as an ordinary page, now with a `matchScore`
+(0–1). An ordinary page has no `matchScore` key at all, so the client can
+tell the two apart without a second flag. The list page prints "No exact
+matches for '…' — showing the closest product names and codes" above the
+table whenever a row carries a score.
+
+Exact never mixes with fuzzy: a page of real matches is never diluted with
+look-alikes, and a page of look-alikes is always labelled.
+
+### Where it runs
+
+`pg_trgm` is bundled with Supabase (normally pre-installed in the
+`extensions` schema, on the postgres role's search_path — the `CREATE
+EXTENSION IF NOT EXISTS` is a no-op there), with `postgres:16-alpine`
+(self-hosted, and the Testcontainers tier), and with the local
+`docker-compose.yml`. Nothing to deploy. The indexes are partial on
+`deleted_at IS NULL`, matching `Product`'s `@SQLRestriction`.
+
+### Verification
+
+- `ProductFuzzySearchIT` (7 tests, real PostgreSQL): exact page carries no
+  score and no look-alikes; "hammr" → seeded hammer, scored; "towr bolt" →
+  both Tower Bolts before the seeded hex bolt (which sits at exactly the
+  0.5 threshold — the operator is `>=`), scores descending, all in [0.5, 1];
+  "towr bolt 6in" drops the brass bolt (0.471); two characters never reach
+  pg_trgm; a soft-deleted product is not a close match (BUG-SUP-006
+  parity); a second tenant registered through the real endpoint sees
+  neither the exact name nor the typo (CR-016). Expected scores were
+  measured on PostgreSQL 16 before the assertions were written; the
+  assertions are on order and bounds, not decimals.
+- `mvn -o clean verify` in the worktree: see RESUME_POINT for the numbers.
+- Frontend `tsc -b --force` clean; `vite build` clean to a private dist.
+  Playwright suites not re-run: the only UI change is a conditional
+  paragraph with no colour and no new route.
+- `python3 registry/static_check.py`: **not executed** (no python3 here).
+
+### Tuning
+
+`APP_SEARCH_FUZZY_THRESHOLD` (default 0.5). PostgreSQL's own default is
+0.6. Lower is more forgiving and noisier; 0.5 admits one wrong letter in a
+five-letter word ("hamer" → Hammer, 0.625) without "belt" reaching "bolt"
+(0.4). An out-of-range value fails the `SET` on the first fuzzy query
+rather than silently widening the search.
+
+## CR-098 — Infrastructure stack proposal: Redis, RabbitMQ, Kafka, S3, tracing, GHCR (PROPOSED 2026-09-16)
+
+**Raised by:** User, as a "Principal Cloud Architect" brief asking for the
+full set of `@Configuration` classes, workers, a seven-service
+`docker-compose.infra.yml`, Prometheus/Grafana/Jaeger, and a GHCR-publishing
+workflow. **Type:** deployment topology. **Nothing has been built.** This
+entry records what each item would buy, what it would cost on the two
+supported installations, and which recorded decision it reverses, so the
+owner can approve or cut items individually. Anything approved becomes its
+own CR with its own number.
+
+### The two installations this has to fit (CR-059)
+
+- **CLOUD** — one Spring Boot process on Render's free tier, Supabase free
+  tier as the database, Vercel for the frontend. No always-on worker
+  budget; the health probe is the only thing that keeps the container warm.
+- **SELF_HOSTED** — the client's own Docker box: `docker-compose.selfhosted.yml`
+  = the app + one PostgreSQL container, LAN address, no internet
+  dependency. Backed up with `scripts/backup-db.sh` (one `pg_dump`).
+
+Every item below adds a process to *both* of those, or a second data store
+that `backup-db.sh` does not cover.
+
+### Item by item
+
+| # | Item | What it would buy | What exists today | Cost / reversal | Recommendation |
+|---|---|---|---|---|---|
+| 1 | **Redis + Redisson** — product cache, distributed locks, sliding-window rate limiter | Faster repeated catalogue reads; locks that survive a multi-instance deploy; rate limits shared across instances | In-process rate limiter (`RateLimitFilter`, `app.rate-limit.*`); stock and document numbers serialised with `SELECT … FOR UPDATE` (CR-041); no cache — a catalogue read is one indexed query | A second stateful service on the self-hosted box and a paid add-on on Render; locks and limits become wrong the moment Redis is unreachable; nothing today runs more than one app instance, which is the only case that needs any of it | **Defer** until a second app instance is actually planned. If the goal is catalogue read speed, measure first: CR-097's indexes and `idx_product_tenant` are what a single shop's reads hit |
+| 2 | **RabbitMQ** — PDF generation, WhatsApp/SMS alerts, push, as queued jobs with DLQs | A slow PDF or a Twilio timeout no longer holds the request thread; retries with a dead-letter parking lot | PDFs are rendered in-process on request (`InvoicePdfService`, `QuotationPdfService`); email/SMS go out synchronously through the provider interfaces with a `notification_log` row (`SENT`/`LOGGED_ONLY`/`FAILED`); scheduled work logs to `job_execution_log` | Broker on both installations; a second thing to back up and monitor; Render free tier has no worker dyno, so the consumer would run inside the web process anyway — at which point `@Async` with a bounded executor and the existing `notification_log` as the retry ledger gives the same decoupling with no broker | **Alternative, smaller CR**: `@Async` + `notification_log`-driven retry for outbound messages. Broker only if a real worker tier is funded |
+| 3 | **Kafka (KRaft)** — `InvoiceIssuedEvent`, `StockMovementRecordedEvent`, audit stream, idempotent producer, audit consumer | An immutable event log other systems could subscribe to | `activity_log` and `security_audit_log` are written **in the same transaction** as the business change (hard rule 8, CR-015/CR-072): an invoice and its audit row commit or roll back together | A Kafka-backed audit is eventually consistent and can lose the audit row of a committed write (or record one for a rolled-back write) unless an outbox table is added — which is a PostgreSQL table, not Kafka. Kafka on a self-hosted client box is the single heaviest process in the stack, for zero subscribers | **Decline as specified.** If an integration ever needs events, do the transactional outbox (`domain_event` table, same commit) first; the transport can be chosen then |
+| 4 | **MinIO (dev) / S3 (prod)** — private bucket, 15-minute pre-signed URLs | Cheaper large-blob storage; CDN-able | Uploads are `bytea` in PostgreSQL by explicit decision (`application-cloud.yml` header; V11/V13; `purchase_document` 20 MB cap): one store, one backup, one tenant filter | Reverses a recorded decision; splits the backup into two systems; pre-signed URLs bypass the JWT permission check that guards every image endpoint today; Supabase Storage would be the natural S3 on CLOUD, but SELF_HOSTED has no S3 unless MinIO is shipped in the client box | **Defer**; revisit only if blob volume becomes a Supabase-plan problem, and then as "Supabase Storage on CLOUD, bytea stays on SELF_HOSTED" behind the existing provider-interface pattern |
+| 5 | **Prometheus + Grafana, OpenTelemetry agent + Jaeger** | Dashboards on JVM/Hikari/HTTP metrics; per-request traces with `tenant_id` | Actuator present; `prod` exposes `health` only (security posture); `requestId` already in MDC and every log line; `job_execution_log` for scheduled work | `/actuator/prometheus` must stay off the public origin (Render exposes one port) — needs an auth-gated scrape or a sidecar; three more containers on the self-hosted box that the client will not look at; the OTel agent adds ~100 MB RSS on a 512 MB Render dyno | **Partial, cheap CR**: add `micrometer-registry-prometheus`, expose `/actuator/prometheus` gated by `DEVELOPER_INSPECT` (the CR-045 gate already covers actuator), add `tenantId` to MDC next to `requestId`. Grafana/Jaeger stay optional profiles, not part of either installation |
+| 6 | **GitHub Actions**: Maven cache, Flyway validation, tests, multi-stage Docker → GHCR | Reproducible image per commit | `ci.yml` already: `setup-java` with Maven cache, `mvn -B clean verify` (Testcontainers runs every migration), frontend typecheck + build, secret scan; `backend/Dockerfile` exists | Only the GHCR push is missing. It is the one item with no topology cost | **Approve as its own small CR**: a `publish` job on tags → `ghcr.io/<org>/hardware-erp:<tag>`, consumed by `docker-compose.selfhosted.yml` instead of a local build |
+| 7 | **`docker-compose.infra.yml`** with all seven services | One command to bring up the whole stack locally | `docker-compose.yml` (dev DB) and `docker-compose.selfhosted.yml` (client box) | A third topology nobody deploys; every service in it that is not in the other two files is dead weight until its item above is approved | **Not separately** — grows out of whichever items are approved |
+
+### Also in the brief, and not negotiable here
+
+- `shop_id` — the column is `tenant_id` in 50+ foreign keys, the JWT claim
+  and every repository query (naming law, CR-016). Any new table follows it.
+- "Modular monolith, no microservices" — agreed, and already the case.
+- `BigDecimal` money — money is `BIGINT` paise here (naming law); rates are
+  `DECIMAL(18,6)`. Not changing.
+
+### What would need to be true to build items 1–4
+
+A funded worker tier on CLOUD (Render paid plan or equivalent) **and** a
+decision that the self-hosted product may ship as a multi-container stack
+with its own backup procedure for each store. Until both are true, each of
+those items is a service the client's box has to run for a benefit the
+single-instance app cannot show.
