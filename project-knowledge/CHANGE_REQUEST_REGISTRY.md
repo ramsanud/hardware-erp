@@ -90,11 +90,20 @@ Nothing is implemented from conversation memory.
 | CR-082 | 2026-09-13 | User | The approved dashboard design and app shell, implemented on tokens: shop identity card and grouped rail with a user footer, greeting eyebrow and live shop-time chip, eight KPI cards with real-series sparklines and week-over-week deltas, Quick actions and Recent actions cards. Widget titles renamed to counter-staff language. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-13** |
 | CR-083 | 2026-09-14 | User | Quotations list upgraded: four KPI cards from a new `GET /v1/quotations/stats`, status pills, date-range presets, CSV export, a row action menu (PDF, WhatsApp, convert, edit, delete), an illustrated empty state with CTAs. `DELETE /v1/quotations/{id}` for drafts only. The `status=EXPIRED` filter, which could never match (EXPIRED is computed, never stored), now works — BUG-BE-005. `SCOPE: BOTH`. | **APPLIED, 2026-09-14** |
 | CR-084 | 2026-09-15 | User | The two placeholder sparklines become measured. Pending Payments: `outstandingPaise` per bucket on the existing revenue-trend response (same invoices, `sum(balance_paise)`). Low Stock Alerts: a daily `low_stock_snapshot` per tenant (V56, scheduled job, lazily taken on first read) behind `GET /v1/analytics/low-stock-trend`. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
-| CR-085 | 2026-09-15 | User | *(claimed by the concurrent session on feature/cr-085-erp-completion — Test-SMS endpoint, DeliveryStatusService, Twilio/SendGrid status webhooks.)* | **IN PROGRESS** |
 | CR-086 | 2026-09-15 | User | Reports module: Day Book, Receivables Ageing, Stock Valuation, Purchase Register and GST Summary as tenant-scoped SQL aggregations under `GET /v1/reports/*`, each downloadable as PDF or Excel from the same figures the screen shows. Gated on `REPORT_VIEW`. Sidebar "Reports" goes live. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
 | CR-087 | 2026-09-15 | User | GSTR-1 offline-tool JSON (`b2b`, `b2cl`, `b2cs`, `cdnr`, `cdnur`, `hsn`) for a return period, and Modulo-36 GSTIN checksum validation shared by customer, supplier and shop settings on both layers. `SCOPE: BOTH`. | **APPLIED, 2026-09-15** |
 | CR-096 | 2026-09-16 | User | Render free-tier keep-alive from inside the app: a scheduled self-ping of `/api/actuator/health` every 10 minutes, auto-configured from the `RENDER_EXTERNAL_URL` Render injects, off everywhere else. Complements — cannot replace — the external pingers in `docs/DEPLOYMENT.md` §4, because a scheduler inside a sleeping container cannot wake it. | **APPLIED, 2026-09-16** |
+| CR-088 | 2026-09-15 | User | SaaS subscription plans & feature gating: `subscription_plan` (BASIC ₹299 / PRO ₹599 / PREMIUM ₹999, INR, monthly, prices in the table, mapped onto the locked `SubscriptionTier` FREE/PRO/MAX), `feature` + `plan_feature` catalogue, `tenant_subscription` (TRIAL/ACTIVE/PAST_DUE/EXPIRED/CANCELLED/SUSPENDED, gateway references), `subscription_usage` metering for WhatsApp/SMS/email/AI. Central `FeatureAccessService.requireFeature()` → 403 `FEATURE_NOT_AVAILABLE` with current/required plan. `/v1/subscriptions/*`, `/v1/features/{key}/access`. Pricing page + upgrade dialog + locked sidebar entries. `SCOPE: BOTH`, migration V59. Worktree `hardware-erp-saas`, branch `feature/cr-088-saas-platform`. | **APPLIED, 2026-09-16** |
+| CR-089 | 2026-09-15 | User | Smart Substitute Product Suggestion (PREMIUM): structured product attributes, `product_relationship` manual mappings, `product_request` + `product_request_suggestion` audit, rule-based + manual-mapping strategies behind `RecommendationStrategy`, configurable weights/threshold, pg_trgm fuzzy name match, compare/select flow. `SCOPE: BOTH`, migration V60. | **APPLIED, 2026-09-16** |
+| CR-090 | 2026-09-15 | User | Owner-side Nearby Product Discovery (PREMIUM, opt-in, OFF by default): `shop_discovery_setting` consent flags + coordinates + radius, Haversine radius search over opted-in shops' availability (Available/Likely/Unavailable, never quantities or prices), `product_request_discovery_match`, owner-only notification, Call/WhatsApp contact with only the permitted fields. Consent changes audited. `SCOPE: BOTH`, migration V61. | **APPLIED, 2026-09-16** |
+| CR-091 | 2026-09-15 | User | Critical business logic completion: CGST/SGST/IGST split per line & invoice with place of supply frozen on the invoice; invoice cancellation reason/by/at; `customer_ledger_entry` (invoice, payment, credit note, cancellation) with statement + ageing computed from the ledger; weighted-average cost frozen on each invoice line (`cost_price_paise`) and a revenue/COGS/gross/expenses/net profit endpoint; offline sync (`sync_transaction`, client UUID idempotency, conflict detection) with an IndexedDB outbox on the frontend. `SCOPE: BOTH`, migration V62. | **APPLIED, 2026-09-21** |
+| CR-092 | 2026-09-15 | User | PREMIUM growth pack: multi-branch (`branch`, `branch_stock`, stock transfer, branch-wise sales/purchases/users/reports), smart insights (slow-moving, overstock, reorder, demand trend, frequently-bought-together, pricing insight — all measured), daily business summary notification, tenant backup history + on-demand export snapshot. `SCOPE: BOTH`, migration V63. | **APPLIED, 2026-09-21** |
 | CR-100 | 2026-09-20 | User | Application states as one system: an `ErrorBoundary` crash screen with a copyable reference, an offline banner and a "cannot reach the server" error state, a session-expired notice on sign-in, a partial-data notice on the dashboard, `ErrorState` copy and icon keyed to the error code (403 / 404 / 429 / timeout / network), a shared `LoadingState`. Plus a public landing page at `/` (signed-out only; signed-in users still land on the dashboard) with an animated integrations card adapted from a 21st.dev component onto tokens and shipped integrations. Numbered 100 because 093/096/097/099 are held by sibling worktrees. `SCOPE: FRONTEND ONLY`. | **APPLIED, 2026-09-20** |
+| CR-101 | 2026-09-20 | User | Document engine extensions: PNG/JPEG export from the existing report/invoice/quotation PDF pipeline, an async `report_job` queue for heavy exports (Party Statement, Day Book, GSTR-1) off the request thread, and a `ShareDispatcherService` assembling WhatsApp/email/download payloads for invoices, quotations and reports. Asked for as CR-091/V61: CR-091 and V61 are taken on `feature/cr-088-saas-platform`, so claimed as CR-101 on `main`; migration V62 is free there. `SCOPE: BOTH`. | **APPLIED, 2026-09-21** |
+| CR-085 | 2026-09-16 | User | Notification hygiene from the "missing modules" brief: a **Test SMS** endpoint and a Settings card that finally puts both `mail/test` and `sms/test` on screen; **Twilio status** and **SendGrid event** webhooks so `DELIVERED` / `READ` / `FAILED` are set for the app-wide channels, not only Meta's; one `DeliveryStatusService` holding the forward-only rule for all three. Rode along: BUG-FE-039, BUG-FE-040, BUG-BE-006. `SCOPE: BOTH`. | **APPLIED, 2026-09-16** |
+| CR-097 | 2026-09-16 | User | Typo-tolerant product search inside PostgreSQL: `pg_trgm` + partial GIN trigram indexes on `product.product_name` / `product_code` (V64). `GET /v1/products?search=` falls through to word-similarity matches only when the substring search finds nothing, each row carrying a `matchScore`; the list page says "No exact matches - showing the closest". No new endpoint, permission or infrastructure. `SCOPE: BOTH`. | **APPLIED, 2026-09-16** |
+| CR-098 | 2026-09-16 | User | Infrastructure stack proposal: Redis/Redisson, RabbitMQ, Kafka, MinIO/S3, Prometheus/Grafana/OpenTelemetry, GHCR publish. Written up item by item against the decisions it would reverse (CR-059 one-box self-hosted, bytea uploads, transactional audit log). **Nothing built** - each item needs an owner decision. | **PROPOSED 2026-09-16** |
+| CR-102 | 2026-09-22 | Claude (consolidation audit) | Financial idempotency: `POST /v1/invoices`, `/v1/invoices/{id}/payments`, `/v1/purchases`, `/v1/purchases/{id}/payments` honour an `Idempotency-Key` through the existing CR-051 `IdempotencyService` (credit notes, sales orders and challans already did); the frontend sends one key per attempted write (`useIdempotencyKey`) so a retry after a lost response can never create a second invoice, payment or receipt. `SCOPE: BOTH`, no migration. | **APPLIED, 2026-09-22** |
 ---
 
 
@@ -5398,6 +5407,364 @@ Full `mvn -o clean verify` on the branch worktree: **599 unit (0 F, 2
 skipped) + 238 IT (0 F)**, BUILD SUCCESS. The built jar booted under
 `prod,cloud` four ways — see `RESUME_POINT.md` for the observed log lines.
 `static_check.py` not executed (no python3).
+---
+
+## CR-088 — SaaS subscription plans & feature gating (2026-09-16, APPLIED)
+
+**Raised by:** User (the "Hardware ERP — SaaS Subscription Plans & Feature
+Gating" brief). **Type:** new cross-cutting subsystem, both layers.
+`SCOPE: BOTH`, migration **V59**. Worktree `hardware-erp-saas`, branch
+`feature/cr-088-saas-platform`.
+
+### What it is
+
+BASIC (₹299) / PRO (₹599) / PREMIUM (₹999) as real, database-driven plans —
+price, tagline, feature membership and metered-usage limits are rows
+(`subscription_plan`, `feature`, `plan_feature`, `plan_usage_limit`), not
+constants scattered through the code. `tenant.subscription_tier` (V15,
+locked FREE/PRO/MAX, CR-027) is **unchanged in shape** and maps 1:1 onto the
+three plans; CR-088 layers status (TRIAL/ACTIVE/PAST_DUE/EXPIRED/CANCELLED/
+SUSPENDED), trial/renewal/cancellation dates, gateway references and metered
+usage around it in a new `tenant_subscription` row, plus an append-only
+`subscription_history`.
+
+### Central gate, not a scattered `if`
+
+`FeatureAccessService.requireFeature(FeatureKey)` is the one place any
+backend code checks plan access — `POST /v1/ai/chat` is the first (and only,
+so far) consumer, moved off the old ordinal `SubscriptionService
+.requireTier(MAX)` onto `FeatureKey.AI_FEATURES`. A refusal is `403
+FEATURE_NOT_AVAILABLE` carrying `featureKey`/`currentPlanCode`/
+`requiredPlanCode` in the error body's `errors` map, which the frontend's
+`UpgradeDialog` renders directly — proactively via `GET /v1/features/
+{key}/access` too, so the dialog can appear before a 403 ever happens.
+Frontend hiding (a sidebar lock badge, `useFeatureGate`) is UX only; every
+claim is proven against the raw API in `SubscriptionControllerIT`, not the
+UI.
+
+### Usage metering (spec §15 — "do not promise unlimited usage")
+
+`UsageTrackingService.tryConsume()`/`consumeOrThrow()` atomically increments
+`subscription_usage` in one `INSERT … ON CONFLICT DO UPDATE … WHERE
+used_count + :units <= :includedCount` — two concurrent sends cannot both
+squeeze under the limit, and the counter is never a read-then-write in Java.
+Wired into `NotificationServiceImpl.attempt()` (WhatsApp/SMS/email, logged
+`QUOTA_EXCEEDED` when refused rather than silently retried) and
+`AiChatService.reply()` (AI requests, `429 USAGE_LIMIT_REACHED`) — both
+checked **before** the paid provider is ever called.
+
+### The single writer, kept honest across four call sites
+
+`SubscriptionLifecycleServiceImpl.applyTier()` / `startForNewTenant()` are
+now the only code that sets `tenant.subscription_tier`. Four existing call
+sites that used to write it directly were changed to call in instead:
+the CR-027 Shop Settings picker, CR-032's trial-coupon redemption, CR-057's
+Razorpay payment verification, and tenant registration (both the trial path
+and the legacy explicit-tier field). `applyTier()` is plain `@Transactional`
+(not `REQUIRES_NEW`) precisely so registration's brand-new tenant row and
+its first subscription row commit together — a `REQUIRES_NEW` there would
+try to FK-reference a tenant its own suspended transaction cannot see yet.
+Only `currentFor()`'s lazy TRIAL/PAST_DUE/EXPIRED transition (mirroring
+CR-032's own `SubscriptionServiceImpl.currentTier()` precedent) uses
+`REQUIRES_NEW`, because it alone runs from `readOnly` callers.
+
+### A real bug, caught by the IT and not the unit tests
+
+`TenantSubscription.plan` is lazy; the `REQUIRES_NEW` transition above
+handed a lazy proxy back across a session boundary, throwing
+`LazyInitializationException` on the very first `POST /v1/ai/chat` an
+integration test made. The unit tests (mocked repositories) never exercise
+a real Hibernate session and could not have caught it. Fixed with `JOIN
+FETCH` in `TenantSubscriptionRepository.findByTenantId` — see
+`project-knowledge/DATABASE_REGISTRY.md`'s V59 entry for the write-up.
+
+### Verified
+
+Backend: `FeatureAccessServiceImplTest` (6), `UsageTrackingServiceImplTest`
+(5), `SubscriptionLifecycleServiceImplTest` (8), `SubscriptionControllerIT`
+(8 — Basic/Pro → 403 on a Premium-only API, Premium → 200, tenant isolation,
+public plans catalogue, self-service upgrade, unauthenticated → 401). Full
+`mvn clean verify` on this exact tree: **601 unit + 242 integration, BUILD
+SUCCESS** (2026-09-16). Frontend: `tsc -b --force` clean, `vite build`
+clean, `node tests/run.mjs` **272/272** (all pre-existing suites, no
+regression — the new Subscription page has no dedicated Playwright suite
+yet).
+
+### Deliberately not built in this pass
+
+Per the brief's own §26 ("keep the system compatible with future scaling"),
+several items from the original prompt are architecturally supported but
+not wired end-to-end yet, recorded here rather than silently dropped:
+platform-admin price/feature editing UI (the tables support it; no console
+screen was built), a real payment-gateway-driven `renewal_at` recurrence
+(CR-057's Razorpay integration remains one-off checkout, matching its own
+documented scope), and sidebar lock badges on features that do not exist
+yet (Smart Substitute, Nearby Discovery, Multi-Branch — see CR-089/090/092).
+
+---
+
+## CR-089 — Smart Substitute Product Suggestion (2026-09-16, APPLIED)
+
+**Raised by:** User (the "Smart Substitute Product Suggestion" brief).
+**Type:** new PREMIUM feature, both layers. `SCOPE: BOTH`, migration
+**V60**. Branch `feature/cr-088-saas-platform`.
+
+### What it is
+
+When a customer asks for something the shop is out of, the counter records
+the request and the owner sees in-stock alternatives from the shop's **own**
+catalogue - manually defined mappings first, then a rule-based attribute
+score - with a plain-English reason for each, a compare view, and a
+"select" that records the owner's decision. Never customer-facing, never an
+automatic substitution on an invoice: the engine only ever says "these may
+be suitable" (§24), and selecting an alternative touches no billing record
+(`ProductRequestIT.selectingAnAlternativeResolvesTheRequest` asserts the
+invoice count stays zero).
+
+### Design
+
+- **Strategy pattern, no AI dependency.** `RecommendationStrategy` with
+  `ManualMappingRecommendationStrategy` (priority 10) and
+  `RuleBasedRecommendationStrategy` (priority 100);
+  `SubstituteRecommendationServiceImpl` runs them in order, keeps the first
+  suggestion per product, applies the owner's threshold / budget rule /
+  limit, and persists the set. An AI strategy is a third bean, nothing above
+  it changes (§18).
+- **Weights in one place.** `app.substitute.scoring.*`
+  (`SubstituteScoringProperties`, brief's own 30/20/20/15/5/5/5/10 = 110);
+  the scorer holds no literal. Bands 90+/75/60/40 per §7.
+- **Narrow in SQL first (§22).** `ProductRepository.findSubstituteCandidates`
+  applies same-category-or-same-type, ACTIVE, stock ≥ requested quantity
+  and "never the requested product" before a row is scored in Java.
+- **Blank ≠ match.** A missing attribute on either side scores nothing;
+  comparison is case/whitespace-insensitive. A zero-priced requested product
+  gives nothing away on price similarity.
+- **COMPATIBLE is not a substitute.** `RelationshipType.isSubstitute()`
+  excludes it - a compatible product goes *with* the requested one, and
+  offering it instead is the unsafe substitution §16 warns about.
+- **`pg_trgm`** installed by V60 with a GIN index on `product_name`;
+  `findByNameSimilarity` is a separate method so the counter's exact
+  code/barcode search stays exact.
+- **Two new permissions** (`PRODUCT_REQUEST_VIEW`/`_MANAGE`); mappings reuse
+  `PRODUCT_MANAGE` and are deliberately not plan-gated.
+
+### A real bug the IT caught
+
+The first cut sorted the final list by score alone. A near-identical
+lookalike can reach 110 while a manual mapping is fixed at 100, so
+`ProductRequestIT.manualMappingOutranksSimilarity` failed on its first run:
+the owner's own "this is the replacement" sorted below a generic match -
+the opposite of §17. The sort is now source first (`SuggestionSource
+.rank()`, the same numbers the strategies' `priority()` returns so the two
+cannot drift), score second. The nine scorer unit tests were all green
+throughout; this was a property of the orchestration only a real run
+exposed.
+
+### Also caught
+
+`@Pattern(regexp = "^$|^[6-9]\d{9}$")` - the exact illegal-Java-escape trap
+RESUME_POINT recorded for CR-078's WIP. Fixed to `\d` before it reached a
+commit.
+
+### Honest deviations
+
+- "Available = physical − reserved − pending allocation" assumes a
+  reservation mechanism that does not exist (Sales Order never reserves
+  stock, CR-052). Availability is the real `stock.quantity_on_hand`.
+- The seven attribute fields are accepted by `POST/PUT /v1/products` and
+  returned in `ProductResponse`, and the substitute screens render them,
+  but the React product *form* does not yet expose inputs for them - a
+  small follow-up. The engine, mappings, requests, compare and select are
+  complete.
+- `GET /v1/products/{id}/alternatives` is served as
+  `…/alternative-mappings`, named for what it returns.
+
+### Verified
+
+`RuleBasedRecommendationStrategyTest` 9/9, `ProductRequestIT` 8/8 (real
+PostgreSQL, includes the `pg_trgm` migration, Basic → 403, tenant
+isolation with no customer-detail leak). Frontend `tsc -b --force` clean,
+`vite build` clean, `tests/run.mjs` 272/272. Full `mvn clean verify` result
+recorded in RESUME_POINT.
+
+---
+
+## CR-090 — Owner-side Nearby Product Discovery (2026-09-16, APPLIED)
+
+**Raised by:** User (the "Owner-Side Nearby Product Discovery / Product
+Sourcing" brief). **Type:** new PREMIUM feature, both layers. `SCOPE:
+BOTH`, migration **V61**. Branch `feature/cr-088-saas-platform`.
+
+### What it is
+
+When a shop is out of what a customer asked for (a CR-089 product
+request), the **owner** can search nearby participating shops and see, per
+shop, only what that shop chose to share: "Available"/"Likely available",
+optionally its name, phone (Call / WhatsApp) and "about N km". The customer
+sees nothing; there is no customer-facing surface. Opt-in, every flag off by
+default, double-confirmed on the way on, one click off, audited.
+
+### Why the privacy claims are structural
+
+The search is a hand-written native query whose SELECT list *is* the
+consent policy (`ShopDiscoveryRepository`): a field a shop did not consent
+to is never read; nothing but the availability bucket and the matched name
+is ever selected; zero-stock shops are absent rather than "Unavailable";
+one row per shop; never the requester; coordinates live on the consent row
+(with a `CHECK` forbidding enabled-without-location) rather than on
+`tenant`; disabling clears every sub-flag; a shop that is not in the
+network cannot search it (reciprocity); the customer's details are never in
+the search, the snapshot, the notification or the wa.me link. Full table in
+`docs/NEARBY_PRODUCT_DISCOVERY.md`, each row mapped to the line of SQL or
+schema that enforces it and the `ShopDiscoveryIT` case that proves it.
+
+### Caught by the IT on its first run
+
+`could not determine data type of parameter $3` - an untyped JDBC NULL for
+the nullable `model_no`/`manufacturer_code` parameters in `? IS NOT NULL`.
+PostgreSQL cannot infer the type; fixed with `CAST(? AS VARCHAR)` at all
+four sites. Five of eight tests hit it; the three that never reach the SQL
+(no-location, non-participant, Basic refused) were already green.
+
+### Honest deviations
+
+Approximate location is a distance, never a rounded pin (strictly less
+leakage than the brief allows). PostGIS not introduced - Haversine over
+the partial index is milliseconds at hundreds of shops; noted for scale.
+The owner alert is in-app only in this pass; push/WhatsApp/email delivery
+of it belongs with CR-092's notification work, metered by CR-088.
+
+### Verified
+
+`ShopDiscoveryIT` 8/8. Full `mvn clean verify` on this exact tree: **610
+unit + 266 integration, BUILD SUCCESS**. Frontend `tsc -b --force` clean,
+`vite build` clean, `tests/run.mjs` 272/272.
+
+## CR-091 — Critical business logic: GST split, ledger, frozen cost, profit, offline sync (2026-09-21, APPLIED)
+
+**Raised by:** User (the "Critical Business Logic Implementation Plan"
+brief, phases 1-10). **Type:** correctness + new endpoints, both layers.
+`SCOPE: BOTH`, migration **V62**. Branch `feature/cr-088-saas-platform`.
+
+### What it is
+
+Four rules that lived in conventions are now columns and one code path
+each, plus offline invoice sync. `docs/BUSINESS_RULES_GST_STOCK_LEDGER_PROFIT.md`
+maps every rule to the code and the IT that proves it; `docs/OFFLINE_SYNC.md`
+covers the outbox.
+
+- **GST split** - `GstSplit` (place of supply: customer state → GSTIN
+  prefix → shop state; INTRA halves, INTER whole IGST; SGST = GST − CGST so
+  halves always sum). Stored per invoice and per line; V62 backfilled.
+- **Cost frozen at sale** - `StockService.applyPurchaseReceipt()` keeps a
+  weighted average on `stock.average_cost_paise`; each invoice line freezes
+  `cost_price_paise` at sale. Profit reads the frozen figure, never today's
+  purchase price.
+- **Invoice cancellation** needs a reason; `cancelled_at/by/reason` kept and
+  shown; the ledger is reversed.
+- **Customer ledger** - append-only `customer_ledger_entry`, idempotent by
+  `UNIQUE (tenant, entry_type, reference_type, reference_id)`; balance,
+  statement, ageing (0-30/31-60/61-90/90+ from invoice date), manual
+  adjustment (PAYMENT_MANAGE, reason mandatory, activity-logged). Backfilled
+  from every existing invoice/payment/credit note/cancellation.
+- **Profit** - `GET /v1/analytics/profit` (REPORT_FINANCIAL): revenue −
+  returns − frozen COGS − expenses. Frontend page under Accounting.
+- **Offline sync** - `POST /v1/sync/transactions` (INVOICE_CREATE), one
+  batch, one outcome per row, client-UUID idempotent, conflicts recorded
+  never silently retried. Frontend IndexedDB outbox, `/sync` page, auto-sync
+  on the `online` event, invoice create falls back to the queue only on
+  NETWORK_ERROR/TIMEOUT.
+
+### Two production bugs the ITs found (both the BUG-BE-002 species)
+
+1. `UnexpectedRollbackException` on any conflicting sync row:
+   `InvoiceServiceImpl.create()` (plain `@Transactional`) joined the
+   executor's REQUIRES_NEW transaction and, on INSUFFICIENT_STOCK, marked it
+   rollback-only before the catch ran; the CONFLICT row was then discarded at
+   commit and the whole batch returned 500. Fixed by running the attempt in
+   `SyncInvoiceCreator`'s own REQUIRES_NEW and leaving the executor
+   non-transactional. `OfflineSyncIT.insufficientStockAtSyncTimeIsAConflictNotASilentRetry`.
+2. **CR-088 regression, pre-existing on this branch:** every automatic
+   customer notification (`@Async notifyInvoiceCreated`) died with
+   `TransactionRequiredException` before reaching the provider, because
+   `UsageTrackingServiceImpl.tryConsume(tenant, key)` self-invoked the
+   REQUIRES_NEW three-arg overload, bypassing the proxy. Fixed by annotating
+   the two-arg overload too. It was logged as "Async method
+   notifyInvoiceCreated failed" on every invoice created in every IT run.
+
+### Honest deviations / pending
+
+"Available = Physical − Reserved − Pending Allocation" is not implemented:
+nothing in this system reserves stock, so availability is
+`stock.quantity_on_hand` (rule 12 - no invented numbers). Offline sync is
+INVOICE only, no cached catalogue, no service worker (the brief's own
+recommended first scope; the mobile brief excludes PWA/offline). No
+Playwright spec drops the network yet - the outbox is exercised by
+`OfflineSyncIT` server-side and manually client-side.
+
+### Verified
+
+`mvn clean verify` on this exact tree: **616 unit + 271 integration, BUILD
+SUCCESS** (new: `GstSplitTest` 6, `CustomerLedgerIT` 2, `ProfitHistoricalCostIT` 1,
+`OfflineSyncIT` 2). Frontend `tsc -b --force` clean, `vite build` clean,
+`tests/run.mjs` **272/272** against a private `dist-cr091/`.
+`registry/static_check.py`: not executed (no python3 on this machine).
+
+## CR-092 — Premium growth pack: multi-branch, smart insights, daily summary, backups (2026-09-21, APPLIED)
+
+**Raised by:** User (the SaaS brief's PREMIUM tier). **Type:** new
+features, both layers. `SCOPE: BOTH`, migration **V63**. Branch
+`feature/cr-088-saas-platform`. Full write-up: `docs/PREMIUM_GROWTH_PACK.md`.
+
+### What it is
+
+- **Multi-branch** (`MULTI_BRANCH`): `branch` master with exactly one MAIN
+  per tenant (backfilled; a tenant trigger creates it for new ones);
+  `branch_id` on invoice / purchase / stock_movement / app_user, stamped
+  server-side from the acting user (never a request field); `branch_stock`
+  as a measured breakdown of `stock` maintained by the same movement code
+  (sums to the shop; may go negative and says so); `stock_transfer`
+  documents with OUT/IN movements, the one place the breakdown is enforced;
+  branch-wise summary. **Availability stays the shop's `stock` row** - see
+  the doc for why re-keying it is its own CR.
+- **Smart insights** (`SMART_INSIGHTS`, REPORT_VIEW): slow-moving,
+  overstock, reorder, demand trend, bought together, pricing (+
+  PRODUCT_VIEW_COST) - each a count/sum/ratio over recorded rows; empty
+  windows say why.
+- **Daily summary**: 20:30 IST job, in-app notification for every shop,
+  owner's WhatsApp/email with `ADVANCED_NOTIFICATIONS`, metered; preview
+  and send-now endpoints.
+- **Backups** (`BACKUP_MANAGE`, nightly with `AUTO_BACKUP`): `tenant_backup`
+  with the snapshot bytes, on-demand + 01:30 IST job, pruned to 7, reusing
+  the CR-057 export via a new `buildSnapshot()`.
+- Permissions `BRANCH_VIEW` (all roles), `STOCK_TRANSFER_MANAGE` (owner,
+  manager), `BRANCH_MANAGE` and `BACKUP_MANAGE` (owner); `DocumentType
+  .STOCK_TRANSFER`; `MovementType.STOCK_TRANSFER_OUT/IN`.
+- Frontend: Branches page (list, create/edit, stock by branch, transfers),
+  Smart insights page (six tabs), Backups & daily summary card in Shop
+  settings.
+
+### Caught on the way
+
+`ddl-auto: validate` refused `CHAR(2)`/`CHAR(6)` on `branch` against the
+entity's `String` (Tenant uses `VARCHAR`; V63 now does too). The seed
+(V902) inserts `stock_movement` without a branch after V63 - the
+`branch_default_main()` trigger resolves it to MAIN rather than editing an
+applied seed.
+
+### Pending, by scope
+
+Branch-keyed availability; a Users-page control for `PUT /v1/branches/users/{id}`;
+in-transit transfers; per-user summary recipients; images in backups; object
+storage for snapshots. All listed in `docs/PREMIUM_GROWTH_PACK.md`.
+
+### Verified
+
+`mvn clean verify` on this exact tree: **616 unit + 279 integration, BUILD
+SUCCESS** (new: `BranchStockTransferIT` 3, `InsightsIT` 2, `TenantBackupIT` 3).
+Frontend `tsc -b --force` clean, `vite build` clean, `tests/run.mjs`
+**272/272**. `registry/static_check.py`: not executed (no python3).
+
 
 ## CR-100 — Application states as one system, and a public landing page (APPLIED 2026-09-20)
 
@@ -5488,3 +5855,341 @@ and the suite was re-run: 323/324, the one failure a timing flake in the
 pre-existing quotations suite ("Clear filters" empty state) that passed 3/3
 in isolation and is untouched by this CR. Backend untouched — `mvn verify` not executed.
 `static_check.py` not executed (no python3).
+
+## CR-101 — Document engine extensions: image export, async export queue, multi-format sharing (2026-09-21)
+
+**Raised by:** User (the "M0 — Document & Share Engine" module of the billing
+prompt kit, executed against what this repo already has rather than as the
+greenfield it describes). **Numbering:** asked for as CR-091 / V61, but CR-091
+is "Critical business logic completion" and V61 is nearby-product discovery
+on `feature/cr-088-saas-platform`; V57/V59/V60 are held by sibling
+worktrees too. Claimed as **CR-101** with migration **V65** (V62 when claimed; renumbered at consolidation because CR-091 landed on develop with V62 first) on `main`
+(V58 left unused). `SCOPE: BOTH`. Branch `feature/cr-101-document-engine`
+from `main` (`2a582e4`), worktree `E:/Project/hardware-erp-doc`.
+
+### What was asked, and what was built against it
+
+| Asked | Built | Why the difference |
+|---|---|---|
+| `DocumentImageRenderer` extending `ReportExporter` to PNG/JPEG via Java2D `PDFRenderer` | `report/export/DocumentImageRenderer` — the exact PDF `ReportExporter` builds → PDFBox `PDFRenderer` → `BufferedImage` → PNG (or JPEG with a real quality parameter). 1080 px default width, first page only, >4 MB PNG falls back to JPEG 0.85. `pdfbox` pinned explicitly to the 2.0.24 openhtmltopdf already ships. `ReportExporter.toCsv` added (UTF-8 BOM, commons-csv already on the classpath) | Sibling class in the same package rather than a subclass: `ReportExporter` is a stateless `@Component` injected by type, and a subclass would have made two beans of one type |
+| `report_job` with `file_path` | `report_job` with `file_data BYTEA` in-row | This deployment's only storage is one PostgreSQL (V11/V13/V21 precedent); Render's disk is ephemeral, so a path would be a dangling reference after the next deploy. UUID id → BIGSERIAL `report_job_id` per the naming law |
+| `@Async` service for Party Statement, Day Book, GSTR files | Async queue for CR-086's five reports (PDF/XLSX/CSV/PNG) and CR-087's GSTR-1 (JSON). **No Party Statement** — no such report exists in this codebase; inventing a ledger under a document-engine CR would be a new report, proposed separately | Rule 3 of "the shape of a task": bigger things are their own CR |
+| `ShareDispatcherService` for invoices, quotations, ledgers, greetings | `ShareDispatcherService` for the artefact that had no sharing at all — a finished `report_job` — over WhatsApp (wa.me + caption), email (attachment via `EmailTransport`) and download; plus one greeting template (`occasionGreeting`) and its link. Invoice/quotation sharing is **not** re-implemented: CR-036/CR-056/CR-080 already own it | "Extend it, never rebuild it" |
+| `DocumentShareModal`, `AsyncExportStatusBanner`, `shareImage.ts` (html2canvas) | All three, wired into the Reports page's download bar (`Share` beside PDF/Excel on all five reports) | — |
+
+### Backend
+
+- `document/` package: `ReportJob` entity + `ReportJobStatus`/`ReportJobFormat`,
+  `ReportJobRepository` (entity fetch for download only; interface projection
+  `Summary` for list/status so `file_data` is never selected for a page),
+  `ReportJobService`/`Impl` (enqueue → save → hand id to the worker; status;
+  list; download), `ReportJobWorker` (`@Async("taskExecutor")`, separate bean
+  — BUG-BE-002's proxy lesson applies to `@Async` too), `ReportJobRenderer`
+  seam + `StandardReportJobRenderer` (delegates to `ReportService`,
+  `Gstr1Service`, `ReportDocuments`, `ReportExporter`, `DocumentImageRenderer`;
+  no report logic duplicated), `ReportJobCleanupJob` (7-day sweep, 00:30 IST,
+  `JobExecutionTracker`), `ReportJobController` (`/v1/documents/jobs`),
+  `ShareDispatcherService`/`Impl`/`Controller`.
+- **The security-context handoff.** An `@Async` thread has no
+  `SecurityContext`, and every `ReportService` method reads its tenant from
+  `SecurityUtils`. The worker loads `requested_by` through
+  `AppUserDetailsService`, refuses an inactive/locked user or a tenant
+  mismatch, sets the same `UsernamePasswordAuthenticationToken`
+  `JwtAuthenticationFilter` builds, and clears it in `finally`. A job whose
+  requester is gone ends FAILED with a readable message, never stuck.
+- `WhatsAppService.generateChooserUrl(message)` — a default method (the
+  "capability via default method" rule), `https://wa.me/?text=…` for a share
+  with no fixed recipient. `PhoneNumberNormalizer` refuses a blank number,
+  so the chooser could not be reached through `generateChatUrl("")`.
+- `WhatsAppMessageTemplates.document(...)` and `.occasionGreeting(...)`.
+- GSTR-1 as a job requires REPORT_FINANCIAL, checked in the controller
+  body: a compound `@PreAuthorize` against a request-body field was
+  avoided deliberately (see the class javadoc).
+- Not changed: `ReportController`'s synchronous `file()` still accepts pdf/xlsx
+  only, so `ReportControllerIT.exports()`'s "csv is 4xx" assertion holds.
+
+### Frontend
+
+- `modules/document/`: `types`, `documentJobService`, `useDocumentJob`
+  (polls every 1.5 s only while PENDING/PROCESSING, stops on a terminal
+  status and on unmount), `AsyncExportStatusBanner` (draws nothing without
+  a job; toast on COMPLETED/FAILED; Download button), `DocumentShareModal`
+  (PDF | Image | Excel × Download | WhatsApp | Email; the channel clicked
+  while the job builds is carried out once it completes; a COMPLETED job in
+  the same format is reused rather than re-queued; optional "Image of this
+  screen" via html2canvas).
+- `shared/utils/shareImage.ts`: `captureElementAsPng` (html2canvas loaded by
+  dynamic import — its own chunk, paid for by the first share only) and
+  `shareOrDownloadImage` (Web Share API with files when the browser can;
+  otherwise download + open the fallback wa.me link, telling the person so).
+- `html2canvas ^1.4.1` (MIT) added to `frontend/package.json`.
+- `ReportShell.DownloadButtons` gains the `Share` button and mounts the modal.
+
+### Verified (2026-09-21, this worktree, own `target/` and own `dist`)
+
+- Backend: `DocumentImageRendererTest` 4, `ReportExporterTest` 5 (2 new),
+  `ManualWhatsAppServiceTest` 19 (3 new), `ShareDispatcherServiceImplTest` 8,
+  `ReportJobWorkerTest` 5, `ReportJobServiceImplTest` 4,
+  `ReportJobControllerIT` 7 (real Testcontainers PostgreSQL, real
+  `taskExecutor` thread: enqueue → poll → download for PDF/PNG/CSV/JSON,
+  GSTR-1 permission gate, GSTR-1 PNG ends FAILED, STAFF 403, list order, 404).
+  Full `mvn -o clean verify`: **648 unit + 258 integration, 0 failures, BUILD SUCCESS** (re-run of the job IT on the renamed V62: 7/7).
+- Frontend: tsc 0, build clean (html2canvas in its own chunk), new
+  `document-share` suite **17/17**; full suite on the isolated build: **341/341** (see
+  RESUME_POINT). Screenshots at 1440 and 390 in the session scratchpad.
+- `static_check.py` / `check_registry.py` not executed (no python3).
+
+---
+
+## CR-085 — Every outgoing channel can be tested from Settings, and every provider reports delivery (APPLIED 2026-09-16)
+
+**Raised by:** User — the "Senior Lead Engineer" brief, Phase 1 item 4:
+*"Add a Test SMS button in Settings and wire up delivery-status webhooks for
+Twilio/SendGrid."* **Type:** SPECIFICATION CHANGE, backend + frontend. No
+migration: `notification_log` already had `provider_message_id` and the
+`DELIVERED` / `READ` statuses since CR-056; nothing ever set them for SMS or
+email.
+
+### What was actually missing
+
+The brief assumed email had a Test button and SMS did not. Neither did:
+`POST /v1/settings/mail/test` has existed since CR-038 and **no frontend
+code ever called it**. So the card built here carries both.
+
+### Test SMS
+
+`POST /v1/settings/sms/test?toMobileNo=` → `SmsDiagnosticResponse`
+(`status`, `toMobileNo`, `providerMessageId`, `detail`). Goes through the
+real `SmsNotificationProvider`, so it answers about the path real messages
+take: LOGGED_ONLY names whether `SMS_ENABLED=false` (CR-077) or missing
+`TWILIO_*` is the reason; FAILED carries Twilio's own text ("21608 -
+unverified trial number"). Synchronous and never throws, like the mail one.
+
+`MessagingDiagnosticsCard` in Settings (behind `SETTINGS_MANAGE`): an email
+field and a mobile field, each with its own button and a verdict line —
+badge in the status's tone, the provider's words verbatim.
+
+### Delivery-status webhooks
+
+| Provider | Endpoint | Authenticity | Maps |
+|---|---|---|---|
+| Twilio | `POST /v1/webhooks/twilio/status` (form) | `X-Twilio-Signature` = base64(HMAC-SHA1(auth token, public URL + sorted fields)) | delivered → DELIVERED, read → READ, failed / undelivered → FAILED |
+| SendGrid | `POST /v1/webhooks/sendgrid/events` (JSON array) | Signed Event Webhook: ECDSA P-256 over timestamp + body, `SENDGRID_WEBHOOK_PUBLIC_KEY` | delivered → DELIVERED, open → READ, bounce / dropped → FAILED |
+
+Both **fail closed**: a blank secret refuses every event, the rule
+`WhatsAppWebhookController` set. Both are `permitAll` in `SecurityConfig`
+for the reason the Meta and Razorpay webhooks are.
+
+Twilio only calls back if asked: `SmsNotificationProvider` adds
+`StatusCallback` to each send when `APP_PUBLIC_BASE_URL` is set. Blank
+means no callback and rows stay SENT — every existing deployment behaves
+as before. The property is setter-injected so the provider's constructors
+(used by three test classes) did not change.
+
+Twilio and SendGrid are app-wide (CR-074), so their callbacks carry no
+tenant; rows are found by **channel + provider message id**
+(`findByChannelAndProviderMessageId`). The id space is the provider's, so a
+guessed id cannot cross tenants. SendGrid's `sg_message_id` is
+`<X-Message-Id>.filter…`; the prefix before the first dot is the id the
+send recorded.
+
+### One rule, three providers
+
+`DeliveryStatusService` now holds the forward-only progression (SENT →
+DELIVERED → READ; FAILED only from SENT; a late DELIVERED never regresses a
+READ). It moved out of `WhatsAppWebhookController`, which had it inline and
+— it turned out — **untested**; `DeliveryStatusServiceImplTest` pins it for
+all three.
+
+### Hygiene that rode along (same brief, Phase 1)
+
+- **BUG-FE-039** `hasAvatar` on `/me`; no more avatar 404 per page load.
+- **BUG-FE-040** the supplier wizard's double spinner.
+- **BUG-BE-008** (BUG-BE-006 on the branch, renumbered at consolidation) the `product ↔ invoice` cycle, broken with
+  `ProductSaleHistoryProvider` and kept broken by `PackageCycleTest`.
+
+### Files
+
+Backend: `DeliveryStatusService(+Impl)`, `NotificationWebhookProperties`,
+`TwilioStatusWebhookController`, `SendGridEventWebhookController`,
+`SmsDiagnosticController/Service(+Impl)/Response`, `SmsNotificationProvider`,
+`WhatsAppWebhookController`, `NotificationLogRepository`, `SecurityConfig`,
+`application.yml`. Frontend: `MessagingDiagnosticsCard`,
+`messagingDiagnosticService`, `ShopSettingsPage`. Tests:
+`ProviderWebhookSignatureTest` (7), `DeliveryStatusServiceImplTest` (4).
+
+### Verified
+
+See the commit bodies; the branch's `mvn clean verify` runs once in a
+detached worktree before the merge to `main`. `registry/static_check.py`
+**not executed** (no python3).
+
+## CR-097 — Typo-tolerant product search inside PostgreSQL (APPLIED 2026-09-16)
+
+**Raised by:** User, as the one buildable piece of a larger infrastructure
+brief (the rest is CR-098). **Type:** search quality, no new infrastructure.
+`SCOPE: BOTH`. Branch `feature/cr-096-pg-trgm-search`, worktree
+`E:/Project/hardware-erp-search`, based on `develop` (`7ec05e0`).
+
+### What was asked
+
+`pg_trgm` trigram search on the product catalogue so a mistyped term
+("towr bolt", "hammr") still finds the item, without deploying
+Elasticsearch/OpenSearch; strict tenant scoping; exact matches first with a
+transparent fallback to similarity; DTOs carrying a confidence score; an
+integration suite covering ranking, typos and cross-tenant isolation.
+
+### What the brief said and what was built instead
+
+| Brief | Built | Why |
+|---|---|---|
+| `V5__enable_pg_trgm…` | `V64__pg_trgm_product_search.sql` | V5 is applied everywhere (hard rule 1); V57–V63 are claimed by the two branches in flight on 2026-09-16 |
+| `products(shop_id, product_code)`, `shop_product_discovery` | `product(tenant_id, product_code)`; no discovery table | Naming law; the discovery table is CR-090's on another branch and does not exist on `develop` |
+| Composite trigram indexes on category/brand/size | Two partial GIN indexes: `product_name`, `product_code` | Category and brand are FKs to their own tables, `size` does not exist; the fuzzy query only ever matches name and code |
+| `SET pg_trgm.similarity_threshold` | `SET LOCAL pg_trgm.word_similarity_threshold` from `app.search.fuzzy-word-similarity-threshold` (default 0.5) | `SET`/`set_limit()` are session state and would leak through Hikari and Supabase's session pooler to the next request; `LOCAL` dies with the transaction. `word_similarity` over `similarity` because a five-letter typo against a 25-character catalogue name is diluted to nothing by plain similarity (measured: "hammr" vs "Stanley Claw Hammer 450g" is 0.67 vs 0.15) |
+| Separate `ProductSearchRepository` / `ProductCatalogSearchService` | One native query on `ProductRepository`, one private method in `ProductServiceImpl` | Extend the existing search path; a parallel service is a second place for the tenant filter to be forgotten |
+| Sanitisation against SQL injection / regex DoS | Bind parameter + whitespace collapse, 100-char cap, 3-char minimum | There is no string concatenation and `<%` is not a regex; the only real hazards were noise trigrams from double spaces and a pasted paragraph being decomposed per keystroke |
+
+### How it works
+
+`GET /v1/products?search=` is unchanged for every term the substring search
+can place. When that page has **zero** matches and the term is at least
+three characters, `ProductServiceImpl.fuzzySearch` runs
+`ProductRepository.fuzzySearch`: `tenant_id = ? AND deleted_at IS NULL AND
+(? <% product_name OR ? <% product_code)`, with the same status/category/
+brand filters, ordered by `greatest(word_similarity(name), word_similarity(code))`
+descending. The ids come back paged; the entities are loaded through the
+tenant-guarded `findAllByIdInAndTenantId`; the summary is built by the same
+`ProductMapper.toSummary` as an ordinary page, now with a `matchScore`
+(0–1). An ordinary page has no `matchScore` key at all, so the client can
+tell the two apart without a second flag. The list page prints "No exact
+matches for '…' — showing the closest product names and codes" above the
+table whenever a row carries a score.
+
+Exact never mixes with fuzzy: a page of real matches is never diluted with
+look-alikes, and a page of look-alikes is always labelled.
+
+### Where it runs
+
+`pg_trgm` is bundled with Supabase (normally pre-installed in the
+`extensions` schema, on the postgres role's search_path — the `CREATE
+EXTENSION IF NOT EXISTS` is a no-op there), with `postgres:16-alpine`
+(self-hosted, and the Testcontainers tier), and with the local
+`docker-compose.yml`. Nothing to deploy. The indexes are partial on
+`deleted_at IS NULL`, matching `Product`'s `@SQLRestriction`.
+
+### Verification
+
+- `ProductFuzzySearchIT` (7 tests, real PostgreSQL): exact page carries no
+  score and no look-alikes; "hammr" → seeded hammer, scored; "towr bolt" →
+  both Tower Bolts before the seeded hex bolt (which sits at exactly the
+  0.5 threshold — the operator is `>=`), scores descending, all in [0.5, 1];
+  "towr bolt 6in" drops the brass bolt (0.471); two characters never reach
+  pg_trgm; a soft-deleted product is not a close match (BUG-SUP-006
+  parity); a second tenant registered through the real endpoint sees
+  neither the exact name nor the typo (CR-016). Expected scores were
+  measured on PostgreSQL 16 before the assertions were written; the
+  assertions are on order and bounds, not decimals.
+- `mvn -o clean verify` in the worktree: see RESUME_POINT for the numbers.
+- Frontend `tsc -b --force` clean; `vite build` clean to a private dist.
+  Playwright suites not re-run: the only UI change is a conditional
+  paragraph with no colour and no new route.
+- `python3 registry/static_check.py`: **not executed** (no python3 here).
+
+### Tuning
+
+`APP_SEARCH_FUZZY_THRESHOLD` (default 0.5). PostgreSQL's own default is
+0.6. Lower is more forgiving and noisier; 0.5 admits one wrong letter in a
+five-letter word ("hamer" → Hammer, 0.625) without "belt" reaching "bolt"
+(0.4). An out-of-range value fails the `SET` on the first fuzzy query
+rather than silently widening the search.
+
+## CR-098 — Infrastructure stack proposal: Redis, RabbitMQ, Kafka, S3, tracing, GHCR (PROPOSED 2026-09-16)
+
+**Raised by:** User, as a "Principal Cloud Architect" brief asking for the
+full set of `@Configuration` classes, workers, a seven-service
+`docker-compose.infra.yml`, Prometheus/Grafana/Jaeger, and a GHCR-publishing
+workflow. **Type:** deployment topology. **Nothing has been built.** This
+entry records what each item would buy, what it would cost on the two
+supported installations, and which recorded decision it reverses, so the
+owner can approve or cut items individually. Anything approved becomes its
+own CR with its own number.
+
+### The two installations this has to fit (CR-059)
+
+- **CLOUD** — one Spring Boot process on Render's free tier, Supabase free
+  tier as the database, Vercel for the frontend. No always-on worker
+  budget; the health probe is the only thing that keeps the container warm.
+- **SELF_HOSTED** — the client's own Docker box: `docker-compose.selfhosted.yml`
+  = the app + one PostgreSQL container, LAN address, no internet
+  dependency. Backed up with `scripts/backup-db.sh` (one `pg_dump`).
+
+Every item below adds a process to *both* of those, or a second data store
+that `backup-db.sh` does not cover.
+
+### Item by item
+
+| # | Item | What it would buy | What exists today | Cost / reversal | Recommendation |
+|---|---|---|---|---|---|
+| 1 | **Redis + Redisson** — product cache, distributed locks, sliding-window rate limiter | Faster repeated catalogue reads; locks that survive a multi-instance deploy; rate limits shared across instances | In-process rate limiter (`RateLimitFilter`, `app.rate-limit.*`); stock and document numbers serialised with `SELECT … FOR UPDATE` (CR-041); no cache — a catalogue read is one indexed query | A second stateful service on the self-hosted box and a paid add-on on Render; locks and limits become wrong the moment Redis is unreachable; nothing today runs more than one app instance, which is the only case that needs any of it | **Defer** until a second app instance is actually planned. If the goal is catalogue read speed, measure first: CR-097's indexes and `idx_product_tenant` are what a single shop's reads hit |
+| 2 | **RabbitMQ** — PDF generation, WhatsApp/SMS alerts, push, as queued jobs with DLQs | A slow PDF or a Twilio timeout no longer holds the request thread; retries with a dead-letter parking lot | PDFs are rendered in-process on request (`InvoicePdfService`, `QuotationPdfService`); email/SMS go out synchronously through the provider interfaces with a `notification_log` row (`SENT`/`LOGGED_ONLY`/`FAILED`); scheduled work logs to `job_execution_log` | Broker on both installations; a second thing to back up and monitor; Render free tier has no worker dyno, so the consumer would run inside the web process anyway — at which point `@Async` with a bounded executor and the existing `notification_log` as the retry ledger gives the same decoupling with no broker | **Alternative, smaller CR**: `@Async` + `notification_log`-driven retry for outbound messages. Broker only if a real worker tier is funded |
+| 3 | **Kafka (KRaft)** — `InvoiceIssuedEvent`, `StockMovementRecordedEvent`, audit stream, idempotent producer, audit consumer | An immutable event log other systems could subscribe to | `activity_log` and `security_audit_log` are written **in the same transaction** as the business change (hard rule 8, CR-015/CR-072): an invoice and its audit row commit or roll back together | A Kafka-backed audit is eventually consistent and can lose the audit row of a committed write (or record one for a rolled-back write) unless an outbox table is added — which is a PostgreSQL table, not Kafka. Kafka on a self-hosted client box is the single heaviest process in the stack, for zero subscribers | **Decline as specified.** If an integration ever needs events, do the transactional outbox (`domain_event` table, same commit) first; the transport can be chosen then |
+| 4 | **MinIO (dev) / S3 (prod)** — private bucket, 15-minute pre-signed URLs | Cheaper large-blob storage; CDN-able | Uploads are `bytea` in PostgreSQL by explicit decision (`application-cloud.yml` header; V11/V13; `purchase_document` 20 MB cap): one store, one backup, one tenant filter | Reverses a recorded decision; splits the backup into two systems; pre-signed URLs bypass the JWT permission check that guards every image endpoint today; Supabase Storage would be the natural S3 on CLOUD, but SELF_HOSTED has no S3 unless MinIO is shipped in the client box | **Defer**; revisit only if blob volume becomes a Supabase-plan problem, and then as "Supabase Storage on CLOUD, bytea stays on SELF_HOSTED" behind the existing provider-interface pattern |
+| 5 | **Prometheus + Grafana, OpenTelemetry agent + Jaeger** | Dashboards on JVM/Hikari/HTTP metrics; per-request traces with `tenant_id` | Actuator present; `prod` exposes `health` only (security posture); `requestId` already in MDC and every log line; `job_execution_log` for scheduled work | `/actuator/prometheus` must stay off the public origin (Render exposes one port) — needs an auth-gated scrape or a sidecar; three more containers on the self-hosted box that the client will not look at; the OTel agent adds ~100 MB RSS on a 512 MB Render dyno | **Partial, cheap CR**: add `micrometer-registry-prometheus`, expose `/actuator/prometheus` gated by `DEVELOPER_INSPECT` (the CR-045 gate already covers actuator), add `tenantId` to MDC next to `requestId`. Grafana/Jaeger stay optional profiles, not part of either installation |
+| 6 | **GitHub Actions**: Maven cache, Flyway validation, tests, multi-stage Docker → GHCR | Reproducible image per commit | `ci.yml` already: `setup-java` with Maven cache, `mvn -B clean verify` (Testcontainers runs every migration), frontend typecheck + build, secret scan; `backend/Dockerfile` exists | Only the GHCR push is missing. It is the one item with no topology cost | **Approve as its own small CR**: a `publish` job on tags → `ghcr.io/<org>/hardware-erp:<tag>`, consumed by `docker-compose.selfhosted.yml` instead of a local build |
+| 7 | **`docker-compose.infra.yml`** with all seven services | One command to bring up the whole stack locally | `docker-compose.yml` (dev DB) and `docker-compose.selfhosted.yml` (client box) | A third topology nobody deploys; every service in it that is not in the other two files is dead weight until its item above is approved | **Not separately** — grows out of whichever items are approved |
+
+### Also in the brief, and not negotiable here
+
+- `shop_id` — the column is `tenant_id` in 50+ foreign keys, the JWT claim
+  and every repository query (naming law, CR-016). Any new table follows it.
+- "Modular monolith, no microservices" — agreed, and already the case.
+- `BigDecimal` money — money is `BIGINT` paise here (naming law); rates are
+  `DECIMAL(18,6)`. Not changing.
+
+### What would need to be true to build items 1–4
+
+A funded worker tier on CLOUD (Render paid plan or equivalent) **and** a
+decision that the self-hosted product may ship as a multi-container stack
+with its own backup procedure for each store. Until both are true, each of
+those items is a service the client's box has to run for a benefit the
+single-instance app cannot show.
+
+## CR-102 — Financial idempotency for invoices, payments and purchases (2026-09-22, APPLIED)
+
+**Raised by:** the consolidation audit (idempotency stage). **Type:**
+correctness, both layers. `SCOPE: BOTH`, no migration.
+
+### The gap
+
+CR-051 gave the system an `IdempotencyService` and wired it to credit
+notes, sales orders and delivery challans. The four endpoints that create
+money or stock rows most often - invoice, invoice payment, purchase,
+purchase payment - never took a key, and `apiClient.ts` said so in its own
+comment ("no frontend call site uses it yet"), which is why its timeout
+retry is GET-only. A counter double-click or a retried POST after a lost
+response produced a second invoice with a second stock movement and a
+second ledger debit. CR-091's offline sync had its own client-UUID
+idempotency, so the offline path was safe and the online path was not.
+
+### What changed
+
+- `InvoiceService.create/addPayment` and `PurchaseService.create/addPayment`
+  gain a `(…, String idempotencyKey)` overload that wraps the existing
+  method in `IdempotencyService.execute()` under operations
+  `invoice.create`, `invoice.payment` (keyed with the invoice id so the
+  same key against another invoice is a different request),
+  `purchase.create`, `purchase.payment`. A null key runs the call as
+  before - every internal caller (quotation/sales-order convert, offline
+  sync) is untouched.
+- Controllers read the optional `Idempotency-Key` header.
+- Frontend: `useIdempotencyKey()` creates one key when the invoice wizard,
+  purchase form or a payment dialog opens, keeps it across a failed
+  submit, and renews it after success or when the dialog closes.
+
+### Verified
+
+`FinancialIdempotencyIT` (2): the same invoice request twice under one key
+→ one invoice, one movement, one ledger row, stock decremented once; the
+same key with a different payload → 409 `IDEMPOTENCY_KEY_REUSED`; a
+payment retried → recorded once; a purchase retried → received once.

@@ -38,5 +38,7 @@ public enum MovementType {
      * fix. Unused goods return through INVENTORY_ADJUST, where a human
      * states what physically came back.
      */
-    PROJECT_CONSUMPTION_REVERSAL
+    PROJECT_CONSUMPTION_REVERSAL,
+    STOCK_TRANSFER_OUT,
+    STOCK_TRANSFER_IN
 }

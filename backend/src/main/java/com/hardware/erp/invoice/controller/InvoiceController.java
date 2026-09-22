@@ -37,8 +37,9 @@ public class InvoiceController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).INVOICE_CREATE)")
-    public ApiResponse<InvoiceResponse> create(@Valid @RequestBody InvoiceRequest request) {
-        return ApiResponse.ok(invoiceService.create(request));
+    public ApiResponse<InvoiceResponse> create(@Valid @RequestBody InvoiceRequest request,
+                                               @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ApiResponse.ok(invoiceService.create(request, idempotencyKey));
     }
 
     @GetMapping
@@ -68,14 +69,16 @@ public class InvoiceController {
     @PostMapping("/{id}/payments")
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).PAYMENT_MANAGE)")
     public ApiResponse<InvoiceResponse> addPayment(
-            @PathVariable Long id, @Valid @RequestBody PaymentRequest request) {
-        return ApiResponse.ok(invoiceService.addPayment(id, request));
+            @PathVariable Long id, @Valid @RequestBody PaymentRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ApiResponse.ok(invoiceService.addPayment(id, request, idempotencyKey));
     }
 
     @PostMapping("/{id}/cancel")
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).INVOICE_CANCEL)")
-    public ApiResponse<InvoiceResponse> cancel(@PathVariable Long id) {
-        return ApiResponse.ok(invoiceService.cancel(id));
+    public ApiResponse<InvoiceResponse> cancel(@PathVariable Long id,
+                                               @Valid @RequestBody com.hardware.erp.invoice.dto.InvoiceCancelRequest request) {
+        return ApiResponse.ok(invoiceService.cancel(id, request));
     }
 
     @GetMapping("/{id}/pdf")

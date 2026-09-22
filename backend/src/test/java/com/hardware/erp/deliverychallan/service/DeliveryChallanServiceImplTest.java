@@ -186,7 +186,8 @@ class DeliveryChallanServiceImplTest {
                 new InvoiceResponse(77L, "INV-000077", 3L, "Ramesh Traders", "9876500001",
                         LocalDate.now(), "300.00", "54.00", "354.00", null, null, null, "0.00", "354.00",
                         com.hardware.erp.invoice.entity.InvoiceStatus.UNPAID, null, null, null, null,
-                        List.of(), List.of(), null, null, null, null));
+                        List.of(), List.of(), null, null, null, null,
+                        null, null, null, null, null, null, null));
 
         DeliveryChallanResponse response = deliveryChallanService.convertToInvoice(1L, null);
 

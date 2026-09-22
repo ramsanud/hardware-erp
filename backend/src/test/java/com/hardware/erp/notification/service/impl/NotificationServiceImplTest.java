@@ -11,6 +11,7 @@ import com.hardware.erp.notification.repository.NotificationLogRepository;
 import com.hardware.erp.notification.repository.TenantWhatsAppConnectionRepository;
 import com.hardware.erp.notification.service.NotificationProvider;
 import com.hardware.erp.notification.service.NotificationSendResult;
+import com.hardware.erp.subscription.service.UsageTrackingService;
 import com.hardware.erp.tenant.entity.Tenant;
 import com.hardware.erp.tenant.entity.TenantStatus;
 import com.hardware.erp.tenant.repository.TenantRepository;
@@ -41,12 +42,18 @@ class NotificationServiceImplTest {
     @Mock private NotificationLogRepository notificationLogRepository;
     @Mock private NotificationProvider fakeProvider;
     @Mock private TenantRepository tenantRepository;
+    @Mock private UsageTrackingService usageTrackingService;
 
     private Tenant tenant;
     private Invoice invoice;
 
     @BeforeEach
     void setUp() {
+        // Every test here exercises the send path itself, not metering -
+        // CR-088's UsageLimitReached behaviour has its own coverage in
+        // UsageTrackingServiceImplTest, so this mock always grants the unit.
+        when(usageTrackingService.tryConsume(anyLong(), any())).thenReturn(true);
+
         tenant = Tenant.builder().id(1L).slug("default").name("Default")
                 .status(TenantStatus.ACTIVE).build();
 
@@ -62,7 +69,7 @@ class NotificationServiceImplTest {
     /** indexProviders() is normally @PostConstruct; called by hand since this is a plain unit test, not a Spring context. */
     private NotificationServiceImpl serviceWith(NotificationProvider... providers) {
         NotificationServiceImpl service = new NotificationServiceImpl(
-                List.of(providers), notificationLogRepository, tenantRepository);
+                List.of(providers), notificationLogRepository, tenantRepository, usageTrackingService);
         service.indexProviders();
         return service;
     }

@@ -40,6 +40,16 @@ public class Stock extends BaseEntity {
     @Builder.Default
     private BigDecimal quantityOnHand = BigDecimal.ZERO;
 
+    /**
+     * CR-091 Phase 6. Weighted-average cost per unit of what is on hand,
+     * in paise. Moved only by StockServiceImpl on PURCHASE_RECEIPT (and its
+     * reversal); a sale freezes it onto the invoice line and leaves it
+     * unchanged. Backfilled from product.purchase_price_paise by V62.
+     */
+    @Column(name = "average_cost_paise", nullable = false)
+    @Builder.Default
+    private Long averageCostPaise = 0L;
+
     @Version
     @Column(name = "version", nullable = false)
     @Builder.Default

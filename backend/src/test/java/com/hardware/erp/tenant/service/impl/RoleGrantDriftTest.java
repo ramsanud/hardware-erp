@@ -53,7 +53,10 @@ class RoleGrantDriftTest {
             // code of its own precisely so that granting SETTINGS_MANAGE to a
             // role never hands over a wipe button as a side effect.
             PermissionCode.DATA_RESET,
-            PermissionCode.DEVELOPER_INSPECT);
+            PermissionCode.DEVELOPER_INSPECT,
+            // CR-092. Creating branches and taking a full data backup are owner-level.
+            PermissionCode.BRANCH_MANAGE,
+            PermissionCode.BACKUP_MANAGE);
 
     private static final Set<String> WITHHELD_FROM_ACCOUNTANT = Set.of(
             PermissionCode.USER_VIEW,
@@ -80,12 +83,20 @@ class RoleGrantDriftTest {
             // not raise them - same reasoning as QUOTATION_MANAGE above.
             PermissionCode.SALES_ORDER_MANAGE,
             PermissionCode.DELIVERY_CHALLAN_MANAGE,
+            // CR-089. Sees the product-request queue for billing/reporting
+            // context but does not run the counter - same reasoning as
+            // SALES_ORDER_MANAGE above.
+            PermissionCode.PRODUCT_REQUEST_MANAGE,
             // See WITHHELD_FROM_MANAGER - developer diagnostics, CR-045.
             // CR-067. Erasing the shop's trading history is owner-only. It is a
             // code of its own precisely so that granting SETTINGS_MANAGE to a
             // role never hands over a wipe button as a side effect.
             PermissionCode.DATA_RESET,
-            PermissionCode.DEVELOPER_INSPECT);
+            PermissionCode.DEVELOPER_INSPECT,
+            // CR-092. Branch set-up, stock movement between branches and backups are operational/owner actions, not accounting.
+            PermissionCode.BRANCH_MANAGE,
+            PermissionCode.STOCK_TRANSFER_MANAGE,
+            PermissionCode.BACKUP_MANAGE);
 
     private static final Set<String> WITHHELD_FROM_STAFF = Set.of(
             PermissionCode.USER_VIEW,
@@ -131,7 +142,11 @@ class RoleGrantDriftTest {
             // code of its own precisely so that granting SETTINGS_MANAGE to a
             // role never hands over a wipe button as a side effect.
             PermissionCode.DATA_RESET,
-            PermissionCode.DEVELOPER_INSPECT);
+            PermissionCode.DEVELOPER_INSPECT,
+            // CR-092. Counter staff sees which branch it is in (BRANCH_VIEW) and nothing more.
+            PermissionCode.BRANCH_MANAGE,
+            PermissionCode.STOCK_TRANSFER_MANAGE,
+            PermissionCode.BACKUP_MANAGE);
 
     /** Every constant declared in PermissionCode, read reflectively so a new one is picked up automatically. */
     private static Set<String> allPermissionCodes() {

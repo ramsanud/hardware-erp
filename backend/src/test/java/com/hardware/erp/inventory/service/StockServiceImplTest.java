@@ -57,6 +57,9 @@ class StockServiceImplTest {
     @Mock private ProductRepository productRepository;
     @Mock private TenantRepository tenantRepository;
     @Mock private StockMapper stockMapper;
+    @Mock private com.hardware.erp.branch.service.BranchContext branchContext;
+    @Mock private com.hardware.erp.branch.repository.BranchStockRepository branchStockRepository;
+    @Mock private com.hardware.erp.branch.repository.BranchRepository branchRepository;
 
     private StockServiceImpl stockService;
     private Tenant tenant;
@@ -69,7 +72,10 @@ class StockServiceImplTest {
                 .unit("ROLL").sellingPricePaise(50000L).status(ProductStatus.ACTIVE).build();
 
         stockService = new StockServiceImpl(stockRepository, movementRepository, productRepository,
-                tenantRepository, stockMapper);
+                tenantRepository, stockMapper, branchContext, branchStockRepository, branchRepository);
+        // CR-092 - every movement is stamped with a branch; MAIN (id 1) for a single-branch shop.
+        when(branchContext.actingBranchId(any())).thenReturn(1L);
+        when(branchContext.singleBranch(any())).thenReturn(true);
 
         Role role = Role.builder().id(1L).code("OWNER").name("Owner").systemRole(true)
                 .status(RoleStatus.ACTIVE).permissions(new java.util.LinkedHashSet<>()).build();

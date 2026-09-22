@@ -33,6 +33,8 @@ public class AppUserDetails implements UserDetails {
     private final boolean active;
     private final boolean locked;
     private final boolean mustChangePassword;
+    /** CR-092. Null = every branch. Sourced fresh from the user row on each request, like tenantId. */
+    private final Long branchId;
 
     public AppUserDetails(User user) {
         this.id = user.getId();
@@ -46,6 +48,7 @@ public class AppUserDetails implements UserDetails {
         this.active = user.isActive();
         this.locked = user.isLocked();
         this.mustChangePassword = user.isMustChangePassword();
+        this.branchId = user.getBranchId();
     }
 
     /**

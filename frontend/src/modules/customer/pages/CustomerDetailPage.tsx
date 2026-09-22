@@ -32,6 +32,7 @@ import { QuotationStatusBadge } from '@/modules/quotation/components/QuotationSt
 import { CUSTOMER_ROUTES } from '../constants';
 import { customerService } from '../services/customerService';
 import { CustomerForm, CUSTOMER_FORM_ID } from '../forms/CustomerForm';
+import { CustomerLedgerPanel } from '../components/CustomerLedgerPanel';
 import type {
   CustomerFinancialSummaryResponse, CustomerProductHistoryResponse, CustomerRequest, CustomerResponse,
 } from '../types';
@@ -259,7 +260,12 @@ export function CustomerDetailPage() {
                 <TabsTrigger value="invoices">Invoices</TabsTrigger>
                 <TabsTrigger value="quotations">Quotations</TabsTrigger>
                 <TabsTrigger value="products">Products purchased</TabsTrigger>
+                <TabsTrigger value="ledger">Ledger</TabsTrigger>
               </TabsList>
+
+              <TabsContent value="ledger">
+                <CustomerLedgerPanel customerId={id} />
+              </TabsContent>
 
               <TabsContent value="invoices">
                 <Card>

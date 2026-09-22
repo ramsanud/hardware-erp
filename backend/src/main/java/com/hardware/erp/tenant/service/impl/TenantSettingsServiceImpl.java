@@ -37,6 +37,7 @@ public class TenantSettingsServiceImpl implements TenantSettingsService {
     private final ActivityLogService activityLog;
     private final com.hardware.erp.tenant.service.SubscriptionService subscriptionService;
     private final com.hardware.erp.billing.service.RazorpayConfigResolver razorpayConfigResolver;
+    private final com.hardware.erp.subscription.service.SubscriptionLifecycleService subscriptionLifecycleService;
 
     @Override
     @Transactional(readOnly = true)
@@ -95,6 +96,13 @@ public class TenantSettingsServiceImpl implements TenantSettingsService {
             // in progress, or the trial's expiry would later revert a tier
             // the owner explicitly chose back to FREE behind their back.
             tenant.setSubscriptionTrialExpiresAt(null);
+            // CR-088 - keeps tenant_subscription/subscription_history in step
+            // with this pick. Plain @Transactional (REQUIRED) on applyTier(),
+            // not REQUIRES_NEW, so it joins this same transaction rather than
+            // racing it for a lock on the row this method is already editing.
+            subscriptionLifecycleService.applyTier(tenant.getId(), request.subscriptionTier(),
+                    com.hardware.erp.subscription.entity.SubscriptionStatus.ACTIVE, null,
+                    "Picked in Shop Settings", null);
         }
         if (request.invoiceTheme() != null) {
             tenant.setInvoiceTheme(request.invoiceTheme());

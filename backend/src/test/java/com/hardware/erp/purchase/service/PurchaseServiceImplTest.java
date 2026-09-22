@@ -72,6 +72,8 @@ class PurchaseServiceImplTest {
 
     @Spy private PurchaseMapper purchaseMapper = new PurchaseMapper();
 
+    @Mock private com.hardware.erp.branch.service.BranchContext branchContext;
+
     @InjectMocks private PurchaseServiceImpl purchaseService;
 
     private Tenant tenant;
@@ -147,12 +149,14 @@ class PurchaseServiceImplTest {
     }
 
     @Test
-    @DisplayName("creating a purchase increases stock via StockService, never a direct mutation")
+    @DisplayName("creating a purchase increases stock via StockService.applyPurchaseReceipt, never a direct mutation")
     void createIncreasesStockThroughStockService() {
         purchaseService.create(request(false, null, null));
 
-        verify(stockService).applyMovement(eq(2L), eq(new BigDecimal("5")),
-                eq(MovementType.PURCHASE_RECEIPT), eq("PURCHASE"), eq(99L), isNull());
+        // CR-091 Phase 6 - the receipt now carries the unit cost too, so the
+        // weighted-average cost on stock can move with it.
+        verify(stockService).applyPurchaseReceipt(eq(2L), eq(new BigDecimal("5")),
+                eq(10000L), eq("PURCHASE"), eq(99L), isNull());
     }
 
     @Test
@@ -205,7 +209,7 @@ class PurchaseServiceImplTest {
                 .subtotalPaise(50000L).gstAmountPaise(9000L).totalPaise(59000L)
                 .paidPaise(0L).balancePaise(59000L).status(PurchaseStatus.RECEIVED)
                 .items(new java.util.ArrayList<>()).build();
-        when(purchaseRepository.findByIdAndTenantId(10L, 1L)).thenReturn(Optional.of(existing));
+        when(purchaseRepository.lockByIdAndTenantId(10L, 1L)).thenReturn(Optional.of(existing));
 
         PurchaseResponse response = purchaseService.addPayment(10L,
                 new RecordPurchasePaymentRequest(59000L, PaymentMethod.UPI, "Full settlement"));
@@ -222,7 +226,7 @@ class PurchaseServiceImplTest {
                 .subtotalPaise(50000L).gstAmountPaise(9000L).totalPaise(59000L)
                 .paidPaise(30000L).balancePaise(29000L).status(PurchaseStatus.PARTIALLY_PAID)
                 .items(new java.util.ArrayList<>()).build();
-        when(purchaseRepository.findByIdAndTenantId(10L, 1L)).thenReturn(Optional.of(existing));
+        when(purchaseRepository.lockByIdAndTenantId(10L, 1L)).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> purchaseService.addPayment(10L,
                 new RecordPurchasePaymentRequest(40000L, PaymentMethod.CASH, null)))

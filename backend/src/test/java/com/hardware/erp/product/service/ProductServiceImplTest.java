@@ -67,7 +67,7 @@ class ProductServiceImplTest {
     @Mock private ActivityLogService activityLog;
     @Mock private TenantRepository tenantRepository;
     @Mock private com.hardware.erp.tenant.service.EntitlementService entitlementService;
-    @Mock private com.hardware.erp.invoice.repository.InvoiceItemRepository invoiceItemRepository;
+    @Mock private com.hardware.erp.product.service.ProductSaleHistoryProvider saleHistoryProvider;
 
     @InjectMocks private ProductServiceImpl productService;
 

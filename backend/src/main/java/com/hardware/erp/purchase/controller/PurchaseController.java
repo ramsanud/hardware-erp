@@ -32,8 +32,9 @@ public class PurchaseController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).PURCHASE_MANAGE)")
-    public ApiResponse<PurchaseResponse> create(@Valid @RequestBody PurchaseRequest request) {
-        return ApiResponse.ok(purchaseService.create(request));
+    public ApiResponse<PurchaseResponse> create(@Valid @RequestBody PurchaseRequest request,
+                                                @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ApiResponse.ok(purchaseService.create(request, idempotencyKey));
     }
 
     @GetMapping
@@ -54,8 +55,9 @@ public class PurchaseController {
     @PostMapping("/{id}/payments")
     @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).PURCHASE_MANAGE)")
     public ApiResponse<PurchaseResponse> addPayment(
-            @PathVariable Long id, @Valid @RequestBody RecordPurchasePaymentRequest request) {
-        return ApiResponse.ok(purchaseService.addPayment(id, request));
+            @PathVariable Long id, @Valid @RequestBody RecordPurchasePaymentRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ApiResponse.ok(purchaseService.addPayment(id, request, idempotencyKey));
     }
 
     @PostMapping("/{id}/cancel")

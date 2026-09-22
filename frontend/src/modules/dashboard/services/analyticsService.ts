@@ -75,9 +75,36 @@ export interface AnalyticsSummary {
   outstandingDisplay: string;
 }
 
+/**
+ * CR-091 Phase 6. Mirrors AnalyticsDtos.ProfitResponse. COGS is the sum of
+ * each invoice line's cost_price_paise - the weighted-average cost frozen at
+ * the moment of sale - never the product's purchase price as it stands today.
+ */
+export interface ProfitResponse {
+  period: Period;
+  revenuePaise: number;
+  revenueDisplay: string;
+  salesReturnPaise: number;
+  salesReturnDisplay: string;
+  netRevenuePaise: number;
+  netRevenueDisplay: string;
+  cogsPaise: number;
+  cogsDisplay: string;
+  grossProfitPaise: number;
+  grossProfitDisplay: string;
+  expensePaise: number;
+  expenseDisplay: string;
+  netProfitPaise: number;
+  netProfitDisplay: string;
+}
+
 const range = (from: string, to: string) => `from=${from}&to=${to}`;
 
 export const analyticsService = {
+  /** CR-091 Phase 6. REPORT_FINANCIAL - margin is owner/accountant information. */
+  profit: (from: string, to: string) =>
+    apiGet<ProfitResponse>(`/v1/analytics/profit?${range(from, to)}`),
+
   summary: (from: string, to: string) =>
     apiGet<AnalyticsSummary>(`/v1/analytics/summary?${range(from, to)}`),
 

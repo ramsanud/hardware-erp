@@ -22,7 +22,9 @@ const SPECS = [
   ['quotations', './quotations/list.spec.mjs'],
   ['dashboard', './dashboard/dashboard.spec.mjs'],
   ['reports', './reports/reports.spec.mjs'],
+  ['document-share', './reports/document-share.spec.mjs'],
   ['states', './states/app-states.spec.mjs'],
+  ['responsive-sweep', './responsive/viewports.spec.mjs'],
 ];
 
 const external = Boolean(process.env.E2E_BASE_URL);

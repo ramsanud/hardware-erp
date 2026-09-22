@@ -20,10 +20,12 @@ export const purchaseService = {
 
   get: (id: number) => apiGet<PurchaseResponse>(`/v1/purchases/${id}`),
 
-  create: (body: PurchaseRequest) => apiPost<PurchaseResponse>('/v1/purchases', body),
+  /** CR-102 - `Idempotency-Key`: a retry with the same key returns the purchase already recorded, never a second receipt. */
+  create: (body: PurchaseRequest, idempotencyKey?: string) =>
+    apiPost<PurchaseResponse>('/v1/purchases', body, idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined),
 
-  addPayment: (id: number, body: RecordPurchasePaymentRequest) =>
-    apiPost<PurchaseResponse>(`/v1/purchases/${id}/payments`, body),
+  addPayment: (id: number, body: RecordPurchasePaymentRequest, idempotencyKey?: string) =>
+    apiPost<PurchaseResponse>(`/v1/purchases/${id}/payments`, body, idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined),
 
   cancel: (id: number) => apiPost<PurchaseResponse>(`/v1/purchases/${id}/cancel`),
 

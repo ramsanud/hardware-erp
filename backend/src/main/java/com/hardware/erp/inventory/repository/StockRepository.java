@@ -46,4 +46,18 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
     /** CR-053 backlog item 5 (low-stock reminder job). Same predicate as search()'s lowStockOnly flag, non-paged for the scheduled job's own use. */
     @Query("select count(s) from Stock s where s.tenant.id = :tenantId and s.quantityOnHand <= s.product.reorderLevel")
     long countLowStock(@Param("tenantId") Long tenantId);
+
+    /**
+     * CR-089. Batch stock lookup for the substitute scorer - one query for
+     * the whole candidate pool rather than one per candidate (§22's "avoid
+     * unnecessary database queries"). JOIN FETCH the product because the
+     * caller keys the result by product id.
+     */
+    @Query("""
+           select s from Stock s
+           join fetch s.product
+           where s.tenant.id = :tenantId and s.product.id in :productIds
+           """)
+    java.util.List<Stock> findByTenantIdAndProductIdIn(@Param("tenantId") Long tenantId,
+                                                       @Param("productIds") java.util.List<Long> productIds);
 }

@@ -28,10 +28,13 @@ import { AppChromeProvider, useAppChrome } from './AppChromeProvider';
 import { MobileMoreMenu } from './MobileMoreMenu';
 import { MobileTabBar } from './MobileTabBar';
 import { SidebarBrand, SidebarFooter, SidebarNav } from './Sidebar';
+import { OutboxAutoSync } from '@/modules/sync/components/OutboxAutoSync';
 
 export function AppLayout() {
   return (
     <AppChromeProvider>
+      {/* CR-091 Phase 9 - pushes queued offline invoices the moment the browser is back online. */}
+      <OutboxAutoSync />
       <AppLayoutInner />
     </AppChromeProvider>
   );
@@ -43,7 +46,9 @@ function AppLayoutInner() {
   const tour = useOnboardingTour();
   const pageTips = usePageTips();
   const { avatarVersion, brandName } = useAppChrome();
-  const avatarSrc = useAuthenticatedImage(avatarService.url, avatarVersion);
+  // BUG-FE-039: only ask for the image when /me says one exists - every page
+  // load used to fire a GET that 404ed for the majority of accounts.
+  const avatarSrc = useAuthenticatedImage(user?.hasAvatar ? avatarService.url : null, avatarVersion);
   const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);

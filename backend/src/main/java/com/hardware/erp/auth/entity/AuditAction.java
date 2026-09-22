@@ -31,5 +31,16 @@ public enum AuditAction {
     BOOTSTRAP_OWNER_CREATED,
     BANK_ACCOUNT_REVEALED,
     /** CR-067. A shop erased its own transactional data. The log survives the reset. */
-    DATA_RESET
+    DATA_RESET,
+    // CR-078 - codes by email.
+    /** A code sent to the account's address was entered correctly for the first time. */
+    EMAIL_VERIFIED,
+    /** A code was wrong, expired, missing or exhausted; the reason names which. */
+    EMAIL_OTP_FAILED,
+    /** A signed-in user re-confirmed with a code before a sensitive action. */
+    STEP_UP_VERIFIED,
+    /** The login email on an account changed - it now needs verifying again. */
+    EMAIL_CHANGED,
+    /** An authenticator app was added from the profile by a user already signed in (CR-078). */
+    MFA_ENROLLED_FROM_PROFILE
 }

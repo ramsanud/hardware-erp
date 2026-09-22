@@ -96,10 +96,20 @@ generating new code; never reintroduce a listed bug.
 | BUG-FE-036 | Frontend | Medium | Fixed 2026-09-09 |
 | BUG-FE-037 | Frontend | Medium | Fixed 2026-09-12 |
 | BUG-FE-038 | Frontend | Medium | Fixed 2026-09-14 |
+| BUG-FE-039 | Frontend | Low | Fixed 2026-09-16 |
+| BUG-FE-040 | Frontend | Low | Fixed 2026-09-16 |
 | BUG-BE-003 | Backend / Inventory | High | Fixed 2026-09-09 |
 | BUG-BE-004 | Backend / Common | Medium | Fixed 2026-09-09 |
 | BUG-BE-005 | Backend / Quotation | Medium | Fixed 2026-09-14 |
 | BUG-OPS-001 | Backend / Config | High | Fixed 2026-09-16 |
+| BUG-BE-006 | Backend / Subscription + Notification | High | Fixed 2026-09-21 |
+| BUG-BE-007 | Backend / Sync | High | Fixed 2026-09-21 |
+| BUG-FE-041 | Frontend / Tests | Low | Fixed 2026-09-22 |
+| BUG-FE-042 | Frontend | Medium | Fixed 2026-09-20 |
+| BUG-FE-043 | Frontend / Dashboard | Medium | Fixed 2026-09-22 |
+| BUG-BE-008 | Backend / Architecture | Medium | Fixed 2026-09-16 |
+| BUG-BE-009 | Backend / Customer + Invoice | High | Fixed 2026-09-22 |
+| BUG-BE-010 | Backend / Invoice + Purchase | Medium | Fixed 2026-09-22 |
 
 **This index is complete and covers every entry in this file (verified
 2026-09-08).** It previously stopped at `BUG-ENV-003`, omitting 33 later
@@ -3781,3 +3791,252 @@ currently in testing/demo use, and `DeploymentModeGuard` already treats this
 as a deliberate, non-refusing choice (CR-060): it prints
 `MFA IS DISABLED (MFA_REQUIRED=false)` on every boot rather than blocking
 startup, precisely so it can be turned on later without a code change.
+## BUG-BE-006 — every automatic customer notification failed before reaching the provider (FIXED, 2026-09-21)
+
+| | |
+|---|---|
+| **Severity** | High — SMS/WhatsApp/email on invoice creation and payment never sent; nothing surfaced to the user; the usage counter CR-088 meant to enforce was never written |
+| **Layer** | BACKEND ONLY |
+| **Found** | In the CR-091 IT logs: "Async method notifyInvoiceCreated failed … TransactionRequiredException: Executing an update/delete query" on every invoice created, in every run |
+| **Symptom** | `@Async notifyInvoiceCreated` → `NotificationServiceImpl.attempt()` → `usageTrackingService.tryConsume(tenantId, key)` threw before `provider.send()` was reached; the async exception handler logged it and the invoice flow carried on |
+
+**Root cause — BUG-BE-002's species, in the CR-088 metering.**
+`UsageTrackingServiceImpl.tryConsume(Long, UsageKey)` was a plain delegate to
+the three-arg overload that carries `@Transactional(REQUIRES_NEW)`. The
+delegate is `this.tryConsume(...)` - a same-class self-invocation that never
+passes through the Spring proxy - so no transaction was opened, and the
+`@Modifying` consume query threw. The only external caller uses the two-arg
+form, so the annotated overload was never reached through the proxy at all.
+
+**Fix.** The two-arg overload is annotated `@Transactional(REQUIRES_NEW)`
+too; the proxy opens the transaction on entry, and the inner self-invoked
+call runs inside it. Verified by the disappearance of the error from every
+IT run that creates an invoice (`CustomerLedgerIT`, `ProfitHistoricalCostIT`,
+`OfflineSyncIT`, `ProductRequestIT` …).
+
+**Lesson (PROJECT_SKILLS):** a convenience overload that delegates with
+`this.` must carry the same transactional annotation as its target, or be
+the annotated one itself.
+
+## BUG-BE-007 — a conflicting row turned a whole offline-sync batch into a 500 (FIXED, 2026-09-21)
+
+| | |
+|---|---|
+| **Severity** | High — the one case offline sync exists for (stock sold meanwhile) failed the request instead of recording a CONFLICT, and every other row in the same batch was reported as failed too |
+| **Layer** | BACKEND ONLY |
+| **Found** | `OfflineSyncIT.insufficientStockAtSyncTimeIsAConflictNotASilentRetry` on its first run, before CR-091 was committed |
+| **Symptom** | `POST /v1/sync/transactions` → 500 `UnexpectedRollbackException` when any row's invoice attempt threw a `BusinessException` |
+
+**Root cause — a catch block cannot un-mark rollback-only.**
+`SyncTransactionExecutor.processOne()` held a REQUIRES_NEW transaction and
+called `InvoiceServiceImpl.create()` inside it. `create()` is plain
+`@Transactional` (REQUIRED) so it *joined* that transaction; when it threw
+INSUFFICIENT_STOCK its interceptor marked the shared transaction
+rollback-only before the exception reached the catch in `processOne()`.
+The catch set the row to CONFLICT and `save()`d it - apparently fine - and
+the commit at the end of `processOne()` then threw and discarded the row.
+
+**Fix.** The attempt runs in a separate bean's own REQUIRES_NEW
+(`SyncInvoiceCreator.create()`), so its rollback is isolated; the executor
+holds no transaction of its own and records the outcome in a fresh short
+transaction via the repository. Same-batch isolation the design already
+wanted is now real.
+
+**Lesson (PROJECT_SKILLS):** "catch the exception and keep going" only
+works if the thing that threw ran in a *different* physical transaction.
+Inside the same one, the transaction is already dead - move the risky call
+into its own REQUIRES_NEW on another bean.
+
+## BUG-FE-041 — the Reports "Today" spec used the UTC date, failing between 00:00 and 05:30 IST (FIXED, 2026-09-22)
+
+| | |
+|---|---|
+| **Severity** | Low — a test-only false failure; the page was right |
+| **Layer** | FRONTEND ONLY (Playwright spec) |
+| **Found** | Verifying the CR-088→092 merge into `develop` at 04:58 IST: `tests/run.mjs` 295/297, both failures in `reports.spec.mjs` |
+| **Symptom** | `"Today" preset requests from=to=today` expected `2026-09-21` (UTC) while the page correctly requested `2026-09-22` (IST) |
+
+**Root cause.** `new Date().toISOString().slice(0, 10)` is the UTC calendar
+date; the page builds its presets from the local one. They differ for five
+and a half hours every night. **Fix.** The spec builds the local date the
+same way the page does. Lesson: never derive a calendar date from
+`toISOString()` in this codebase — the shop's day is IST (see
+`LowStockSnapshotJob.SHOP_ZONE` for the server-side rule).
+
+## BUG-FE-042 — login and register pages carried a real page scrollbar on every ordinary screen (FIXED, 2026-09-20)
+
+| | |
+|---|---|
+| **Severity** | Medium — cosmetic, but visible on first contact with the product: a fresh install of the shared `AuthLayout` (CR-081) scrolled on virtually every monitor, which reads as unfinished on the two screens every new user meets first |
+| **Layer** | FRONTEND ONLY |
+| **Found** | Reported by the owner from a screenshot of `/login` and `/register`, both showing a vertical and horizontal scrollbar with a band of empty `--sidebar` colour below the fold. Measured with a headless Chromium probe (`document.documentElement.scrollHeight` vs `window.innerHeight`) across five viewports before touching any code |
+| **Symptom** | At 1920×1017 the document was 1177px tall (160px of pure overflow) and 2048px wide (128px of overflow) with nothing in the extra space — same on `/register`, since both pages share `AuthLayout` |
+
+**Root cause.** `AuthLayout`'s right-hand `<main>` carries two purely
+decorative radial-gradient "glow" circles, each deliberately placed half off
+its own edge (`-right-32 -top-36`, `-bottom-40 -left-36`) so the glow bleeds
+toward the corner. `<main>` had no `overflow-hidden` of its own — only the
+left `<aside>` did — so nothing clipped them. An absolutely positioned
+element does not enlarge its ancestor's layout box, but it does enlarge the
+*document's* scrollable-overflow region when nothing between it and
+`<body>` clips it, which is exactly what a negative-offset decoration
+produces: real, clickable-scrollbar overflow with no content behind it. The
+numbers matched exactly (-bottom-40 = -160px against the measured 160px
+vertical overflow; -right-32 = -128px against the measured 128px
+horizontal one).
+
+**Fix.** Wrapped just the two decoration circles in their own
+`absolute inset-0 overflow-hidden` layer inside `<main>`, instead of putting
+`overflow-hidden` on `<main>` itself — the page's real content (the form,
+the wizard steps) must still be free to scroll on a viewport too short for
+it; only the ornamental bleed needed clipping. Nothing else in `AuthLayout`
+changed, so the CR-081 approved render is untouched pixel-for-pixel at the
+sizes it was approved against; verified by re-screenshotting both pages
+after the fix and comparing against the approved design. Grepped the rest
+of `frontend/src` for the same unclipped-negative-offset pattern — no other
+page reuses it.
+
+**Residual, not fixed.** At exactly 1366×768 (a common laptop panel) the
+page still overflows by ~5px — not the decoration this time, but the hero
+column's own content (headline + capability grid + slogan) at the `xl`
+breakpoint's larger type/padding, which this viewport's width (1366) crosses
+into while its height (768) is the tightest of any tested size. Closing
+that gap means shrinking spacing or type that CR-081 approved pixel-exact
+on the canvas, which is a design change, not a bug fix (CLAUDE.md rule 13:
+canvas → owner approval → code) — not made here without that approval.
+
+**Regression test.** None added to `tests/run.mjs` — the suite runs against
+a fixed 1280/375-class set of viewports that would not have caught this
+(1280×800 measured clean, before and after); a real fix would need a
+document-scrollHeight assertion on `/login` and `/register` at 1920×1017
+and 1366×768 specifically. Flagging as a gap rather than adding it
+silently, since it also needs a call on whether the 1366×768 residual
+should assert clean (requiring the design change above) or assert "≤5px".
+
+## BUG-FE-039 — every page load asked for an avatar that did not exist (FIXED, 2026-09-16)
+
+| | |
+|---|---|
+| **Severity** | Low — a 404 per navigation in the network log and the server log, for most accounts, forever |
+| **Layer** | BOTH — the response needed a field the client could act on |
+| **Found** | Live smoke on 2026-09-12 (recorded in RESUME_POINT as a candidate CR); fixed under the CR-085 hygiene pass |
+| **Symptom** | `GET /v1/auth/me/avatar` → 404 on the rail footer, the top bar and the profile page, on every route change, for any user who never uploaded a picture — which is nearly all of them |
+
+**Root cause.** `useAuthenticatedImage(avatarService.url, …)` fetched
+unconditionally; nothing on `/me` said whether there was anything to fetch.
+
+**Fix.** `UserResponse.hasAvatar`, computed only on the current-user paths
+(login, refresh, `/me` — `UserAvatarRepository.existsById`), false from the
+plain mapper so a user list never pays a query per row for a picture it does
+not draw. The three consumers pass `null` to the hook unless `hasAvatar`; the
+profile page refreshes `/me` after an upload or removal before bumping the
+cache-busting version, so the flag is never stale.
+
+**Regression test.** `navigation/sidebar.spec.mjs`: with the fixture user
+(`hasAvatar: false`), three routes produce zero requests to `/me/avatar`.
+
+---
+
+## BUG-FE-040 — two spinners on the supplier wizard's save button (FIXED, 2026-09-16)
+
+| | |
+|---|---|
+| **Severity** | Low — cosmetic, but it is the button every supplier is created with |
+| **Layer** | FRONTEND ONLY |
+| **Found** | Noticed during CR-053 phase 2 and recorded as "worth a one-line fix"; fixed under the CR-085 hygiene pass |
+
+**Root cause.** `SupplierWizard` passed `loading={submitting}` to `Button`,
+which renders its own spinner, *and* rendered a second `<Loader2>` inside the
+button's children. `RegisterPage`'s wizard, written later, did not repeat it.
+
+**Fix.** The hand-rolled spinner and its import are gone; `Button`'s `loading`
+prop is the one source of the spinner, as everywhere else.
+
+---
+
+## BUG-BE-008 — the product module depended on the invoice module that depends on it (FIXED, 2026-09-16)
+
+| | |
+|---|---|
+| **Severity** | Medium — a package cycle; neither module could be compiled, tested or reasoned about alone |
+| **Layer** | BACKEND ONLY |
+| **Found** | The 2026-09-02 architecture audit named it; nothing was done until the CR-085 hygiene pass |
+| **Symptom** | `ProductServiceImpl` injected `InvoiceItemRepository` and imported `InvoiceStatus` for one method, `priceHistory()`, while `invoice` imports `product` for every line item |
+
+**Fix.** Dependency inversion: `product.service.ProductSaleHistoryProvider`
+declares what product needs to know ("the most recent non-cancelled sales
+of this product"); `invoice.service.impl.InvoiceProductSaleHistoryProvider`
+implements it with the same query and the same exclusion of cancelled
+invoices. `product` now imports nothing from `invoice`; the endpoint, the
+DTO and the behaviour are unchanged.
+
+**Regression test.** `architecture/PackageCycleTest` scans the product
+sources and fails on any import from `invoice`, `quotation`, `salesorder`,
+`deliverychallan`, `creditnote` or `payment` — the modules that all point at
+product. No library; runs in the unit tier.
+
+## BUG-FE-043 — the dashboard overflowed the viewport by 75px at every width from 1024 to 1279 (FIXED, 2026-09-22)
+
+| | |
+|---|---|
+| **Severity** | Medium — a horizontal scrollbar on the first screen after login on an iPad Pro, a small laptop, or any desktop window between 1024 and 1279px wide |
+| **Layer** | FRONTEND ONLY |
+| **Found** | The consolidation audit's viewport sweep (`tests/responsive/viewports.spec.mjs`): 1024×1366 failed with `scrollWidth=1099`; 1023 (below `lg`) and 1280 (`xl`) both passed |
+| **Symptom** | `document.documentElement.scrollWidth` 1099 on a 1024px viewport; the overflowing element was the Sales-by-Category card's period-preset group (`div.flex shrink-0 …`, 214px), whose right edge sat at 1099 |
+
+**Root cause.** At `lg` the dashboard's chart row is a 3-column grid and
+the category chart gets one column of roughly 230px. Its `CardHeader` was
+`flex-row … justify-between` with the preset group `shrink-0`, so the
+title and the 214px group had to share one line and the group was pushed
+out of the card, out of the grid and past the viewport. The same header
+markup is in `SalesTrendChart`, which spans two columns and only hid the
+problem by being wider. At `xl` the grid is wide enough; below `lg` the row
+stacks; only the `lg` band was broken - exactly the band no earlier spec
+measured (the dashboard spec checks a phone and a 1280 desktop).
+
+**Fix.** Both chart headers are `flex-wrap` with `gap-x-4 gap-y-2`, so
+the preset group drops under the title when the column is narrow. Nothing
+changes at other widths.
+
+**Regression test.** `tests/responsive/viewports.spec.mjs` - 18 viewports
+(the seven required phones, breakpoint edges 639/640/767/768/1023/1024,
+three tablets, four desktops) × 15 screens, asserting no horizontal
+overflow, a rendered main landmark and no page error: 270/270. Wired into
+`tests/run.mjs`.
+
+**Lesson (PROJECT_SKILLS):** a responsive spec that checks "a phone and a
+desktop" misses the breakpoint edges; measure at 639/640, 767/768 and
+1023/1024, where the layout actually changes.
+
+## BUG-BE-009 — two simultaneous first invoices for the same new customer: one died on uk_customer_mobile (FIXED, 2026-09-22)
+
+| | |
+|---|---|
+| **Severity** | High — a busy counter with two staff serving the same walk-in at once, or one client whose retry raced its own first attempt, got a 409 "integrity violation" instead of an invoice; the stock invariant held, the customer experience did not |
+| **Layer** | BACKEND ONLY |
+| **Found** | The consolidation audit's `ConcurrentStockIT`: eight simultaneous invoices for a new mobile number - one 201 and seven 409s, every loser `duplicate key value violates unique constraint "uk_customer_mobile"` |
+| **Symptom** | `CustomerLookupServiceImpl.findOrCreate` is check-then-insert: every transaction read "no customer", every one inserted, the constraint refused all but the first and PostgreSQL aborted their transactions |
+
+**Fix.** A transaction-scoped advisory lock keyed on (tenant, mobile) -
+`CustomerRepository.lockForFindOrCreate`, `pg_advisory_xact_lock` - taken
+before the lookup. Concurrent callers for one number queue on it; the
+second then finds the row the first inserted. Released at the caller's
+commit or rollback, the same discipline as the document-sequence row lock.
+No schema change. Proven by `ConcurrentStockIT.oneUnitCannotBeSoldTwice`:
+one 201, seven honest 422 INSUFFICIENT_STOCK, stock 0, one movement.
+
+## BUG-BE-010 — concurrent payments against one invoice deadlocked and returned 500 (FIXED, 2026-09-22)
+
+| | |
+|---|---|
+| **Severity** | Medium — no money was ever double-recorded (`Invoice.@Version` and the FK share lock saw to that), but the losing requests surfaced as `deadlock detected` 500s rather than the 422 the business rule owns |
+| **Layer** | BACKEND ONLY |
+| **Found** | `ConcurrentStockIT.paymentsCannotOverpayConcurrently` |
+| **Symptom** | Each payment transaction inserts a `payment` row (a share lock on the invoice, its FK target) and then updates the invoice (an exclusive lock). Two such transactions each hold a share lock and wait for the other's - PostgreSQL kills one |
+
+**Fix.** `addPayment` (invoice and purchase) now takes the document row
+`FOR UPDATE` first (`lockByIdAndTenantId`, PESSIMISTIC_WRITE), so payments
+against one document serialise: the second waits, re-reads the paid total
+and gets 422 PAYMENT_EXCEEDS_TOTAL or succeeds if it still fits. Eight
+simultaneous ₹600 payments on a ₹1,000 invoice: one 200, seven 422, one
+payment row, one ledger row.

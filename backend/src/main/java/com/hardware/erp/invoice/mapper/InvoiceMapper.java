@@ -43,7 +43,14 @@ public class InvoiceMapper {
                 invoice.getCreatedAt(),
                 invoice.getBankAccount() != null ? invoice.getBankAccount().getId() : null,
                 invoice.getBankAccount() != null ? invoice.getBankAccount().getLabel() : null,
-                invoice.getBankAccountQr() != null ? invoice.getBankAccountQr().getId() : null);
+                invoice.getBankAccountQr() != null ? invoice.getBankAccountQr().getId() : null,
+                invoice.getSupplyType() != null ? invoice.getSupplyType().name() : null,
+                invoice.getPlaceOfSupplyStateCode(),
+                rupees(invoice.getCgstPaise()),
+                rupees(invoice.getSgstPaise()),
+                rupees(invoice.getIgstPaise()),
+                invoice.getCancelledAt(),
+                invoice.getCancellationReason());
     }
 
     public InvoiceSummaryResponse toSummary(Invoice invoice) {

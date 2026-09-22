@@ -72,6 +72,15 @@ public interface NotificationService {
      */
     NotificationStatus sendTestWhatsApp(String toMobileNo);
 
+    /**
+     * CR-092. A message to the shop's own owner - the daily business summary -
+     * on WhatsApp when a provider is connected, else email, else logged. Goes
+     * through the same metered attempt() as every customer send, so it counts
+     * against the plan. Takes the tenant id explicitly because the caller is
+     * a scheduled job with no request context.
+     */
+    NotificationStatus sendOwnerMessage(Long tenantId, String subject, String body, String relatedEntityType, Long relatedEntityId);
+
     /** Tenant-scoped, newest first. Backs GET /v1/notifications/log. Null channel means every channel. */
     PageResponse<NotificationLogResponse> search(NotificationChannel channel, Pageable pageable);
 }

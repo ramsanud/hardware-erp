@@ -12,7 +12,7 @@ Envelope (error): `{ "success": false, "message": ..., "code": ..., "timestamp":
 | POST | `/v1/auth/refresh` | public | LOCKED | refresh token from cookie or body |
 | POST | `/v1/auth/logout` | authenticated | LOCKED | this device only |
 | POST | `/v1/auth/logout-all` | authenticated | LOCKED | all devices, bumps token_version |
-| GET | `/v1/auth/me` | authenticated | LOCKED | identity from SecurityContext, never from a body field |
+| GET | `/v1/auth/me` | authenticated | LOCKED | identity from SecurityContext, never from a body field. `UserResponse.hasAvatar` (BUG-FE-039) says whether `/me/avatar` would answer 200, so the shell only fetches an image that exists |
 | PUT | `/v1/auth/me` | authenticated | LOCKED | own name/email only |
 | POST | `/v1/auth/change-password` | authenticated | LOCKED | |
 | POST | `/v1/auth/forgot-password` | public | LOCKED | always 200, never reveals existence |
@@ -168,6 +168,13 @@ got set was never, despite the column existing since CR-021.
 | GET | `/v1/reports/{report}/export?format=pdf|xlsx&…` | REPORT_VIEW | 200 `application/pdf` or `…spreadsheetml.sheet` as an attachment, built from the same object as the JSON; same filters as the report; any other `format` → 400 (CR-086) |
 | GET | `/v1/reports/gstr1?period=MMYYYY` | REPORT_FINANCIAL | 200 - the GSTR-1 document (offline-tool layout: `gstin, fp, b2b, b2cl, b2cs, cdnr, cdnur, hsn`) enveloped for preview; bad period → 400; shop GSTIN missing/invalid → 400 (CR-087) |
 | GET | `/v1/reports/gstr1/download?period=MMYYYY` | REPORT_FINANCIAL | 200 - the same document as a bare `GSTR1-MMYYYY.json` attachment (CR-087) |
+| POST | `/v1/documents/jobs` | REPORT_VIEW (+ REPORT_FINANCIAL when `reportType=GSTR1`, checked in the controller) | 202 - `{reportType, format PDF|XLSX|CSV|PNG|JSON, params{}}` → `ReportJobResponse {id, reportType, format, status PENDING|PROCESSING|COMPLETED|FAILED, fileName, fileSizeBytes, errorMessage, createdAt, completedAt}`; the render happens on `taskExecutor`, never on this request (CR-101) |
+| GET | `/v1/documents/jobs/{id}` | REPORT_VIEW | 200 - the same shape, tenant-scoped, 404 for another tenant's id; poll this until COMPLETED or FAILED (CR-101) |
+| GET | `/v1/documents/jobs?page&size` | REPORT_VIEW | 200 - `PageResponse<ReportJobResponse>`, newest first, never carries the file bytes (CR-101) |
+| GET | `/v1/documents/jobs/{id}/download` | REPORT_VIEW | 200 - the finished file as an attachment with the format's content type; 404 until COMPLETED (CR-101) |
+| GET | `/v1/documents/jobs/{id}/share/whatsapp-link?toMobileNo` | REPORT_VIEW | 200 - `WhatsAppLinkResponse` with the file's caption; no number → `https://wa.me/?text=…` (WhatsApp's own contact chooser). Never carries the file (CR-101) |
+| POST | `/v1/documents/jobs/{id}/share/email` | REPORT_VIEW | 200 - `{toEmail}` → `SENT|LOGGED_ONLY|FAILED`, the file attached through `EmailTransport` (CR-101) |
+| GET | `/v1/customers/{id}/greeting-link?occasion=Diwali` | CUSTOMER_VIEW | 200 - `WhatsAppLinkResponse` from `WhatsAppMessageTemplates.occasionGreeting`; no phone → 422 (CR-101, the first Smart Greetings entry — scheduling is M8) |
 
 `PUT` image endpoints are `multipart/form-data`, field name `file`, 2MB cap
 (`ImageValidation`). `TenantSettingsRequest` gained a required `name` field
@@ -370,6 +377,7 @@ rule that automatically covers permissions added later.
 | GET | `/v1/auth/captcha-config` | public (permitAll) | Whether the sign-in page must render a challenge, plus the Turnstile **site** key. The secret never leaves the server. Public because the login page needs this before anyone has signed in. |
 | POST | `/v1/auth/login` | public (permitAll) | Gained an optional `captchaToken`. Verified server-side against Cloudflare **before** authentication, so the endpoint cannot be used to probe passwords while failing the challenge. |
 | POST | `/v1/settings/mail/test?toEmail=` | `SETTINGS_MANAGE` | Sends one test email and returns SENT / LOGGED_ONLY / FAILED with the mail server's own rejection text. Exists so outgoing email can be proven to work before Email OTP is built on it. |
+| POST | `/v1/settings/sms/test?toMobileNo=` | `SETTINGS_MANAGE` | CR-085. Sends one test SMS through the real provider and returns SENT / LOGGED_ONLY / FAILED with Twilio's own error text. LOGGED_ONLY names which of `SMS_ENABLED=false` or missing `TWILIO_*` is the reason. The counterpart of `mail/test`; until CR-085 neither had a button on screen. |
 
 `captchaToken` is optional in the DTO on purpose: whether it is required is a
 runtime decision (`app.captcha.enabled` plus both keys present), not a
@@ -571,6 +579,8 @@ Tenant-side endpoints resolve the tenant from `SecurityUtils.requireCurrentTenan
 | POST | `/v1/billing/verify` | `SETTINGS_MANAGE` | Body: `razorpayOrderId`/`razorpayPaymentId`/`razorpaySignature` - Razorpay Checkout's own callback shape. Applies the tier upgrade only on a genuine HMAC match against `key_secret`; `400 PAYMENT_SIGNATURE_INVALID` otherwise. |
 | GET | `/v1/billing/history` | `SETTINGS_VIEW` | Current tier + this tenant's own payment history only. |
 | POST | `/v1/webhooks/razorpay` | public, self-verified | Inbound Razorpay webhook - authenticity is the `X-Razorpay-Signature` HMAC against the webhook secret inside `SubscriptionBillingService`, not Spring Security (same pattern as `/v1/webhooks/whatsapp`). Idempotent via `UNIQUE(razorpay_payment_id)`. |
+| POST | `/v1/webhooks/twilio/status` | public, self-verified | CR-085. Twilio's status callback for the SMS channel (form-encoded `MessageSid`, `MessageStatus`). Authenticity is `X-Twilio-Signature` = base64(HMAC-SHA1(auth token, configured public URL + sorted form fields)); refused outright while `APP_PUBLIC_BASE_URL` or the auth token is blank. `delivered` / `read` / `failed` / `undelivered` advance the `notification_log` row through `DeliveryStatusService` (forward-only, shared with the Meta webhook). Sends carry `StatusCallback` only when the public base URL is configured. |
+| POST | `/v1/webhooks/sendgrid/events` | public, self-verified | CR-085. SendGrid's Event Webhook (JSON array). Authenticity is the Signed Event Webhook: ECDSA P-256 over timestamp + raw body against `SENDGRID_WEBHOOK_PUBLIC_KEY`; refused while the key is blank. `sg_message_id` is matched to the row by the `X-Message-Id` prefix before the first dot. `delivered` → DELIVERED, `open` → READ, `bounce` / `dropped` → FAILED. |
 | GET | `/v1/platform-admin/billing/overview` | `BILLING_VIEW` | Cross-tenant revenue chart data - last 12 months, aggregated server-side, never raw payment rows. |
 | GET | `/v1/platform-admin/billing/tenants/{tenantId}` | `BILLING_VIEW` | One tenant's current plan + payment history, for the Tenant Detail page. |
 
@@ -672,6 +682,20 @@ forced true):
   `EntitlementService` enforces no tier cap on a self-hosted install — the
   summary must describe what is actually enforced, not a ceiling that is
   never applied.
+
+## CR-097 — `GET /v1/products?search=` falls back to closest matches
+
+No new endpoint, no new permission. When the substring search returns zero
+rows and the term is at least three characters, the same call answers with
+pg_trgm's closest matches on name and code, in the caller's tenant only,
+ordered by score. One additive field on `ProductSummaryResponse`:
+
+| Field | Note |
+|---|---|
+| `matchScore` | `0.0`–`1.0` word similarity, highest first. **Absent** (not null) on an ordinary page, so its presence alone means "these are close matches, not what you typed". |
+
+The sort parameters are ignored on a fuzzy page - it is ordered by score,
+then name. The threshold is `APP_SEARCH_FUZZY_THRESHOLD` (default 0.5).
 
 ## CR-068 — `ProductSummaryResponse` widened for the column picker
 
@@ -823,3 +847,131 @@ viewer already answers "who changed what" with it.
 Regression tests: `ActivityLogTenantScopeIT` (6, including a foreign-tenant row
 and a null-tenant row proven invisible, and a `STAFF` caller refused) and
 `ActivityLogWriterPropagationIT` (1, BUG-BE-002).
+
+## CR-088 — SaaS subscription plans & feature gating
+
+Tenant-side endpoints resolve the tenant from `SecurityUtils.requireCurrentTenantId()` only.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/subscriptions/plans` | public | BASIC/PRO/PREMIUM catalogue - price, tagline, feature keys, usage limits. Shown before login (pricing page). |
+| GET | `/v1/subscriptions/current` | authenticated | This tenant's plan, status (TRIAL/ACTIVE/PAST_DUE/EXPIRED/CANCELLED/SUSPENDED), effective plan (falls back to Basic when the status does not grant paid features), usage this month, last 20 history rows. |
+| GET | `/v1/subscriptions/features` | authenticated | Feature keys the caller's *effective* plan carries. |
+| GET | `/v1/subscriptions/usage` | authenticated | Metered WhatsApp/SMS/email/AI usage this calendar month vs the plan's included count. |
+| POST | `/v1/subscriptions/upgrade` | `SETTINGS_MANAGE` | Body: `{planCode, reason?}`. `422 UPGRADE_REQUIRES_CHECKOUT` for an upgrade once a Razorpay gateway is configured (mirrors the existing `PUT /v1/settings` rule) - downgrades are always self-service. |
+| POST | `/v1/subscriptions/cancel` | `SETTINGS_MANAGE` | Body: `{reason}`. Status → CANCELLED, effective plan falls back to Basic, data is never deleted. Refused on Basic itself (nothing to cancel). |
+| GET | `/v1/features/{featureKey}/access` | authenticated | `{allowed, currentPlanCode, requiredPlanCode}` for one `FeatureKey` - lets the frontend show the upgrade dialog proactively. |
+
+`FeatureAccessService.requireFeature(FeatureKey)` is the single backend gate
+every plan-restricted endpoint calls (first consumer: `POST /v1/ai/chat`,
+moved off the old tier-ordinal `SubscriptionService.requireTier(MAX)` onto
+`FeatureKey.AI_FEATURES`, which is also now metered per request via
+`UsageTrackingService`). A refusal is `403 FEATURE_NOT_AVAILABLE` with
+`errors.featureKey/currentPlanCode/requiredPlanCode` in the body - the
+frontend's `UpgradeDialog` renders directly from that shape. A metered
+channel at its plan-included limit is `429 USAGE_LIMIT_REACHED` and the
+provider is never called. New `subscription_plan`/`feature`/`plan_feature`/
+`plan_usage_limit`/`tenant_subscription`/`subscription_usage`/
+`subscription_history` tables (V59); `tenant.subscription_tier` (V15,
+locked) is unchanged in shape and is now written only by
+`SubscriptionLifecycleService.applyTier()` - the Shop Settings picker,
+CR-032's coupon redemption, CR-057's Razorpay verification and registration
+all call it instead of setting the tenant row directly.
+
+Regression tests: `FeatureAccessServiceImplTest`, `UsageTrackingServiceImplTest`,
+`SubscriptionLifecycleServiceImplTest` (unit), `SubscriptionControllerIT` (8,
+Basic/Pro → 403 on `/v1/ai/chat`, Premium → 200, tenant isolation, public
+plans, self-service upgrade). See `docs/SUBSCRIPTION_FEATURE_MATRIX.md`.
+
+## CR-089 — Smart Substitute Product Suggestion (PREMIUM)
+
+Every `/v1/product-requests/*` and `/v1/substitute-settings` call is gated on `FeatureKey.SMART_SUBSTITUTE` inside the service (403 `FEATURE_NOT_AVAILABLE` for Basic/Pro) as well as by permission. Tenant from the JWT only.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/v1/product-requests` | `PRODUCT_REQUEST_MANAGE` | Body: `productId`, `requestedQuantity`, optional `requestedBudgetPaise`, `customerName`, `customerMobile`. Records the request and computes the alternatives in one step - manual mappings first, then attribute scoring, filtered by the owner's threshold/budget rule/limit. 201. |
+| GET | `/v1/product-requests?status=OPEN\|RESOLVED\|CANCELLED` | `PRODUCT_REQUEST_VIEW` | Paged, newest first, with each request's stored suggestions. |
+| GET | `/v1/product-requests/{id}` | `PRODUCT_REQUEST_VIEW` | One request: requested product + its live stock, budget, customer, status, selection, suggestions (score, `maximumScore`, level, reason, source, `aboveBudget`). |
+| GET | `/v1/product-requests/{id}/alternatives` | `PRODUCT_REQUEST_VIEW` | Same shape as `get` - the brief's own path. |
+| POST | `/v1/product-requests/{id}/alternatives/recompute` | `PRODUCT_REQUEST_MANAGE` | Recomputes against current stock/prices; replaces the stored set. OPEN only. |
+| GET | `/v1/product-requests/{id}/compare?alternativeProductId=` | `PRODUCT_REQUEST_VIEW` | §12 - requested vs one alternative, attribute by attribute, `same` per row built server-side (two blanks are not "same"). |
+| POST | `/v1/product-requests/{id}/select-alternative` | `PRODUCT_REQUEST_MANAGE` | Body: `productId` - must be one of this request's suggestions (422 otherwise). Records who chose what, status → RESOLVED. **Touches no invoice** (§13/§24). |
+| POST | `/v1/product-requests/{id}/cancel` | `PRODUCT_REQUEST_MANAGE` | OPEN → CANCELLED. A RESOLVED request cannot be cancelled. |
+| GET | `/v1/products/{id}/alternative-mappings` | `PRODUCT_VIEW` | The owner's own mappings on one product (ALTERNATIVE/COMPATIBLE/UPGRADE/LOWER_COST/SAME_USE/REPLACEMENT). Not plan-gated - describing your catalogue is not the premium part. |
+| POST | `/v1/products/{id}/alternative-mappings` | `PRODUCT_MANAGE` | Body: `relatedProductId`, `relationshipType`, optional `notes`. Self-mapping and duplicates rejected. 201. |
+| DELETE | `/v1/products/{id}/alternative-mappings/{relationshipId}` | `PRODUCT_MANAGE` | 404 unless the mapping belongs to this product and tenant. |
+| GET | `/v1/substitute-settings` | `PRODUCT_REQUEST_VIEW` | `minScoreThreshold` (default 40), `showAboveBudget` (true), `maxResults` (3). Defaults returned even before a row exists. |
+| PUT | `/v1/substitute-settings` | `SETTINGS_MANAGE` | Threshold above the configured maximum score (110) is refused. |
+
+Two new permissions in V60: `PRODUCT_REQUEST_VIEW` (OWNER/MANAGER/ACCOUNTANT/STAFF) and `PRODUCT_REQUEST_MANAGE` (OWNER/MANAGER/STAFF). `ProductRequest`/`ProductResponse` gained seven optional attribute fields (`subcategory`, `sizeLabel`, `material`, `colorFinish`, `shape`, `usageType`, `productType`) used by the scorer.
+
+Regression tests: `RuleBasedRecommendationStrategyTest` (9), `ProductRequestIT` (8). See `docs/SMART_SUBSTITUTE.md`.
+
+## CR-090 — Owner-side Nearby Product Discovery (PREMIUM, opt-in)
+
+The one deliberately cross-tenant read in the system. Consent is enforced in the search SQL's SELECT list (a field a shop did not consent to is never read), and no response ever carries another shop's tenant id, quantity or price. Full model: `docs/NEARBY_PRODUCT_DISCOVERY.md`.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/discovery/settings` | `SETTINGS_VIEW` | This shop's five consent flags (all false by default), coordinates, radius. Defaults returned before any row exists. |
+| PUT | `/v1/discovery/settings` | `SETTINGS_MANAGE` + `NEARBY_PRODUCT_DISCOVERY` | Enabling without a location is 422; disabling clears every sub-flag server-side. Before/after written to `activity_log`. Takes effect on the next search anyone runs. |
+| POST | `/v1/product-requests/{id}/discover` | `PRODUCT_REQUEST_MANAGE` + feature | Searches opted-in shops within this shop's radius, replaces the request's match snapshot, leaves an `owner_notification` when any were found. `searchUnavailable: true` + reason (no shops) when the caller's own shop is not opted in or has no location - reciprocity, never an error. |
+| GET | `/v1/product-requests/{id}/nearby` | `PRODUCT_REQUEST_VIEW` + feature | The snapshot: per shop `shopName`/`phone`/`whatsappUrl`/`distanceKm` (each absent unless that shop shared it), `matchedProductName`, `AVAILABLE`/`LIKELY_AVAILABLE`. |
+| GET | `/v1/owner-notifications?unreadOnly=` | authenticated | This shop's in-app notifications, newest first. |
+| GET | `/v1/owner-notifications/unread-count` | authenticated | `{unread}`. |
+| POST | `/v1/owner-notifications/{id}/read` | authenticated | 404 for another shop's row. |
+| POST | `/v1/owner-notifications/read-all` | authenticated | `{marked}`. |
+
+Regression tests: `ShopDiscoveryIT` (8).
+
+## CR-091 — Customer ledger, profit, invoice cancellation reason, offline sync
+
+Rules and proofs: `docs/BUSINESS_RULES_GST_STOCK_LEDGER_PROFIT.md`, `docs/OFFLINE_SYNC.md`.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/v1/invoices/{id}/cancel` | `INVOICE_CANCEL` | **Body now required:** `{reason}` (`@NotBlank`, ≤255). Stored as `cancelled_at/by/reason`, ledger reversed by an INVOICE_CANCELLATION credit. A bodiless call is 400. |
+| GET | `/v1/invoices/{id}` | `INVOICE_VIEW` | Response gains `supplyType` (INTRA/INTER), `placeOfSupplyStateCode`, `cgstDisplay`/`sgstDisplay`/`igstDisplay`, `cancelledAt`, `cancellationReason` (last two only when CANCELLED). |
+| GET | `/v1/customers/{customerId}/ledger/balance` | `CUSTOMER_VIEW` | `balancePaise` positive = customer owes; plus lifetime debit/credit totals, all with display strings. |
+| GET | `/v1/customers/{customerId}/ledger/statement?from&to` | `CUSTOMER_VIEW` | Opening balance, entries with running balance, closing balance. Entry types INVOICE/PAYMENT/SALES_RETURN/INVOICE_CANCELLATION/ADJUSTMENT. |
+| GET | `/v1/customers/{customerId}/ledger/ageing` | `CUSTOMER_VIEW` | Open invoice balances in 0-30/31-60/61-90/90+ buckets from the invoice date (no separate due date exists), plus the invoices themselves. |
+| POST | `/v1/customers/{customerId}/ledger/adjust` | `PAYMENT_MANAGE` | `{amountPaise ≥ 1, debit: bool, reason}`; reason mandatory (400 when blank). Written to `activity_log`. |
+| GET | `/v1/analytics/profit?from&to` | `REPORT_FINANCIAL` | Revenue, sales returns, net revenue, COGS (from `invoice_item.cost_price_paise` frozen at sale, net of returned units), gross profit, expenses, net profit - paise + display each. Same gate as the Tally export, not `REPORT_VIEW`. |
+| POST | `/v1/sync/transactions` | `INVOICE_CREATE` | `{transactions: [{clientUuid, deviceId, transactionType: INVOICE, clientCreatedAt, payload: <POST /v1/invoices body>}]}` → one result per row: `status` SYNCED/CONFLICT/FAILED, `replay` (UUID already seen - stored result returned, nothing created), `resultReferenceId/Number`, `conflictReason`. Always 200 for a well-formed batch; a bad row never fails its siblings. No tenant id accepted. |
+
+Regression tests: `CustomerLedgerIT` (2), `ProfitHistoricalCostIT` (1), `OfflineSyncIT` (2), `GstSplitTest` (6).
+
+## CR-092 — Branches, smart insights, daily summary, backups
+
+Write-up: `docs/PREMIUM_GROWTH_PACK.md`. Plan gates are inside the services; every path is tenant-scoped from the JWT and no branch id on a document is ever taken from a request.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/v1/branches` | `BRANCH_VIEW` | This shop's branches, MAIN first. Every shop has one. |
+| POST | `/v1/branches` | `BRANCH_MANAGE` + `MULTI_BRANCH` | Creating the second branch snapshots MAIN's holding from the shop stock. 409 on a duplicate code. |
+| GET | `/v1/branches/{id}` · PUT | `BRANCH_VIEW` · `BRANCH_MANAGE` | MAIN cannot be made inactive (422 `MAIN_BRANCH_REQUIRED`). |
+| PUT | `/v1/branches/users/{userId}` | `BRANCH_MANAGE` + feature | `{branchId}` or null = every branch. Changes where that user's documents land. |
+| GET | `/v1/branches/summary?from&to` | `BRANCH_VIEW` + feature | Per branch: invoice count/sales, purchase count/amount (cancelled excluded), users, products in stock. |
+| GET | `/v1/branches/stock?branchId&search` | `BRANCH_VIEW` + feature | The breakdown; non-zero rows only, up to 500. Negative = sold from a branch that never received it. |
+| GET | `/v1/branches/transfers` · `/{id}` | `BRANCH_VIEW` | Newest first. |
+| POST | `/v1/branches/transfers` | `STOCK_TRANSFER_MANAGE` + feature | `{fromBranchId, toBranchId, items[{productId, quantity}], notes}`. 422 `INSUFFICIENT_BRANCH_STOCK` when the source does not hold it; `SAME_BRANCH`; `BRANCH_INACTIVE`. Shop total unchanged. |
+| GET | `/v1/insights/slow-moving?days` · `overstock?days&coverDays` · `reorder?days&leadTimeDays` · `demand-trend?days` · `bought-together?days` | `REPORT_VIEW` + `SMART_INSIGHTS` | Each returns `{window, items/pairs, summary}`; empty is empty with a reason. |
+| GET | `/v1/insights/pricing?days` | `REPORT_VIEW` + `PRODUCT_VIEW_COST` + feature | Below cost / low margin / heavily discounted. |
+| GET | `/v1/daily-summary/today` | `REPORT_VIEW` | `{day, body}` - today's summary text. |
+| POST | `/v1/daily-summary/send` | `SETTINGS_MANAGE` | Sends now; returns the delivery `NotificationStatus` (LOGGED_ONLY below Premium). Always leaves the in-app notification. |
+| GET | `/v1/backups` | `BACKUP_MANAGE` | Newest 20, without file bytes. |
+| POST | `/v1/backups?format=JSON,CSV` | `BACKUP_MANAGE` + `DATA_EXPORT` | Takes one now; 201 with the summary row. Activity-logged. |
+| GET | `/v1/backups/{id}/download` | `BACKUP_MANAGE` | The stored file; another shop's id is 404. |
+
+Regression tests: `BranchStockTransferIT` (3), `InsightsIT` (2), `TenantBackupIT` (3).
+
+## CR-102 — Idempotency-Key on the financial writes
+
+| Method | Path | Header | Behaviour |
+|---|---|---|---|
+| POST | `/v1/invoices` | `Idempotency-Key` (optional) | Same key + same body → the stored 201 result; same key + different body → 409 `IDEMPOTENCY_KEY_REUSED`. |
+| POST | `/v1/invoices/{id}/payments` | `Idempotency-Key` (optional) | Keyed per invoice. Same rules. |
+| POST | `/v1/purchases` | `Idempotency-Key` (optional) | Same rules. |
+| POST | `/v1/purchases/{id}/payments` | `Idempotency-Key` (optional) | Keyed per purchase. Same rules. |
+
+The frontend always sends one (`useIdempotencyKey`). Regression test: `FinancialIdempotencyIT` (2).

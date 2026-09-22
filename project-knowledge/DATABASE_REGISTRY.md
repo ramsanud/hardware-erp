@@ -38,6 +38,7 @@ Flyway owns the schema. Hibernate is `ddl-auto: validate` and never `update`.
 | V26 | `V26__worker_payment_status.sql` | `worker_payment.status` (ACTIVE/CANCELLED) - a mistyped payment had no in-app correction (BUG-LAB-005, CR-037) | ALL |
 | V27 | `V27__backfill_labour_grants_for_registered_tenants.sql` | Data-only repair: grants `LABOUR_VIEW`/`LABOUR_MANAGE` to MANAGER/ACCOUNTANT roles of shops registered after V25, which never received them (BUG-LAB-006, CR-037). Anti-join, safe to re-run | ALL |
 | V28 | `V28__user_consent.sql` | `user_consent` - append-only record of which legal document version each user accepted; supports re-consent and marketing withdrawal, stores no IP/device data (CR-040) | ALL |
+| V64 | `V64__pg_trgm_product_search.sql` | `CREATE EXTENSION IF NOT EXISTS pg_trgm`; partial GIN trigram indexes `idx_product_name_trgm`, `idx_product_code_trgm` (CR-097). Numbered past V57–V63, claimed by branches in flight | ALL |
 | V900 | `db/seed/V900__seed_dev_data.sql` | Module 1 sample rows | DEV/TEST ONLY (CR-009) |
 | V901 | `db/seed/V901__seed_dev_supplier.sql` | 13 suppliers, 13 contacts, activity history | DEV/TEST ONLY |
 | V902 | `db/seed/V902__seed_dev_products.sql` | 12 products with opening stock, so an invoice can be raised immediately | DEV/TEST ONLY |
@@ -946,6 +947,17 @@ Indexes: `idx_product_tenant`, `idx_product_category`, `idx_product_brand`,
 `idx_product_status (status, deleted_at)`, and the partial
 `idx_product_active ON (product_id) WHERE deleted_at IS NULL`.
 
+CR-097 (V64) adds `pg_trgm` and two partial GIN trigram indexes,
+`idx_product_name_trgm ON (product_name gin_trgm_ops)` and
+`idx_product_code_trgm ON (product_code gin_trgm_ops)`, both `WHERE
+deleted_at IS NULL`. They serve only `ProductRepository.fuzzySearch` (the
+`<%` word-similarity operator); `tenant_id` is not in them - GIN cannot lead
+with a btree scalar without `btree_gin` - so the planner combines them with
+`idx_product_tenant`, and every query still opens with `tenant_id = ?`. On
+Supabase the extension normally pre-exists in the `extensions` schema and
+the `CREATE EXTENSION IF NOT EXISTS` is a no-op; nothing is schema-qualified
+because the postgres role's search_path already covers it.
+
 ## CR-058 — `deleted_at` / `deleted_by` behaviour, and why restore is safe
 
 **No schema change. No migration.** CR-058 adds no column, no table and no
@@ -1224,3 +1236,196 @@ the repository's `upsert` (`@Transactional` on the interface method), not
 the job — a `REQUIRES_NEW` on the job would be self-invoked from its own
 loop and never cross the proxy (BUG-BE-002). `lowStockTrend()` is the one
 read-write method in an otherwise `readOnly` service, for that INSERT.
+
+## V59 — subscription plans, feature catalogue, tenant subscription state (CR-088, 2026-09-16)
+
+Seven tables. `tenant.subscription_tier` (V15, FREE/PRO/MAX, locked) is
+unchanged in shape; these tables layer price, feature membership, status
+and metered usage around it rather than replacing it.
+
+| Table | Purpose |
+|---|---|
+| `subscription_plan` | BASIC/PRO/PREMIUM — `plan_code`, `tier` (maps 1:1 onto the locked enum), `price_paise`, `billing_period`, `recommended`, `display_order`. Seeded, `UNIQUE(plan_code)`/`UNIQUE(tier)`. |
+| `feature` | The catalogue — `feature_key` (mirrors `FeatureKey.java`), name, description, module, display order. |
+| `plan_feature` | Plan ↔ feature membership. BASIC carries every feature with `display_order < 100`, PRO `< 200`, PREMIUM everything — seeded from that rule, editable afterward as plain rows. |
+| `plan_usage_limit` | Plan ↔ metered channel (`WHATSAPP`/`SMS`/`EMAIL`/`AI_REQUEST`/`STORAGE_MB`) → included count per calendar month. |
+| `subscription_usage` | `UNIQUE(tenant_id, usage_key, period_start)` — one counter per tenant/channel/month, incremented atomically (`INSERT … ON CONFLICT DO UPDATE … WHERE used_count + :units <= :includedCount`) so two concurrent sends cannot both squeeze under the limit. |
+| `tenant_subscription` | One row per tenant — `status` (TRIAL/ACTIVE/PAST_DUE/EXPIRED/CANCELLED/SUSPENDED), `trial_ends_at`, `renewal_at`, `cancelled_at`/`cancellation_reason`, `external_subscription_id`/`payment_status`/`payment_reference` (gateway hooks, never card data). `UNIQUE(tenant_id)`. Backfilled for every existing tenant: ACTIVE on its current tier, or TRIAL if it had a CR-032 coupon trial in progress. |
+| `subscription_history` | Append-only — every plan/status transition, from/to, reason, who. |
+
+`notification_log.status` CHECK gained `QUOTA_EXCEEDED` (a metered channel
+refused before the provider was ever called — a distinct outcome from
+`FAILED`, a real provider error).
+
+**The single writer.** `SubscriptionLifecycleServiceImpl.applyTier()` /
+`startForNewTenant()` are the only code paths that set
+`tenant.subscription_tier` — the CR-027 Shop Settings picker, CR-032's
+coupon redemption, CR-057's Razorpay verification and tenant registration
+all call in rather than touching the tenant row directly, so
+`tenant_subscription` and the locked tier can never drift apart. `applyTier`
+is plain `@Transactional` (not `REQUIRES_NEW`) specifically so a
+newly-registered tenant's very first subscription row commits in the same
+transaction as the tenant insert itself — a `REQUIRES_NEW` there would try
+to FK-reference a tenant row its own suspended transaction cannot yet see.
+`currentFor()` (the lazy TRIAL/PAST_DUE/EXPIRED transition check, mirroring
+CR-032's `SubscriptionServiceImpl.currentTier()`) is the one method that
+does use `REQUIRES_NEW`, because it alone is reached from `readOnly`
+callers (`FeatureAccessServiceImpl.effectivePlan()`).
+
+**A real bug this caught, not just a design intent.** `tenant_subscription
+.plan` is `@ManyToOne(fetch = LAZY)`. `currentFor()`'s `REQUIRES_NEW`
+transaction loaded it and returned the entity to `effectivePlan()`'s own
+(different) transaction — reading the now-orphaned lazy proxy there threw
+`LazyInitializationException`, caught by `SubscriptionControllerIT` (a real
+Postgres session), not by the unit tests (which mock the repository).
+Fixed with `JOIN FETCH ts.plan` in `TenantSubscriptionRepository
+.findByTenantId`.
+
+Seed (`V905`): tenant 1 set to `PREMIUM`/`ACTIVE` so every existing
+integration test that exercises a Premium-only path (quotations, credit
+notes, AI) keeps working now that those are plan-gated; plan-gating itself
+is tested against freshly-registered shops on each tier, never against
+tenant 1.
+
+## V60 — Smart Substitute (CR-089, 2026-09-16)
+
+`CREATE EXTENSION IF NOT EXISTS pg_trgm` and a GIN trigram index on
+`product.product_name` (`idx_product_name_trgm`) for typo-tolerant lookup
+(`ProductRepository.findByNameSimilarity`, native `similarity()`).
+
+| Table / change | Purpose |
+|---|---|
+| `product` +7 nullable columns | `subcategory`, `size_label`, `material`, `color_finish`, `shape`, `usage_type`, `product_type` - the attributes the scorer compares. None mandatory: hardware products vary too much. `size_label` is free text ("4 Inch"), never parsed - sizes are not one unit system. `usage_type` avoids the reserved-sounding `usage`. |
+| `product_relationship` | Owner-defined, directional A→B. `relationship_type` CHECK (ALTERNATIVE/COMPATIBLE/UPGRADE/LOWER_COST/SAME_USE/REPLACEMENT), `CHECK (product_id <> related_product_id)`, `UNIQUE (tenant_id, product_id, related_product_id, relationship_type)`. Index on `(tenant_id, product_id)`. |
+| `substitute_setting` | `tenant_id` PK. `min_score_threshold` (0-110, default 40), `show_above_budget` (default true), `max_results` (1-20, default 3). No row until an owner changes something - `SubstituteSetting.defaults()` mirrors the column defaults. The scoring *weights* are deliberately NOT here (see below). |
+| `product_request` | `requested_product_id` NOT NULL, `requested_quantity > 0`, optional `requested_budget_paise ≥ 0`, optional `customer_name`/`customer_mobile` (never forwarded anywhere), `status` CHECK (OPEN/RESOLVED/CANCELLED), `selected_product_id`/`selected_by`/`selected_at` (the owner's choice - never written by the engine), `resolved_at`. Indexes on `(tenant_id, status, created_at)` and `(tenant_id, requested_product_id)`. |
+| `product_request_suggestion` | One row per suggestion: `score`, `match_level` CHECK (EXCELLENT/HIGH/MEDIUM/LOW/DO_NOT_RECOMMEND), `reason` (≤500, the plain-English explanation), `source` CHECK (RULE_BASED/MANUAL_MAPPING). `UNIQUE (product_request_id, suggested_product_id)`. Recompute deletes and re-inserts the set. |
+| `permission` +2, `role_permission` grants | `PRODUCT_REQUEST_VIEW` → OWNER/MANAGER/ACCOUNTANT/STAFF; `PRODUCT_REQUEST_MANAGE` → OWNER/MANAGER/STAFF. Same "write the grant for the roles that already exist" pattern as V54; `TenantRegistrationServiceImpl.ROLE_PERMISSIONS` carries them for shops registered afterwards, pinned by `RoleGrantDriftTest`. |
+
+**Why the weights are config, not a table.** `app.substitute.scoring.*`
+(`SubstituteScoringProperties`, defaults 30/20/20/15/5/5/5/10 = 110) is
+platform tuning; an owner adjusting "same material is worth 5 or 7" is a
+support call waiting to happen. What an owner genuinely decides - minimum
+score to show, whether to show over-budget products, how many to show - is
+the per-tenant row.
+
+**Entity naming.** The `product_request` row maps to
+`ProductRequestRecord`, not `ProductRequest`: that name is already the
+product create/update DTO (`product/dto/ProductRequest.java`) and the
+naming law forbids two concepts sharing a name. The table keeps the right
+name for the row.
+
+**Candidate narrowing is SQL, not Java.** `ProductRepository
+.findSubstituteCandidates` joins `stock` and applies same-category-or-same-
+product-type, ACTIVE (and `@SQLRestriction` excludes deleted), stock ≥
+requested quantity, and never the requested product itself - before the
+scorer sees a row (§22).
+
+Honest deviation: the brief's "physical − reserved − pending allocation"
+availability assumes a reservation mechanism that does not exist here
+(Sales Order never reserves stock, CR-052). Availability is the real
+`stock.quantity_on_hand` (hard rule 12).
+
+## V61 — Nearby Product Discovery (CR-090, 2026-09-16)
+
+| Table | Purpose |
+|---|---|
+| `shop_discovery_setting` | `tenant_id` PK. `discovery_enabled`, `share_shop_name`, `share_phone`, `share_approximate_location`, `share_availability` - all `NOT NULL DEFAULT FALSE`. `latitude`/`longitude` `DECIMAL(9,6)` nullable with range CHECKs; `search_radius_km` CHECK 1-100, default 5. **`CHECK (discovery_enabled = FALSE OR (latitude IS NOT NULL AND longitude IS NOT NULL))`** - no code path can make a shop discoverable without a place to be discovered at. Partial index `WHERE discovery_enabled = TRUE`, the only rows the search scans. Coordinates are here, not on `tenant`, so a shop that never opted in stores no location. |
+| `product_request_discovery_match` | One row per (request, source shop): `matched_product_name`, `availability` CHECK (AVAILABLE/LIKELY_AVAILABLE), and `distance_km`/`shop_name`/`phone` **nullable - null when the source shop's flag was off at search time**, snapshotted so a later opt-out changes future searches, not this record. `source_tenant_id` is for audit/de-duplication only and is never serialised. `UNIQUE (product_request_id, source_tenant_id)`. |
+| `owner_notification` | Tenant-scoped in-app notification: `notification_type` CHECK (PRODUCT_DISCOVERY/DAILY_SUMMARY/LOW_STOCK/SYSTEM), title, body, optional reference, `read_at`. Index `(tenant_id, read_at, created_at)`. First writer is discovery; CR-092 adds the others. |
+
+**The search is a hand-written native query** (`ShopDiscoveryRepository`),
+not JPA, because the consent rules are in the SELECT list: `CASE WHEN
+d.share_shop_name THEN … ELSE NULL END` for each of name/phone/distance,
+only the availability bucket ever selected, `COALESCE(quantity, 0) > 0`
+so zero-stock shops are absent rather than "Unavailable", `row_number()
+PARTITION BY tenant_id` so one row per shop, `d.tenant_id <> requester`.
+Great-circle distance in SQL with the acos argument clamped to [-1, 1].
+Nullable JDBC parameters are `CAST(? AS VARCHAR)` - an untyped NULL in
+`? IS NOT NULL` is a PostgreSQL error, caught by `ShopDiscoveryIT` on its
+first run.
+
+**pg_trgm** (installed by V60) provides the name-similarity fallback
+(`> 0.45`) behind exact code/model/manufacturer-code matching.
+
+## V62 — GST split, invoice cancellation, frozen cost, customer ledger, sync (CR-091, 2026-09-21)
+
+| Table / column | Purpose |
+|---|---|
+| `invoice` + `supply_type` CHECK (INTRA/INTER), `place_of_supply_state_code` CHAR(2), `cgst_paise`, `sgst_paise`, `igst_paise` | The split decided once at sale by `GstSplit` (customer state → GSTIN prefix → shop state). Backfilled for every existing invoice with the same precedence; rows whose state could not be resolved keep NULL `supply_type`. |
+| `invoice_item` + `cgst_paise`, `sgst_paise`, `igst_paise` | Per-line split; backfilled from `line_gst_paise`. |
+| `invoice` + `cancelled_at`, `cancelled_by` (FK `app_user`), `cancellation_reason` VARCHAR(255) | Who, when, why. Only set on CANCELLED rows. |
+| `stock` + `average_cost_paise` BIGINT | Weighted average cost, moved only by `StockService.applyPurchaseReceipt()` on a positive receipt. Backfilled from `product.purchase_price_paise`. |
+| `invoice_item` + `cost_price_paise` BIGINT | The cost frozen at the moment of sale - the one figure profit reads. Backfilled from `product.purchase_price_paise` (the best historical estimate available; every new line records the real average). |
+| `customer_ledger_entry` | Append-only. `entry_type` CHECK (INVOICE/PAYMENT/SALES_RETURN/INVOICE_CANCELLATION/ADJUSTMENT), `entry_date`, `debit_paise`, `credit_paise` (exactly one non-zero), `reference_type`/`reference_id`/`reference_number`, `notes`, `created_by`. **`UNIQUE (tenant_id, entry_type, reference_type, reference_id)`** - the same payment cannot be posted twice; the service checks `existsBy…` first so callers never see the constraint. Index `(tenant_id, customer_id, entry_date)`. Backfilled from `invoice`, `payment`, `credit_note` and cancelled invoices. There is deliberately no `customer.balance` column. |
+| `sync_transaction` | One row per offline transaction received: `client_uuid` UUID, `device_id`, `transaction_type` CHECK (INVOICE), `payload` JSONB, `status` CHECK (PENDING/SYNCED/FAILED/CONFLICT), `result_reference_type/id/number`, `conflict_reason`, `client_created_at`, `received_at`, `synced_at`, `attempt_count`, `created_by`. **`UNIQUE (tenant_id, client_uuid)`** is the idempotency guarantee; a race between two uploads of the same UUID is settled here and the loser returns the winner's row. JSONB via `@JdbcTypeCode(SqlTypes.JSON)`, the `ActivityLog` pattern. |
+
+Transaction shape that matters (found by `OfflineSyncIT`): the sync
+executor holds **no** transaction of its own; each row's invoice attempt
+runs in `SyncInvoiceCreator`'s REQUIRES_NEW and the outcome row is saved in
+a separate short transaction, so a rolled-back attempt cannot poison the
+transaction that records it.
+
+## V63 — Premium growth pack: branches, branch stock, transfers, backups (CR-092, 2026-09-21)
+
+| Table / column | Purpose |
+|---|---|
+| `branch` | Per-tenant branch master. `branch_code` UNIQUE per tenant; `is_main` with **`UNIQUE INDEX … WHERE is_main`** - exactly one MAIN per shop. One MAIN inserted for every existing tenant; `AFTER INSERT ON tenant` trigger `tenant_create_main_branch()` does it for new ones. `VARCHAR(2)`/`VARCHAR(6)` for state/pincode, not CHAR - `ddl-auto: validate` rejects `bpchar` against a `String` field (caught on the first IT run). |
+| `app_user.branch_id` (nullable FK) | The branch a user works at; null = every branch (the owner). |
+| `invoice.branch_id`, `purchase.branch_id`, `stock_movement.branch_id` (NOT NULL FK, backfilled to MAIN) | Where the document happened. Set by the application from the acting user; a `BEFORE INSERT` trigger `branch_default_main()` fills NULL with MAIN so seed scripts (V9xx, never edited) and direct SQL still insert. |
+| `stock_movement.movement_type` CHECK | + `STOCK_TRANSFER_OUT`, `STOCK_TRANSFER_IN`. |
+| `branch_stock` | `UNIQUE (branch_id, product_id)`. A measured breakdown of `stock.quantity_on_hand` written by `StockServiceImpl` on every movement via an upsert (`addQuantity`), seeded from the shop row while the shop is single-branch and snapshotted once (`snapshotMainFromShopStock`) when the second branch is created. **Never the availability authority.** May be negative. |
+| `stock_transfer`, `stock_transfer_item` | The transfer document: `transfer_number` UNIQUE per tenant (`ST-` from `document_sequence`, `doc_type` CHECK extended), from/to (CHECK different), COMPLETED only, lines with a name snapshot. |
+| `tenant_backup` | One row per backup: format (JSON/CSV), trigger (MANUAL/SCHEDULED), status, record count, size, **`file_data BYTEA`** (the snapshot itself, so it can be re-downloaded), error detail. Pruned to the newest 7 per tenant by the nightly job. |
+| `permission` + `role_permission` | `BRANCH_VIEW` (all four roles), `STOCK_TRANSFER_MANAGE` (OWNER, MANAGER), `BRANCH_MANAGE`, `BACKUP_MANAGE` (OWNER). |
+
+## V65 — `report_job` (CR-101, 2026-09-21; V62 on the branch, renumbered at consolidation)
+
+Numbered V62 because V57 (`email_otp`, cr-085 branch) and V59/V60/V61 (cr-088
+branch) are held by sibling worktrees not yet on `main`; V58 is
+deliberately left unused. Check every branch before taking V63.
+
+### `report_job`
+One background render request for a report or document too heavy for the
+request thread: CR-086's five operational reports as PDF/XLSX/CSV/PNG, and
+CR-087's GSTR-1 as JSON. The synchronous `/v1/reports/*/export` endpoints
+are untouched; this is the queue beside them.
+
+| Column | Type | Notes |
+|---|---|---|
+| `report_job_id` | BIGSERIAL PK | |
+| `tenant_id` | BIGINT NOT NULL → `tenant` | every read is `findByIdAndTenantId` or a tenant-filtered page |
+| `requested_by` | BIGINT NULL → `app_user` | the enqueuing user; the worker rebuilds its security context from this row (see below) |
+| `report_type` | VARCHAR(40) NOT NULL | `DAY_BOOK`, `RECEIVABLES_AGEING`, `STOCK_VALUATION`, `PURCHASE_REGISTER`, `GST_SUMMARY`, `GSTR1` — matched by `ReportJobRenderer.supports()` |
+| `format` | VARCHAR(10) NOT NULL, CHECK in PDF/XLSX/CSV/PNG/JSON | JSON is GSTR-1 only; PNG is refused for GSTR-1 by the renderer |
+| `params_json` | TEXT NOT NULL DEFAULT '{}' | the report's own filters (`from`, `to`, `asOf`, `period`) as the synchronous endpoint would take them |
+| `status` | VARCHAR(20) NOT NULL DEFAULT 'PENDING', CHECK PENDING/PROCESSING/COMPLETED/FAILED | |
+| `file_name` | VARCHAR(150) | set on COMPLETED |
+| `file_data` | BYTEA | the finished file, in-row — the same pattern as V11/V13/V21 (one database is the only storage; Render's disk is ephemeral) |
+| `file_size_bytes` | INTEGER | |
+| `error_message` | VARCHAR(500) | set on FAILED, truncated by the worker |
+| `created_at` / `updated_at` / `started_at` / `completed_at` | TIMESTAMP(3) | |
+
+`ck_report_job_completion` makes an inconsistent row unwritable: COMPLETED
+⇒ file present and no error; FAILED ⇒ error present and no file;
+PENDING/PROCESSING ⇒ no file. Indexes: `(tenant_id, created_at DESC)` for
+the status list, `(created_at)` for the retention sweep.
+
+**Not a `BaseEntity`** — `requested_by` is the only attribution that means
+anything here, and the status timestamps say what `updated_at` would.
+
+### Write path
+`ReportJobServiceImpl.enqueue` saves the PENDING row (Spring Data's own
+transaction, no outer `@Transactional` — the commit must be visible before
+the worker thread reads it) and then calls `ReportJobWorker.process(id)`,
+a separate bean because `@Async` is proxied like `@Transactional` and a
+self-invocation never goes async (BUG-BE-002 restated). The worker runs on
+`taskExecutor`, reconstructs a `SecurityContext` for `requested_by` via
+`AppUserDetailsService` (the same token construction
+`JwtAuthenticationFilter` uses), renders through the existing
+`ReportService`/`Gstr1Service`, and always ends the row COMPLETED or
+FAILED — never throws out of the void method. `ReportJobCleanupJob` deletes
+rows older than 7 days at 00:30 IST.
+
+The list/status reads use an interface projection (`ReportJobRepository.Summary`)
+so `file_data` is never selected for a page of spinners and ticks.

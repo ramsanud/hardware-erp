@@ -29,4 +29,11 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
      * cross a tenant boundary. See WhatsAppWebhookController.
      */
     java.util.Optional<NotificationLog> findByTenantIdAndProviderMessageId(Long tenantId, String providerMessageId);
+
+    /**
+     * CR-085 - for the app-wide providers (Twilio, SendGrid) whose callbacks
+     * carry no tenant. Their message ids are unique across the provider, so
+     * channel + id names exactly one row.
+     */
+    java.util.Optional<NotificationLog> findByChannelAndProviderMessageId(NotificationChannel channel, String providerMessageId);
 }

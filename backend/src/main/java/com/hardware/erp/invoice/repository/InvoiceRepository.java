@@ -4,7 +4,9 @@ import com.hardware.erp.invoice.entity.Invoice;
 import com.hardware.erp.invoice.entity.InvoiceStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,6 +15,20 @@ import java.util.List;
 import java.util.Optional;
 
 public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+
+    /**
+     * BUG-BE-010. addPayment takes the invoice row FOR UPDATE first, so
+     * concurrent payments against one invoice serialise on it. Without this,
+     * each payment INSERT took a share lock on the invoice (its FK) and the
+     * following UPDATE needed the exclusive one - two such transactions
+     * deadlocked and PostgreSQL killed one with a 500. Now the second waits,
+     * re-reads the paid total and gets the honest 422 PAYMENT_EXCEEDS_TOTAL
+     * (or succeeds if it still fits).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from Invoice i where i.id = :id and i.tenant.id = :tenantId")
+    Optional<Invoice> lockByIdAndTenantId(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
 
     Optional<Invoice> findByIdAndTenantId(Long id, Long tenantId);
 
