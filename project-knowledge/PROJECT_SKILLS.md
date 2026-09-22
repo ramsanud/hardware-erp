@@ -455,3 +455,10 @@ Lessons learned. Read before every module; append after every module.
     It appeared on every invoice created in every IT run for two CRs before
     anyone read it; the notifications it reported were genuinely never
     sent. When a log line repeats on every run, it is describing production.
+
+23. **Measure responsive layouts at the breakpoint edges, not just "a phone
+    and a desktop".** BUG-FE-043 lived only between 1024 and 1279px - above
+    the phone the dashboard spec checked and below the 1280 desktop it
+    checked. `tests/responsive/viewports.spec.mjs` now sweeps every
+    required viewport plus 639/640, 767/768 and 1023/1024 across every
+    major screen; add a new screen there when you add one.

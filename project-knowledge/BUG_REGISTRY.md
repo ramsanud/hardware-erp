@@ -106,6 +106,7 @@ generating new code; never reintroduce a listed bug.
 | BUG-BE-007 | Backend / Sync | High | Fixed 2026-09-21 |
 | BUG-FE-041 | Frontend / Tests | Low | Fixed 2026-09-22 |
 | BUG-FE-042 | Frontend | Medium | Fixed 2026-09-20 |
+| BUG-FE-043 | Frontend / Dashboard | Medium | Fixed 2026-09-22 |
 | BUG-BE-008 | Backend / Architecture | Medium | Fixed 2026-09-16 |
 
 **This index is complete and covers every entry in this file (verified
@@ -3971,3 +3972,36 @@ DTO and the behaviour are unchanged.
 sources and fails on any import from `invoice`, `quotation`, `salesorder`,
 `deliverychallan`, `creditnote` or `payment` — the modules that all point at
 product. No library; runs in the unit tier.
+
+## BUG-FE-043 — the dashboard overflowed the viewport by 75px at every width from 1024 to 1279 (FIXED, 2026-09-22)
+
+| | |
+|---|---|
+| **Severity** | Medium — a horizontal scrollbar on the first screen after login on an iPad Pro, a small laptop, or any desktop window between 1024 and 1279px wide |
+| **Layer** | FRONTEND ONLY |
+| **Found** | The consolidation audit's viewport sweep (`tests/responsive/viewports.spec.mjs`): 1024×1366 failed with `scrollWidth=1099`; 1023 (below `lg`) and 1280 (`xl`) both passed |
+| **Symptom** | `document.documentElement.scrollWidth` 1099 on a 1024px viewport; the overflowing element was the Sales-by-Category card's period-preset group (`div.flex shrink-0 …`, 214px), whose right edge sat at 1099 |
+
+**Root cause.** At `lg` the dashboard's chart row is a 3-column grid and
+the category chart gets one column of roughly 230px. Its `CardHeader` was
+`flex-row … justify-between` with the preset group `shrink-0`, so the
+title and the 214px group had to share one line and the group was pushed
+out of the card, out of the grid and past the viewport. The same header
+markup is in `SalesTrendChart`, which spans two columns and only hid the
+problem by being wider. At `xl` the grid is wide enough; below `lg` the row
+stacks; only the `lg` band was broken - exactly the band no earlier spec
+measured (the dashboard spec checks a phone and a 1280 desktop).
+
+**Fix.** Both chart headers are `flex-wrap` with `gap-x-4 gap-y-2`, so
+the preset group drops under the title when the column is narrow. Nothing
+changes at other widths.
+
+**Regression test.** `tests/responsive/viewports.spec.mjs` - 18 viewports
+(the seven required phones, breakpoint edges 639/640/767/768/1023/1024,
+three tablets, four desktops) × 15 screens, asserting no horizontal
+overflow, a rendered main landmark and no page error: 270/270. Wired into
+`tests/run.mjs`.
+
+**Lesson (PROJECT_SKILLS):** a responsive spec that checks "a phone and a
+desktop" misses the breakpoint edges; measure at 639/640, 767/768 and
+1023/1024, where the layout actually changes.
