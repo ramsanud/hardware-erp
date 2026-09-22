@@ -91,3 +91,10 @@ replay_pid*.log
 frontend/tests/*.tmp.mjs
 frontend/tests/.tmp-*
 frontend/vite.config.audit.ts
+
+# Machine-local artefacts of the verification recipe in .claude/guides
+# (architecture.md, testing.md): the empty-config DOCKER_CONFIG dir Git Bash
+# needs, and a private Playwright build served on its own port so another
+# session's `vite build` cannot rewrite it mid-suite. Neither is a deliverable.
+.docker-iso/
+frontend/dist-iso/

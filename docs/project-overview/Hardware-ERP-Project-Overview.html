@@ -1,0 +1,1620 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Hardware ERP — Project Overview</title>
+<style>
+  @page { size: A4 portrait; margin: 16mm 15mm 18mm 15mm; }
+  @page erd  { size: 726.1mm 500.6mm; margin: 8mm; }
+  @page auth { size: 280.5mm 438.2mm; margin: 8mm; }
+  @page biz  { size: 402.2mm 272.5mm; margin: 8mm; }
+  .page-erd  { page: erd;  break-before: page; break-after: page; }
+  .page-auth { page: auth; break-before: page; break-after: page; }
+  .page-biz  { page: biz;  break-before: page; break-after: page; }
+
+  :root { --ink:#1a1a2e; --muted:#5b5b6b; --rule:#d9d9e3; --accent:#1f8a70; --chip:#eef2ff; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: var(--ink); font-size: 10.2pt; line-height: 1.42; margin: 0; }
+  h1 { font-size: 22pt; margin: 0 0 4mm; letter-spacing: -0.01em; }
+  h2 { font-size: 15pt; margin: 0 0 3mm; padding-bottom: 1.5mm; border-bottom: 2px solid var(--accent); break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 5mm 0 2mm; break-after: avoid; }
+  p { margin: 0 0 2.6mm; }
+  ul { margin: 0 0 2.6mm 5mm; padding: 0; } li { margin-bottom: 1mm; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 9.2pt; background: #f2f2f6; padding: 0 3px; border-radius: 3px; }
+  pre { font-family: Consolas, monospace; font-size: 8.6pt; background: #f4f4f8; padding: 3mm; border-radius: 4px; border: 1px solid var(--rule); white-space: pre-wrap; }
+  table { width: 100%; border-collapse: collapse; margin: 0 0 4mm; font-size: 9.1pt; }
+  th { text-align: left; background: #f0f0f5; border-bottom: 1.5px solid #b9b9c9; padding: 1.6mm 2mm; }
+  td { border-bottom: 1px solid var(--rule); padding: 1.4mm 2mm; vertical-align: top; }
+  tr { break-inside: avoid; }
+  .small { font-size: 8.4pt; font-family: Consolas, monospace; }
+  .section { break-before: auto; margin-top: 8mm; }
+  .newpage { break-before: page; margin-top: 0; }
+  .muted { color: var(--muted); }
+  .swatch { display:inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: baseline; }
+  .cover { height: 250mm; display: flex; flex-direction: column; justify-content: space-between; }
+  .cover .title { margin-top: 60mm; }
+  .cover h1 { font-size: 30pt; }
+  .cover .sub { font-size: 14pt; color: var(--muted); margin-bottom: 8mm; }
+  .facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+  .fact { background: var(--chip); border-radius: 5px; padding: 3mm; }
+  .fact b { display: block; font-size: 18pt; color: var(--accent); }
+  .fact span { font-size: 9pt; color: var(--muted); }
+  .toc li { margin-bottom: 1.6mm; }
+  .diagram { width: 100%; break-inside: avoid; }
+  .diagram svg { width: 100%; height: auto; display: block; }
+  .page-erd h2, .page-auth h2, .page-biz h2 { font-size: 13pt; margin-bottom: 2mm; }
+  .page-erd .caption, .page-auth .caption, .page-biz .caption { font-size: 8.8pt; max-width: 1400px; }
+  .caption { font-size: 9.2pt; color: var(--muted); margin-top: 2mm; }
+  .callout { border-left: 3px solid var(--accent); background: #f4faf8; padding: 2.5mm 3mm; margin: 0 0 3mm; }
+  .two { columns: 2; column-gap: 8mm; }
+  .kv td:first-child { width: 32%; font-weight: 600; }
+</style></head><body>
+
+<!-- ================= COVER ================= -->
+<div class="cover">
+  <div class="title">
+    <h1>Hardware ERP<br><span style="font-weight:400">Project Overview</span></h1>
+    <div class="sub">ER diagram · application flow · what every file is for</div>
+    <p class="muted">Generated 2026-09-20 from branch <code>feature/cr-086-reports</code> · schema at migration V56</p>
+  </div>
+  <div>
+    <div class="facts">
+      <div class="fact"><b>73</b><span>PostgreSQL tables<br>45 tenant-scoped</span></div>
+      <div class="fact"><b>56</b><span>Flyway migrations<br>never edited, only added</span></div>
+      <div class="fact"><b>762</b><span>Java files<br>30 packages · 70 controllers</span></div>
+      <div class="fact"><b>352</b><span>TS/TSX files<br>25 modules · 70 pages</span></div>
+      <div class="fact"><b>249</b><span>documented endpoints<br>API_REGISTRY.md</span></div>
+      <div class="fact"><b>48</b><span>permission codes<br>4 seeded roles</span></div>
+      <div class="fact"><b>114</b><span>backend test classes<br>36 Testcontainers ITs</span></div>
+      <div class="fact"><b>11</b><span>Playwright suites<br>297 assertions</span></div>
+    </div>
+    <p class="muted" style="margin-top:6mm">Java 21 · Spring Boot 3.4.2 · PostgreSQL 16 · Flyway · React 18 · TypeScript · Vite 6 · Tailwind · shadcn/ui · Playwright</p>
+  </div>
+</div>
+
+<!-- ================= CONTENTS ================= -->
+<div class="section newpage">
+  <h2>Contents</h2>
+  <ol class="toc">
+    <li>What this project is</li>
+    <li>Architecture at a glance</li>
+    <li>Application flow — login, JWT and tenant isolation <span class="muted">(full-page diagram)</span></li>
+    <li>Application flow — core business documents <span class="muted">(full-page diagram)</span></li>
+    <li>Entity-relationship diagram <span class="muted">(full-page diagram)</span> and table guide</li>
+    <li>Roles and permissions</li>
+    <li>Repository map — where everything lives</li>
+    <li>Backend: foundation files and the anatomy of one module</li>
+    <li>Frontend: foundation files and the anatomy of one module</li>
+    <li>Registries and documentation — the source of truth</li>
+    <li>Conventions that never bend</li>
+    <li>How to run and verify</li>
+    <li>Appendix A — tables not drawn in the ER diagram</li>
+  </ol>
+</div>
+
+<!-- ================= 1. WHAT ================= -->
+<div class="section newpage">
+  <h2>1. What this project is</h2>
+  <p>Hardware ERP is a business system for hardware shops in India. One shop is one <em>tenant</em>. Each tenant's staff sign in, keep their product catalogue and stock, buy from suppliers, sell to customers through quotations, sales orders, delivery challans and GST invoices, record payments and expenses, run customer projects with hired labour, and pull reports including GSTR-1.</p>
+  <p>It is <strong>one Spring Boot application, one React application and one PostgreSQL database</strong>. Many shops share that one database; every tenant-owned table carries a <code>tenant_id</code> column and every query filters by it, using the tenant taken from the signed-in user's JWT — never from anything the browser sends. This is the single most important design decision in the codebase (CR-016), and the request-flow diagram in section 3 shows exactly where it is enforced.</p>
+  <div class="callout"><strong>Not</strong> microservices. <strong>Not</strong> a database or schema per tenant. Module folders express boundaries, not deployment units. The project is in <strong>maintenance and extension</strong>, not greenfield: the original twelve-module build order (Auth → Supplier → Customer → Category → Brand → Product → Product Variant → Purchase → Inventory → Quotation → Invoice → Payment) was completed, and later change requests added sales orders, delivery challans, credit notes, projects, labour, expenses, coupons, notifications, reports and the platform console.</div>
+
+  <h3>Who uses it</h3>
+  <table class="kv"><tbody>
+    <tr><td>Shop owner</td><td>Creates staff accounts and roles, sets up branding, bank accounts and WhatsApp, watches the dashboard, runs reports.</td></tr>
+    <tr><td>Counter staff / salesperson</td><td>Quotations, invoices, customers, stock lookup — the fast path on a phone or a counter PC.</td></tr>
+    <tr><td>Purchase staff / inventory manager</td><td>Suppliers, purchases, bill import, stock adjustments, low-stock follow-up.</td></tr>
+    <tr><td>Accountant</td><td>Payments, purchase payments, expenses, receivables ageing, GST summary, GSTR-1.</td></tr>
+    <tr><td>Project manager</td><td>Customer jobs: materials issued from stock, labour attendance, expenses, profitability.</td></tr>
+    <tr><td>Platform operator</td><td>A separate cross-tenant console for incidents, feature flags, subscriptions and support tickets.</td></tr>
+  </tbody></table>
+
+  <h3>Two ways to ship the same code (CR-059)</h3>
+  <table><thead><tr><th></th><th>CLOUD</th><th>SELF_HOSTED</th></tr></thead><tbody>
+    <tr><td>Profiles</td><td><code>prod,cloud</code></td><td><code>prod,selfhosted</code></td></tr>
+    <tr><td>Database</td><td>managed PostgreSQL (Supabase, as a plain endpoint — no vendor SDK)</td><td>PostgreSQL container on the shop's own machine</td></tr>
+    <tr><td>Entry point</td><td>Render (API) + Vercel (SPA), <code>render.yaml</code></td><td><code>docker compose -f docker-compose.selfhosted.yml up -d</code></td></tr>
+    <tr><td>Subscription billing</td><td>live (Razorpay)</td><td>off, no tier caps</td></tr>
+    <tr><td>Refresh cookie</td><td><code>Secure</code> mandatory</td><td><code>Secure</code> off by default (LAN http)</td></tr>
+  </tbody></table>
+  <p><code>DeploymentModeGuard</code> refuses to start a self-hosted process that points at the managed database host, so one client's data can never land in the shared SaaS database.</p>
+</div>
+
+<!-- ================= 2. ARCHITECTURE ================= -->
+<div class="section">
+  <h2>2. Architecture at a glance</h2>
+  <pre>Browser / phone
+  React 18 SPA (Vite build, served by Vercel or the self-hosted nginx)
+  routes/ → layouts/ → modules/&lt;name&gt;/pages → services/xService.ts
+                                                   │  services/apiClient.ts (one Axios instance)
+                                                   │  Authorization: Bearer &lt;JWT in memory&gt;
+                                                   ▼  HttpOnly refresh cookie
+Spring Boot 3.4.2 monolith  (/api/v1/...)
+  RequestCorrelationFilter → RateLimitFilter → JwtAuthenticationFilter → @PreAuthorize(permission)
+  controller → service (@Transactional, SecurityUtils.requireCurrentTenantId()) → repository (…ByTenantId)
+  side effects inside the same transaction: document_sequence, stock_movement, activity_log
+  after commit, @Async: notification (email / SMS / WhatsApp)
+                                                   ▼
+PostgreSQL 16  — one schema, Flyway-managed, tenant_id on every tenant-owned table
+External: SMTP or SendGrid · Twilio · WhatsApp Cloud API (per tenant) · Anthropic (optional) · Razorpay (cloud only) · OpenStreetMap (address picker)</pre>
+
+  <h3>Package structure (locked)</h3>
+  <pre>com.hardware.erp
+├── common.{entity,dto,exception,web,activity,idempotency,sequence,security,util,validation,image}
+├── config
+├── security.{ratelimit,totp,captcha}
+└── &lt;module&gt;.{entity,repository,dto,mapper,service,service.impl,controller}     ← 27 business packages
+
+frontend/src
+├── main.tsx, App.tsx, index.css
+├── routes/  layouts/  services/  theme/  shared/{components,hooks,lib,types,constants,data}
+└── modules/&lt;name&gt;/{types,validation,services,constants,components,forms,pages}   ← 25 modules</pre>
+
+  <h3>Module dependency graph (from the real imports)</h3>
+  <p><code>invoice</code> is the settlement point of the system and therefore a dependency magnet by design; it must never import upward. One known cycle exists and is recorded, not hidden: <code>product → invoice</code> for a product's recent sale prices (<code>ProductServiceImpl.priceHistory()</code>).</p>
+  <pre>auth + tenant  (every module below depends on both)
+ ├── supplier      ├── customer      ├── product ── coupon
+ ├── inventory ─── product
+ ├── purchase ──── supplier, product, inventory, invoice
+ ├── quotation ─── customer, product, invoice
+ ├── invoice ───── customer, product, inventory, coupon, notification
+ ├── salesorder ── customer, product, invoice, deliverychallan
+ ├── deliverychallan ─ customer, product, inventory, invoice
+ ├── creditnote ── customer, product, inventory, invoice
+ ├── project ───── customer, product, supplier, inventory, invoice, labour
+ ├── labour ────── project, invoice
+ ├── expense, dashboard, analytics, report ── invoice
+ ├── ai (read-only tools), export (rendering only), notification, supportticket, legal, developer
+ └── platformadmin ── billing        ← cross-tenant, deliberately OUTSIDE tenant isolation</pre>
+</div>
+
+<!-- ================= 3. AUTH FLOW (own page) ================= -->
+<div class="page-auth">
+  <h2>3. Application flow — login, JWT and tenant isolation</h2>
+  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1396" width="1000" height="1396">
+    <rect x="0" y="0" width="1000" height="1396" fill="#fbfbfb"/>
+    
+    
+    <defs>
+    <marker id="fc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="fc-arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c1440e"/>
+    </marker>
+  </defs>
+    <path d="M 500 62 C 500 77, 500 77, 500 92" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 500 150 C 500 166, 500 166, 500 182" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 670 223 C 705 223, 705 223, 740 223" fill="none" stroke="#c1440e" stroke-width="1.6"  marker-end="url(#fc-arrow-red)"/><rect x="694.8" y="214" width="20.4" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="705" y="225" text-anchor="middle" font-size="10" fill="#c1440e" font-family="Segoe UI, Arial, sans-serif">no</text>
+<path d="M 500 264 C 500 282, 500 282, 500 300" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="486.7" y="273" width="26.6" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="500" y="284" text-anchor="middle" font-size="10" fill="#444" font-family="Segoe UI, Arial, sans-serif">yes</text>
+<path d="M 500 362 C 500 379, 500 379, 500 396" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 330 223 C 295 223, 295 223, 260 223" fill="none" stroke="#444" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#fc-arrow)"/><rect x="260" y="214" width="70" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="295" y="225" text-anchor="middle" font-size="10" fill="#444" font-family="Segoe UI, Arial, sans-serif">either way</text>
+<path d="M 500 458 C 500 475, 500 475, 500 492" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 500 550 C 500 565, 500 565, 500 580" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 500 638 C 500 653, 500 653, 500 668" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 500 724 C 500 739, 500 739, 500 754" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 670 795 C 710 795, 710 787, 750 787" fill="none" stroke="#c1440e" stroke-width="1.6"  marker-end="url(#fc-arrow-red)"/><rect x="699.8" y="782" width="20.4" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="710" y="793" text-anchor="middle" font-size="10" fill="#c1440e" font-family="Segoe UI, Arial, sans-serif">no</text>
+<path d="M 860 754 C 860 681.5, 650 681.5, 650 609" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="735.5" y="672.5" width="39" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="755" y="683.5" text-anchor="middle" font-size="10" fill="#444" font-family="Segoe UI, Arial, sans-serif">retry</text>
+<path d="M 860 820 C 860 840, 860 840, 860 860" fill="none" stroke="#c1440e" stroke-width="1.6"  marker-end="url(#fc-arrow-red)"/><rect x="821.9" y="831" width="76.2" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="860" y="842" text-anchor="middle" font-size="10" fill="#c1440e" font-family="Segoe UI, Arial, sans-serif">still fails</text>
+<path d="M 500 836 C 500 851, 500 851, 500 866" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="486.7" y="842" width="26.6" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="500" y="853" text-anchor="middle" font-size="10" fill="#444" font-family="Segoe UI, Arial, sans-serif">yes</text>
+<path d="M 500 928 C 500 943, 500 943, 500 958" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 500 1020 C 500 1035, 500 1035, 500 1050" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 670 1091 C 705 1091, 705 1091, 740 1091" fill="none" stroke="#c1440e" stroke-width="1.6"  marker-end="url(#fc-arrow-red)"/><rect x="694.8" y="1082" width="20.4" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="705" y="1093" text-anchor="middle" font-size="10" fill="#c1440e" font-family="Segoe UI, Arial, sans-serif">no</text>
+<path d="M 500 1132 C 500 1149, 500 1149, 500 1166" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="486.7" y="1140" width="26.6" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="500" y="1151" text-anchor="middle" font-size="10" fill="#444" font-family="Segoe UI, Arial, sans-serif">yes</text>
+<path d="M 500 1222 C 500 1236, 500 1236, 500 1250" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 500 1312 C 500 1325, 500 1325, 500 1338" fill="none" stroke="#444" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+    <g>
+      <rect x="350" y="16" width="300" height="46" rx="23" fill="#2e7d32" stroke="none" stroke-width="1.4"/>
+      <text x="500" y="43.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" font-family="Segoe UI, Arial, sans-serif" >Owner or staff opens the app</text>
+    </g>
+<g>
+      <rect x="350" y="92" width="300" height="58" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="500" y="117.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Sign-in form submits credentials</text><text x="500" y="135.25" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">POST /v1/auth/login (public)</text>
+    </g>
+<g><polygon points="500,182 670,223 500,264 330,223" fill="#fff7e0" stroke="#b8860b" stroke-width="1.4"/><text x="500" y="219.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Password + MFA (if enabled) valid?</text><text x="500" y="237.25" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">AuthService, TotpService</text></g>
+<g>
+      <rect x="740" y="195" width="230" height="56" rx="28" fill="#c1440e" stroke="none" stroke-width="1.4"/>
+      <text x="855" y="227.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" font-family="Segoe UI, Arial, sans-serif" >401 Unauthorized</text>
+    </g>
+<g>
+      <rect x="350" y="300" width="300" height="62" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="500" y="328" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >JwtService issues a short-lived JWT access</text><text x="500" y="342.5" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >token + an opaque refresh token</text>
+    </g>
+<g>
+      <rect x="350" y="396" width="300" height="62" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="500" y="416.5" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Refresh token -&gt; HttpOnly Secure cookie.</text><text x="500" y="431" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Access token -&gt; response body only.</text><text x="500" y="448.5" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">RefreshTokenCookieService</text>
+    </g>
+<g>
+      <rect x="30" y="195" width="230" height="56" rx="6" fill="#eef2ff" stroke="#6d5ce8" stroke-width="1.4"/>
+      <text x="145" y="214.25" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >security_audit_log</text><text x="145" y="231.75" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">LOGIN_SUCCESS / LOGIN_FAILURE row</text><text x="145" y="242.75" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">(SecurityAuditService)</text>
+    </g>
+<g>
+      <rect x="350" y="492" width="300" height="58" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="500" y="517.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >SPA keeps the access token in memory only</text><text x="500" y="535.25" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">tokenStorage.ts — never localStorage</text>
+    </g>
+<g>
+      <rect x="350" y="580" width="300" height="58" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="500" y="598.5" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Every API call attaches Authorization: Bearer</text><text x="500" y="613" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >&lt;token&gt;</text><text x="500" y="630.5" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">services/apiClient.ts</text>
+    </g>
+<g>
+      <rect x="350" y="668" width="300" height="56" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="500" y="693" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >JwtAuthenticationFilter validates signature +</text><text x="500" y="707.5" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >expiry</text>
+    </g>
+<g><polygon points="500,754 670,795 500,836 330,795" fill="#fff7e0" stroke="#b8860b" stroke-width="1.4"/><text x="500" y="799.25" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Token still valid?</text></g>
+<g>
+      <rect x="750" y="754" width="220" height="66" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="860" y="776.5" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >apiClient retries once via</text><text x="860" y="791" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >/v1/auth/refresh</text><text x="860" y="808.5" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">refresh cookie, one retry only</text>
+    </g>
+<g>
+      <rect x="750" y="860" width="220" height="56" rx="28" fill="#c1440e" stroke="none" stroke-width="1.4"/>
+      <text x="860" y="885" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" font-family="Segoe UI, Arial, sans-serif" >Refresh also fails -&gt; redirect to</text><text x="860" y="899.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" font-family="Segoe UI, Arial, sans-serif" >/login</text>
+    </g>
+<g>
+      <rect x="350" y="866" width="300" height="62" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="500" y="886.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >SecurityContext set;</text><text x="500" y="901.25" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >SecurityUtils.currentTenantId() reads the</text><text x="500" y="915.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >tenant_id JWT claim</text>
+    </g>
+<g>
+      <rect x="350" y="958" width="300" height="62" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="500" y="986" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >@PreAuthorize("hasAuthority(...)") checked</text><text x="500" y="1000.5" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >against the caller’s role_permission rows</text>
+    </g>
+<g><polygon points="500,1050 670,1091 500,1132 330,1091" fill="#fff7e0" stroke="#b8860b" stroke-width="1.4"/><text x="500" y="1095.25" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Permission granted?</text></g>
+<g>
+      <rect x="740" y="1058" width="230" height="66" rx="33" fill="#c1440e" stroke="none" stroke-width="1.4"/>
+      <text x="855" y="1087.75" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" font-family="Segoe UI, Arial, sans-serif" >403 Forbidden</text><text x="855" y="1105.25" text-anchor="middle" font-size="9.5" fill="#ffe8dc" font-family="Consolas, monospace">security_audit_log: ACCESS_DENIED</text>
+    </g>
+<g>
+      <rect x="350" y="1166" width="300" height="56" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="500" y="1198.25" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Controller -&gt; Service -&gt; Repository</text>
+    </g>
+<g>
+      <rect x="350" y="1250" width="300" height="62" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="500" y="1270.5" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Repository query filtered by tenant_id from</text><text x="500" y="1285" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >the token — never a request parameter</text><text x="500" y="1302.5" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">findXByTenantId(tenantId, ...) · CR-016</text>
+    </g>
+<g>
+      <rect x="350" y="1338" width="300" height="46" rx="23" fill="#c1440e" stroke="none" stroke-width="1.4"/>
+      <text x="500" y="1365.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" font-family="Segoe UI, Arial, sans-serif" >PostgreSQL row(s) -&gt; { success, data } -&gt; SPA</text>
+    </g>
+  </svg></div>
+  <p class="caption">Read top to bottom. Red paths are refusals; the dashed line is the security audit trail. Files named in the boxes: <code>AuthController</code>, <code>AuthService</code>, <code>TotpService</code>, <code>JwtService</code>, <code>RefreshTokenCookieService</code>, <code>SecurityAuditService</code> (backend); <code>services/apiClient.ts</code>, <code>services/tokenStorage.ts</code> (frontend). The tenant is fixed at the JWT claim and used by every repository method; a request parameter can never change it (CR-016).</p>
+</div>
+
+<!-- ================= 4. BUSINESS FLOW (own page) ================= -->
+<div class="page-biz">
+  <h2>4. Application flow — core business documents</h2>
+  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1460 700" width="1460" height="700">
+    <rect x="0" y="0" width="1460" height="700" fill="#fbfbfb"/>
+    
+    
+    <defs>
+    <marker id="fc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="fc-arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c1440e"/>
+    </marker>
+  </defs>
+    <path d="M 190 135.5 C 215 135.5, 215 131, 240 131" fill="none" stroke="#c1440e" stroke-width="1.6"  marker-end="url(#fc-arrow-red)"/>
+<path d="M 335 162 C 335 181, 335 181, 335 200" fill="none" stroke="#c1440e" stroke-width="1.6"  marker-end="url(#fc-arrow-red)"/>
+<path d="M 430 131 C 455 131, 455 161, 480 161" fill="none" stroke="#c1440e" stroke-width="1.6"  marker-end="url(#fc-arrow-red)"/><rect x="429.3" y="137" width="51.4" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="455" y="148" text-anchor="middle" font-size="10" fill="#c1440e" font-family="Segoe UI, Arial, sans-serif">stock +</text>
+<path d="M 480 47.5 C 407.5 47.5, 407.5 100, 335 100" fill="none" stroke="#1f8a70" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="347.7" y="64.75" width="119.60000000000001" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="407.5" y="75.75" text-anchor="middle" font-size="10" fill="#1f8a70" font-family="Segoe UI, Arial, sans-serif">product must exist</text>
+<path d="M 590 75 C 590 102.5, 590 102.5, 590 130" fill="none" stroke="#1f8a70" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 590 192 C 590 213, 590 213, 590 234" fill="none" stroke="#1f8a70" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#fc-arrow)"/>
+<path d="M 190 363.5 C 215 363.5, 215 363.5, 240 363.5" fill="none" stroke="#1a6fb0" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 430 363.5 C 455 363.5, 455 363.5, 480 363.5" fill="none" stroke="#1a6fb0" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="429.3" y="354.5" width="51.4" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="455" y="365.5" text-anchor="middle" font-size="10" fill="#1a6fb0" font-family="Segoe UI, Arial, sans-serif">convert</text>
+<path d="M 690 363.5 C 710 363.5, 710 363.5, 730 363.5" fill="none" stroke="#1a6fb0" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="684.3" y="354.5" width="51.4" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="710" y="365.5" text-anchor="middle" font-size="10" fill="#1a6fb0" font-family="Segoe UI, Arial, sans-serif">convert</text>
+<path d="M 585 336 C 585 266, 1085 260, 1085 330" fill="none" stroke="#1a6fb0" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="772.1" y="274.5" width="125.8" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="835" y="285.5" text-anchor="middle" font-size="10" fill="#1a6fb0" font-family="Segoe UI, Arial, sans-serif">or convert directly</text>
+<path d="M 940 363.5 C 960 363.5, 960 363, 980 363" fill="none" stroke="#1a6fb0" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="934.3" y="354.25" width="51.4" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="960" y="365.25" text-anchor="middle" font-size="10" fill="#1a6fb0" font-family="Segoe UI, Arial, sans-serif">convert</text>
+<path d="M 590 192 C 590 264, 835 264, 835 336" fill="none" stroke="#1f8a70" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="686.8" y="255" width="51.4" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="712.5" y="266" text-anchor="middle" font-size="10" fill="#1f8a70" font-family="Segoe UI, Arial, sans-serif">stock -</text>
+<path d="M 700 47.5 C 892.5 47.5, 892.5 330, 1085 330" fill="none" stroke="#1f8a70" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="854.4" y="179.75" width="76.2" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="892.5" y="190.75" text-anchor="middle" font-size="10" fill="#1f8a70" font-family="Segoe UI, Arial, sans-serif">priced from</text>
+<path d="M 1190 363 C 1210 363, 1210 367.5, 1230 367.5" fill="none" stroke="#1a6fb0" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 730 455 C 532.5 455, 532.5 391, 335 391" fill="none" stroke="#a0388a" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#fc-arrow)"/><rect x="503.7" y="414" width="57.6" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="532.5" y="425" text-anchor="middle" font-size="10" fill="#a0388a" font-family="Segoe UI, Arial, sans-serif">discount</text>
+<path d="M 835 430 C 835 413, 1085 413, 1085 396" fill="none" stroke="#a0388a" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#fc-arrow)"/><rect x="931.2" y="404" width="57.6" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="960" y="415" text-anchor="middle" font-size="10" fill="#a0388a" font-family="Segoe UI, Arial, sans-serif">discount</text>
+<path d="M 1085 396 C 1085 431.75, 1230 431.75, 1230 467.5" fill="none" stroke="#c1440e" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#fc-arrow-red)"/><rect x="1094.6" y="422.75" width="125.8" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="1157.5" y="433.75" text-anchor="middle" font-size="10" fill="#c1440e" font-family="Segoe UI, Arial, sans-serif">return / correction</text>
+<path d="M 190 555.5 C 215 555.5, 215 555.5, 240 555.5" fill="none" stroke="#2e7d32" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="195.5" y="546.5" width="39" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="215" y="557.5" text-anchor="middle" font-size="10" fill="#2e7d32" font-family="Segoe UI, Arial, sans-serif">hours</text>
+<path d="M 105 583 C 105 599.5, 105 599.5, 105 616" fill="none" stroke="#2e7d32" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="88.6" y="590.5" width="32.8" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="105" y="601.5" text-anchor="middle" font-size="10" fill="#2e7d32" font-family="Segoe UI, Arial, sans-serif">wage</text>
+<path d="M 430 555.5 C 455 555.5, 455 555.5, 480 555.5" fill="none" stroke="#2e7d32" stroke-width="1.6"  marker-end="url(#fc-arrow)"/>
+<path d="M 480 161 C 436 161, 436 555.5, 480 555.5" fill="none" stroke="#1f8a70" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#fc-arrow)"/><rect x="415.1" y="254.25" width="63.800000000000004" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="447" y="265.25" text-anchor="middle" font-size="10" fill="#1f8a70" font-family="Segoe UI, Arial, sans-serif">materials</text>
+<path d="M 700 555.5 C 892.5 555.5, 892.5 396, 1085 396" fill="none" stroke="#2e7d32" stroke-width="1.6"  marker-end="url(#fc-arrow)"/><rect x="848.2" y="466.75" width="88.60000000000001" height="14" fill="#fbfbfb" opacity="0.9"/>
+      <text x="892.5" y="477.75" text-anchor="middle" font-size="10" fill="#2e7d32" font-family="Segoe UI, Arial, sans-serif">bills through</text>
+    <g>
+      <rect x="20" y="108" width="170" height="55" rx="6" fill="#eef2ff" stroke="#6d5ce8" stroke-width="1.4"/>
+      <text x="105" y="139.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Supplier</text>
+    </g>
+<g>
+      <rect x="240" y="100" width="190" height="62" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="335" y="122.25" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Purchase</text><text x="335" y="139.75" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">goods receipt + supplier bill ·</text><text x="335" y="150.75" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">CR-035</text>
+    </g>
+<g>
+      <rect x="240" y="200" width="190" height="55" rx="27.5" fill="#c1440e" stroke="none" stroke-width="1.4"/>
+      <text x="335" y="224.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" font-family="Segoe UI, Arial, sans-serif" >Purchase Payment</text><text x="335" y="241.75" text-anchor="middle" font-size="9.5" fill="#ffe8dc" font-family="Consolas, monospace">settles the supplier</text>
+    </g>
+<g>
+      <rect x="480" y="20" width="220" height="55" rx="6" fill="#eef2ff" stroke="#6d5ce8" stroke-width="1.4"/>
+      <text x="590" y="44.25" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Product Catalog</text><text x="590" y="61.75" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">category -&gt; brand -&gt; product</text>
+    </g>
+<g>
+      <rect x="480" y="130" width="220" height="62" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="590" y="157.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Inventory (stock)</text><text x="590" y="175.25" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">stock + stock_movement ledger</text>
+    </g>
+<g><text x="590" y="254" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6a6a6a" font-family="Segoe UI, Arial, sans-serif" font-style="italic">RED/GREEN price alert · low-stock</text><text x="590" y="267.5" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6a6a6a" font-family="Segoe UI, Arial, sans-serif" font-style="italic">snapshot (CR-084)</text></g>
+<g>
+      <rect x="20" y="336" width="170" height="55" rx="6" fill="#eef2ff" stroke="#6d5ce8" stroke-width="1.4"/>
+      <text x="105" y="367.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Customer</text>
+    </g>
+<g>
+      <rect x="240" y="336" width="190" height="55" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="335" y="360.25" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Quotation</text><text x="335" y="377.75" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">optional — not a tax document</text>
+    </g>
+<g>
+      <rect x="480" y="336" width="210" height="55" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="585" y="354.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Sales Order</text><text x="585" y="372.25" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">optional — internal commitment ·</text><text x="585" y="383.25" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">CR-052</text>
+    </g>
+<g>
+      <rect x="730" y="336" width="210" height="55" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="835" y="360.25" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Delivery Challan</text><text x="835" y="377.75" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">moves stock out — not a tax document</text>
+    </g>
+<g>
+      <rect x="980" y="330" width="210" height="66" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="1085" y="359.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Invoice</text><text x="1085" y="377.25" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">the settlement point of the system</text>
+    </g>
+<g>
+      <rect x="1230" y="340" width="200" height="55" rx="27.5" fill="#c1440e" stroke="none" stroke-width="1.4"/>
+      <text x="1330" y="364.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" font-family="Segoe UI, Arial, sans-serif" >Payment</text><text x="1330" y="381.75" text-anchor="middle" font-size="9.5" fill="#ffe8dc" font-family="Consolas, monospace">receipt against the invoice</text>
+    </g>
+<g>
+      <rect x="730" y="430" width="210" height="50" rx="6" fill="#eef2ff" stroke="#6d5ce8" stroke-width="1.4"/>
+      <text x="835" y="451.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Coupon</text><text x="835" y="469.25" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">discounts Quotation &amp; Invoice</text>
+    </g>
+<g>
+      <rect x="1230" y="440" width="200" height="55" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="1330" y="464.25" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Credit Note</text><text x="1330" y="481.75" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">reverses an invoice line · CR-052</text>
+    </g>
+<g>
+      <rect x="20" y="528" width="170" height="55" rx="6" fill="#eef2ff" stroke="#6d5ce8" stroke-width="1.4"/>
+      <text x="105" y="559.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Worker / Labour</text>
+    </g>
+<g>
+      <rect x="20" y="616" width="170" height="50" rx="25" fill="#c1440e" stroke="none" stroke-width="1.4"/>
+      <text x="105" y="637.75" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" font-family="Segoe UI, Arial, sans-serif" >Worker Payment</text><text x="105" y="655.25" text-anchor="middle" font-size="9.5" fill="#ffe8dc" font-family="Consolas, monospace">wage — not invoiced</text>
+    </g>
+<g>
+      <rect x="240" y="528" width="190" height="55" rx="6" fill="#eef2ff" stroke="#6d5ce8" stroke-width="1.4"/>
+      <text x="335" y="559.75" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Project</text>
+    </g>
+<g>
+      <rect x="480" y="528" width="220" height="55" rx="6" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.4"/>
+      <text x="590" y="552.25" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a2e" font-family="Segoe UI, Arial, sans-serif" >Project bills through</text><text x="590" y="569.75" text-anchor="middle" font-size="9.5" fill="#666" font-family="Consolas, monospace">materials + labour + markup</text>
+    </g>
+<g><text x="1085" y="42" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6a6a6a" font-family="Segoe UI, Arial, sans-serif" font-style="italic">Business Expense Ledger — shop</text><text x="1085" y="55.5" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6a6a6a" font-family="Segoe UI, Arial, sans-serif" font-style="italic">overhead, not tied to any sale</text></g>
+  </svg></div>
+  <p class="caption">Orange: procure-to-pay. Blue: order-to-cash. Green: catalogue, stock and projects. Purple dashed: discounts. Red dashed: reversal. Every arrow is a real module dependency from <code>MODULE_DEPENDENCY_MAP.md</code>. Stock only ever changes through <code>StockService.applyMovement</code>, which appends a <code>stock_movement</code> row naming the source document; that is why Purchase, Delivery Challan, Invoice, Credit Note and Project Material all point at Inventory.</p>
+  <p class="caption"><strong>Document lifecycle rules worth knowing:</strong> Quotation, Sales Order and Delivery Challan are optional steps — a counter sale is Customer → Invoice → Payment directly. An invoice is <code>UNPAID → PARTIALLY_PAID → PAID</code>, or <code>CANCELLED</code>; cancelling returns stock. Nothing financial is hard-deleted: users and suppliers are soft-deleted, documents are cancelled, and every change writes an <code>activity_log</code> row with before/after values. Document numbers come from <code>document_sequence</code> under a row lock, so two concurrent invoices cannot collide (CR-041). A retried POST with the same <code>Idempotency-Key</code> replays the stored response instead of creating a second document (CR-051).</p>
+</div>
+
+<!-- ================= 5. ERD (own page) ================= -->
+<div class="page-erd">
+  <h2>5. Entity-relationship diagram</h2>
+  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2684.4 1642" width="2684.4" height="1642">
+    <rect x="0" y="0" width="2684.4" height="1642" fill="#fbfbfb"/>
+    
+    <g font-family="Segoe UI, Arial, sans-serif">
+      <circle cx="45" cy="14" r="4" fill="#ffffff" stroke="#333"/>
+      <text x="56" y="18" font-size="11.5" fill="#333">= tenant-scoped table (carries <tspan font-family="Consolas, monospace">tenant_id</tspan>, every query filters by <tspan font-family="Consolas, monospace">SecurityUtils.currentTenantId()</tspan>)</text>
+      <text x="680" y="18" font-size="11.5" fill="#333">🔑 = primary key   ↳ = foreign key, arrow points to the referenced (parent) table</text>
+    </g>
+    
+    <defs>
+      
+      <marker id="arrow-identity" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#6d5ce8"/>
+      </marker>
+      <marker id="arrow-catalog" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#1f8a70"/>
+      </marker>
+      <marker id="arrow-parties" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#b8860b"/>
+      </marker>
+      <marker id="arrow-procure" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#c1440e"/>
+      </marker>
+      <marker id="arrow-sales" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#1a6fb0"/>
+      </marker>
+      <marker id="arrow-commerce" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#a0388a"/>
+      </marker>
+      <marker id="arrow-projects" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
+      </marker>
+      <marker id="arrow-finance" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#8d6e63"/>
+      </marker>
+    </defs>
+    <path d="M 293.9 218 C 333.9 218, 333.9 307, 293.9 307" fill="none" stroke="#6d5ce8" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-identity)"/>
+<path d="M 293.9 234 C 347.9 234, 347.9 87, 293.9 87" fill="none" stroke="#6d5ce8" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-identity)"/>
+<path d="M 293.9 344 C 361.9 344, 361.9 87, 293.9 87" fill="none" stroke="#6d5ce8" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-identity)"/>
+<path d="M 293.9 516 C 375.9 516, 375.9 307, 293.9 307" fill="none" stroke="#6d5ce8" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-identity)"/>
+<path d="M 293.9 516 C 319.9 516, 319.9 417, 293.9 417" fill="none" stroke="#6d5ce8" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-identity)"/>
+<path d="M 293.9 658 C 333.9 658, 333.9 181, 293.9 181" fill="none" stroke="#6d5ce8" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-identity)"/>
+<path d="M 293.9 674 C 347.9 674, 347.9 621, 293.9 621" fill="none" stroke="#6d5ce8" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-identity)"/>
+<path d="M 615.9 124 C 327.95 124, 327.95 87, 40 87" fill="none" stroke="#1f8a70" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-catalog)"/>
+<path d="M 615.9 140 C 655.9 140, 655.9 87, 615.9 87" fill="none" stroke="#1f8a70" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-catalog)"/>
+<path d="M 615.9 250 C 327.95 250, 327.95 87, 40 87" fill="none" stroke="#1f8a70" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-catalog)"/>
+<path d="M 615.9 360 C 327.95 360, 327.95 87, 40 87" fill="none" stroke="#1f8a70" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-catalog)"/>
+<path d="M 615.9 376 C 669.9 376, 669.9 87, 615.9 87" fill="none" stroke="#1f8a70" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-catalog)"/>
+<path d="M 615.9 392 C 683.9 392, 683.9 213, 615.9 213" fill="none" stroke="#1f8a70" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-catalog)"/>
+<path d="M 615.9 470 C 697.9 470, 697.9 323, 615.9 323" fill="none" stroke="#1f8a70" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-catalog)"/>
+<path d="M 937.9 124 C 488.95 124, 488.95 87, 40 87" fill="none" stroke="#b8860b" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-parties)"/>
+<path d="M 937.9 234 C 488.95 234, 488.95 87, 40 87" fill="none" stroke="#b8860b" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-parties)"/>
+<path d="M 937.9 344 C 977.9 344, 977.9 197, 937.9 197" fill="none" stroke="#b8860b" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-parties)"/>
+<path d="M 1259.9 124 C 649.95 124, 649.95 87, 40 87" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1259.9 140 C 983.9000000000001 140, 983.9000000000001 197, 707.9 197" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1259.9 250 C 1299.9 250, 1299.9 87, 1259.9 87" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1259.9 266 C 822.9000000000001 266, 822.9000000000001 323, 385.9 323" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1259.9 376 C 649.95 376, 649.95 87, 40 87" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1259.9 392 C 1313.9 392, 1313.9 87, 1259.9 87" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1259.9 502 C 649.95 502, 649.95 87, 40 87" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1259.9 518 C 1327.9 518, 1327.9 87, 1259.9 87" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1259.9 628 C 649.95 628, 649.95 87, 40 87" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1259.9 644 C 822.9000000000001 644, 822.9000000000001 323, 385.9 323" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1259.9 754 C 649.95 754, 649.95 87, 40 87" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1259.9 770 C 822.9000000000001 770, 822.9000000000001 323, 385.9 323" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1259.9 880 C 649.95 880, 649.95 87, 40 87" fill="none" stroke="#c1440e" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-procure)"/>
+<path d="M 1678.4 124 C 859.2 124, 859.2 87, 40 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 140 C 1193.15 140, 1193.15 87, 707.9 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 156 C 1718.4 156, 1718.4 939, 1678.4 939" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1351.9 172 C 1676.15 172, 1676.15 87, 2000.4 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 282 C 1732.4 282, 1732.4 87, 1678.4 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 298 C 1032.15 298, 1032.15 323, 385.9 323" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 408 C 859.2 408, 859.2 87, 40 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 424 C 1193.15 424, 1193.15 87, 707.9 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 440 C 1746.4 440, 1746.4 939, 1678.4 939" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 456 C 1760.4 456, 1760.4 655, 1678.4 655" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 566 C 1704.4 566, 1704.4 371, 1678.4 371" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 582 C 1032.15 582, 1032.15 323, 385.9 323" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 692 C 859.2 692, 859.2 87, 40 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 708 C 1193.15 708, 1193.15 87, 707.9 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 724 C 1718.4 724, 1718.4 371, 1678.4 371" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 740 C 1732.4 740, 1732.4 939, 1678.4 939" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 850 C 1746.4 850, 1746.4 655, 1678.4 655" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 866 C 1032.15 866, 1032.15 323, 385.9 323" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 976 C 859.2 976, 859.2 87, 40 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 992 C 1193.15 992, 1193.15 87, 707.9 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1351.9 1008 C 1676.15 1008, 1676.15 87, 2000.4 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 1150 C 1760.4 1150, 1760.4 939, 1678.4 939" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 1166 C 1032.15 1166, 1032.15 323, 385.9 323" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 1276 C 859.2 1276, 859.2 87, 40 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 1292 C 1704.4 1292, 1704.4 939, 1678.4 939" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 1308 C 1193.15 1308, 1193.15 87, 707.9 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 1418 C 1718.4 1418, 1718.4 1239, 1678.4 1239" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 1434 C 1732.4 1434, 1732.4 1113, 1678.4 1113" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 1450 C 1032.15 1450, 1032.15 323, 385.9 323" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 1560 C 859.2 1560, 859.2 87, 40 87" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 1678.4 1576 C 1746.4 1576, 1746.4 939, 1678.4 939" fill="none" stroke="#1a6fb0" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-sales)"/>
+<path d="M 2000.4 124 C 1020.2 124, 1020.2 87, 40 87" fill="none" stroke="#a0388a" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-commerce)"/>
+<path d="M 2000.4 202 C 2040.4 202, 2040.4 87, 2000.4 87" fill="none" stroke="#a0388a" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-commerce)"/>
+<path d="M 2000.4 202 C 1193.15 202, 1193.15 323, 385.9 323" fill="none" stroke="#a0388a" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-commerce)"/>
+<path d="M 2000.4 344 C 1020.2 344, 1020.2 87, 40 87" fill="none" stroke="#a0388a" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-commerce)"/>
+<path d="M 2322.4 124 C 1181.2 124, 1181.2 87, 40 87" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 140 C 1181.2 140, 1181.2 181, 40 181" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 156 C 1181.2 156, 1181.2 181, 40 181" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 266 C 1181.2 266, 1181.2 87, 40 87" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 282 C 1515.15 282, 1515.15 87, 707.9 87" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 298 C 2362.4 298, 2362.4 87, 2322.4 87" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 314 C 1181.2 314, 1181.2 181, 40 181" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 424 C 1181.2 424, 1181.2 87, 40 87" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 440 C 2376.4 440, 2376.4 229, 2322.4 229" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 456 C 1354.15 456, 1354.15 323, 385.9 323" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 472 C 1515.15 472, 1515.15 197, 707.9 197" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 582 C 1181.2 582, 1181.2 87, 40 87" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 598 C 2390.4 598, 2390.4 229, 2322.4 229" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 708 C 1181.2 708, 1181.2 87, 40 87" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 724 C 2404.4 724, 2404.4 229, 2322.4 229" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 834 C 1181.2 834, 1181.2 87, 40 87" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 944 C 1181.2 944, 1181.2 87, 40 87" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 960 C 2348.4 960, 2348.4 797, 2322.4 797" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 976 C 2362.4 976, 2362.4 229, 2322.4 229" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 1086 C 1181.2 1086, 1181.2 87, 40 87" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2322.4 1102 C 2376.4 1102, 2376.4 797, 2322.4 797" fill="none" stroke="#2e7d32" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-projects)"/>
+<path d="M 2644.4 124 C 1342.2 124, 1342.2 87, 40 87" fill="none" stroke="#8d6e63" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-finance)"/>
+<path d="M 2644.4 234 C 1342.2 234, 1342.2 87, 40 87" fill="none" stroke="#8d6e63" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-finance)"/>
+<path d="M 2644.4 250 C 2684.4 250, 2684.4 87, 2644.4 87" fill="none" stroke="#8d6e63" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-finance)"/>
+<path d="M 2644.4 328 C 2698.4 328, 2698.4 197, 2644.4 197" fill="none" stroke="#8d6e63" stroke-width="1.4" opacity="0.55" marker-end="url(#arrow-finance)"/>
+    
+    <rect x="40" y="28" width="253.9" height="30" rx="5" fill="#6d5ce8"/>
+    <text x="166.95" y="48" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">Identity &amp; Tenant</text>
+    <rect x="385.9" y="28" width="230" height="30" rx="5" fill="#1f8a70"/>
+    <text x="500.9" y="48" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">Catalog</text>
+    <rect x="707.9" y="28" width="230" height="30" rx="5" fill="#b8860b"/>
+    <text x="822.9" y="48" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">Parties</text>
+    <rect x="1029.9" y="28" width="230" height="30" rx="5" fill="#c1440e"/>
+    <text x="1144.9" y="48" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">Purchase &amp; Inventory</text>
+    <rect x="1351.9" y="28" width="326.5" height="30" rx="5" fill="#1a6fb0"/>
+    <text x="1515.15" y="48" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">Sales Documents</text>
+    <rect x="1770.4" y="28" width="230" height="30" rx="5" fill="#a0388a"/>
+    <text x="1885.4" y="48" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">Commerce Extras</text>
+    <rect x="2092.4" y="28" width="230" height="30" rx="5" fill="#2e7d32"/>
+    <text x="2207.4" y="48" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">Projects &amp; Labour</text>
+    <rect x="2414.4" y="28" width="230" height="30" rx="5" fill="#8d6e63"/>
+    <text x="2529.4" y="48" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">Expenses</text>
+    
+      <g>
+        <rect x="40" y="74" width="253.9" height="60" rx="4" fill="#ffffff" stroke="#6d5ce8" stroke-width="1.3"/>
+        <rect x="40" y="74" width="253.9" height="26" rx="4" fill="#6d5ce8"/>
+        <rect x="40" y="96" width="253.9" height="4" fill="#6d5ce8"/>
+        <text x="50" y="92" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">tenant</text>
+        <circle cx="281.9" cy="87" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="50" y="111" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 tenant_id</text>
+        <line x1="46" y1="117" x2="287.9" y2="117" stroke="#e2e2e2"/>
+        <text x="50" y="129" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">18 columns total · since V6</text>
+      </g>
+
+      <g>
+        <rect x="40" y="168" width="253.9" height="92" rx="4" fill="#ffffff" stroke="#6d5ce8" stroke-width="1.3"/>
+        <rect x="40" y="168" width="253.9" height="26" rx="4" fill="#6d5ce8"/>
+        <rect x="40" y="190" width="253.9" height="4" fill="#6d5ce8"/>
+        <text x="50" y="186" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">app_user</text>
+        <circle cx="281.9" cy="181" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="50" y="205" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 user_id</text>
+      <text x="50" y="221" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ role_id → role</text>
+      <text x="50" y="237" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+        <line x1="46" y1="243" x2="287.9" y2="243" stroke="#e2e2e2"/>
+        <text x="50" y="255" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">24 columns total · since V1</text>
+      </g>
+
+      <g>
+        <rect x="40" y="294" width="253.9" height="76" rx="4" fill="#ffffff" stroke="#6d5ce8" stroke-width="1.3"/>
+        <rect x="40" y="294" width="253.9" height="26" rx="4" fill="#6d5ce8"/>
+        <rect x="40" y="316" width="253.9" height="4" fill="#6d5ce8"/>
+        <text x="50" y="312" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">role</text>
+        <circle cx="281.9" cy="307" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="50" y="331" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 role_id</text>
+      <text x="50" y="347" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+        <line x1="46" y1="353" x2="287.9" y2="353" stroke="#e2e2e2"/>
+        <text x="50" y="365" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">13 columns total · since V1</text>
+      </g>
+
+      <g>
+        <rect x="40" y="404" width="253.9" height="60" rx="4" fill="#ffffff" stroke="#6d5ce8" stroke-width="1.3"/>
+        <rect x="40" y="404" width="253.9" height="26" rx="4" fill="#6d5ce8"/>
+        <rect x="40" y="426" width="253.9" height="4" fill="#6d5ce8"/>
+        <text x="50" y="422" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">permission</text>
+        
+        
+      <text x="50" y="441" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 permission_id</text>
+        <line x1="46" y1="447" x2="287.9" y2="447" stroke="#e2e2e2"/>
+        <text x="50" y="459" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">8 columns total · since V1</text>
+      </g>
+
+      <g>
+        <rect x="40" y="498" width="253.9" height="76" rx="4" fill="#ffffff" stroke="#6d5ce8" stroke-width="1.3"/>
+        <rect x="40" y="498" width="253.9" height="26" rx="4" fill="#6d5ce8"/>
+        <rect x="40" y="520" width="253.9" height="4" fill="#6d5ce8"/>
+        <text x="50" y="516" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">role_permission</text>
+        
+        
+      <text x="50" y="535" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 role_id</text>
+      <text x="50" y="551" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 permission_id</text>
+        <line x1="46" y1="557" x2="287.9" y2="557" stroke="#e2e2e2"/>
+        <text x="50" y="569" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">2 columns total · since V1</text>
+      </g>
+
+      <g>
+        <rect x="40" y="608" width="253.9" height="92" rx="4" fill="#ffffff" stroke="#6d5ce8" stroke-width="1.3"/>
+        <rect x="40" y="608" width="253.9" height="26" rx="4" fill="#6d5ce8"/>
+        <rect x="40" y="630" width="253.9" height="4" fill="#6d5ce8"/>
+        <text x="50" y="626" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">refresh_token</text>
+        
+        
+      <text x="50" y="645" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 refresh_token_id</text>
+      <text x="50" y="661" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ user_id → app_user</text>
+      <text x="50" y="677" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ replaced_by_token_id → refresh_token</text>
+        <line x1="46" y1="683" x2="287.9" y2="683" stroke="#e2e2e2"/>
+        <text x="50" y="695" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">11 columns total · since V1</text>
+      </g>
+
+      <g>
+        <rect x="385.9" y="74" width="230" height="92" rx="4" fill="#ffffff" stroke="#1f8a70" stroke-width="1.3"/>
+        <rect x="385.9" y="74" width="230" height="26" rx="4" fill="#1f8a70"/>
+        <rect x="385.9" y="96" width="230" height="4" fill="#1f8a70"/>
+        <text x="395.9" y="92" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">category</text>
+        <circle cx="603.9" cy="87" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="395.9" y="111" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 category_id</text>
+      <text x="395.9" y="127" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="395.9" y="143" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ parent_category_id → category</text>
+        <line x1="391.9" y1="149" x2="609.9" y2="149" stroke="#e2e2e2"/>
+        <text x="395.9" y="161" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">12 columns total · since V7</text>
+      </g>
+
+      <g>
+        <rect x="385.9" y="200" width="230" height="76" rx="4" fill="#ffffff" stroke="#1f8a70" stroke-width="1.3"/>
+        <rect x="385.9" y="200" width="230" height="26" rx="4" fill="#1f8a70"/>
+        <rect x="385.9" y="222" width="230" height="4" fill="#1f8a70"/>
+        <text x="395.9" y="218" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">brand</text>
+        <circle cx="603.9" cy="213" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="395.9" y="237" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 brand_id</text>
+      <text x="395.9" y="253" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+        <line x1="391.9" y1="259" x2="609.9" y2="259" stroke="#e2e2e2"/>
+        <text x="395.9" y="271" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">11 columns total · since V7</text>
+      </g>
+
+      <g>
+        <rect x="385.9" y="310" width="230" height="108" rx="4" fill="#ffffff" stroke="#1f8a70" stroke-width="1.3"/>
+        <rect x="385.9" y="310" width="230" height="26" rx="4" fill="#1f8a70"/>
+        <rect x="385.9" y="332" width="230" height="4" fill="#1f8a70"/>
+        <text x="395.9" y="328" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">product</text>
+        <circle cx="603.9" cy="323" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="395.9" y="347" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 product_id</text>
+      <text x="395.9" y="363" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="395.9" y="379" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ category_id → category</text>
+      <text x="395.9" y="395" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ brand_id → brand</text>
+        <line x1="391.9" y1="401" x2="609.9" y2="401" stroke="#e2e2e2"/>
+        <text x="395.9" y="413" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">27 columns total · since V7</text>
+      </g>
+
+      <g>
+        <rect x="385.9" y="452" width="230" height="60" rx="4" fill="#ffffff" stroke="#1f8a70" stroke-width="1.3"/>
+        <rect x="385.9" y="452" width="230" height="26" rx="4" fill="#1f8a70"/>
+        <rect x="385.9" y="474" width="230" height="4" fill="#1f8a70"/>
+        <text x="395.9" y="470" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">product_image</text>
+        
+        
+      <text x="395.9" y="489" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 product_id</text>
+        <line x1="391.9" y1="495" x2="609.9" y2="495" stroke="#e2e2e2"/>
+        <text x="395.9" y="507" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">5 columns total · since V23</text>
+      </g>
+
+      <g>
+        <rect x="707.9" y="74" width="230" height="76" rx="4" fill="#ffffff" stroke="#b8860b" stroke-width="1.3"/>
+        <rect x="707.9" y="74" width="230" height="26" rx="4" fill="#b8860b"/>
+        <rect x="707.9" y="96" width="230" height="4" fill="#b8860b"/>
+        <text x="717.9" y="92" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">customer</text>
+        <circle cx="925.9" cy="87" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="717.9" y="111" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 customer_id</text>
+      <text x="717.9" y="127" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+        <line x1="713.9" y1="133" x2="931.9" y2="133" stroke="#e2e2e2"/>
+        <text x="717.9" y="145" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">17 columns total · since V9</text>
+      </g>
+
+      <g>
+        <rect x="707.9" y="184" width="230" height="76" rx="4" fill="#ffffff" stroke="#b8860b" stroke-width="1.3"/>
+        <rect x="707.9" y="184" width="230" height="26" rx="4" fill="#b8860b"/>
+        <rect x="707.9" y="206" width="230" height="4" fill="#b8860b"/>
+        <text x="717.9" y="202" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">supplier</text>
+        <circle cx="925.9" cy="197" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="717.9" y="221" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 supplier_id</text>
+      <text x="717.9" y="237" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+        <line x1="713.9" y1="243" x2="931.9" y2="243" stroke="#e2e2e2"/>
+        <text x="717.9" y="255" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">31 columns total · since V2</text>
+      </g>
+
+      <g>
+        <rect x="707.9" y="294" width="230" height="76" rx="4" fill="#ffffff" stroke="#b8860b" stroke-width="1.3"/>
+        <rect x="707.9" y="294" width="230" height="26" rx="4" fill="#b8860b"/>
+        <rect x="707.9" y="316" width="230" height="4" fill="#b8860b"/>
+        <text x="717.9" y="312" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">supplier_contact</text>
+        
+        
+      <text x="717.9" y="331" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 supplier_contact_id</text>
+      <text x="717.9" y="347" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ supplier_id → supplier</text>
+        <line x1="713.9" y1="353" x2="931.9" y2="353" stroke="#e2e2e2"/>
+        <text x="717.9" y="365" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">12 columns total · since V2</text>
+      </g>
+
+      <g>
+        <rect x="1029.9" y="74" width="230" height="92" rx="4" fill="#ffffff" stroke="#c1440e" stroke-width="1.3"/>
+        <rect x="1029.9" y="74" width="230" height="26" rx="4" fill="#c1440e"/>
+        <rect x="1029.9" y="96" width="230" height="4" fill="#c1440e"/>
+        <text x="1039.9" y="92" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">purchase</text>
+        <circle cx="1247.9" cy="87" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1039.9" y="111" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 purchase_id</text>
+      <text x="1039.9" y="127" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="1039.9" y="143" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ supplier_id → supplier</text>
+        <line x1="1035.9" y1="149" x2="1253.9" y2="149" stroke="#e2e2e2"/>
+        <text x="1039.9" y="161" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">20 columns total · since V21</text>
+      </g>
+
+      <g>
+        <rect x="1029.9" y="200" width="230" height="92" rx="4" fill="#ffffff" stroke="#c1440e" stroke-width="1.3"/>
+        <rect x="1029.9" y="200" width="230" height="26" rx="4" fill="#c1440e"/>
+        <rect x="1029.9" y="222" width="230" height="4" fill="#c1440e"/>
+        <text x="1039.9" y="218" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">purchase_item</text>
+        
+        
+      <text x="1039.9" y="237" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 purchase_item_id</text>
+      <text x="1039.9" y="253" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ purchase_id → purchase</text>
+      <text x="1039.9" y="269" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ product_id → product</text>
+        <line x1="1035.9" y1="275" x2="1253.9" y2="275" stroke="#e2e2e2"/>
+        <text x="1039.9" y="287" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">11 columns total · since V21</text>
+      </g>
+
+      <g>
+        <rect x="1029.9" y="326" width="230" height="92" rx="4" fill="#ffffff" stroke="#c1440e" stroke-width="1.3"/>
+        <rect x="1029.9" y="326" width="230" height="26" rx="4" fill="#c1440e"/>
+        <rect x="1029.9" y="348" width="230" height="4" fill="#c1440e"/>
+        <text x="1039.9" y="344" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">purchase_payment</text>
+        <circle cx="1247.9" cy="339" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1039.9" y="363" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 purchase_payment_id</text>
+      <text x="1039.9" y="379" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="1039.9" y="395" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ purchase_id → purchase</text>
+        <line x1="1035.9" y1="401" x2="1253.9" y2="401" stroke="#e2e2e2"/>
+        <text x="1039.9" y="413" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">9 columns total · since V21</text>
+      </g>
+
+      <g>
+        <rect x="1029.9" y="452" width="230" height="92" rx="4" fill="#ffffff" stroke="#c1440e" stroke-width="1.3"/>
+        <rect x="1029.9" y="452" width="230" height="26" rx="4" fill="#c1440e"/>
+        <rect x="1029.9" y="474" width="230" height="4" fill="#c1440e"/>
+        <text x="1039.9" y="470" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">purchase_document</text>
+        <circle cx="1247.9" cy="465" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1039.9" y="489" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 purchase_document_id</text>
+      <text x="1039.9" y="505" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="1039.9" y="521" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ purchase_id → purchase</text>
+        <line x1="1035.9" y1="527" x2="1253.9" y2="527" stroke="#e2e2e2"/>
+        <text x="1039.9" y="539" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">11 columns total · since V21</text>
+      </g>
+
+      <g>
+        <rect x="1029.9" y="578" width="230" height="92" rx="4" fill="#ffffff" stroke="#c1440e" stroke-width="1.3"/>
+        <rect x="1029.9" y="578" width="230" height="26" rx="4" fill="#c1440e"/>
+        <rect x="1029.9" y="600" width="230" height="4" fill="#c1440e"/>
+        <text x="1039.9" y="596" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">stock</text>
+        <circle cx="1247.9" cy="591" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1039.9" y="615" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 stock_id</text>
+      <text x="1039.9" y="631" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="1039.9" y="647" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ product_id → product</text>
+        <line x1="1035.9" y1="653" x2="1253.9" y2="653" stroke="#e2e2e2"/>
+        <text x="1039.9" y="665" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">9 columns total · since V8</text>
+      </g>
+
+      <g>
+        <rect x="1029.9" y="704" width="230" height="92" rx="4" fill="#ffffff" stroke="#c1440e" stroke-width="1.3"/>
+        <rect x="1029.9" y="704" width="230" height="26" rx="4" fill="#c1440e"/>
+        <rect x="1029.9" y="726" width="230" height="4" fill="#c1440e"/>
+        <text x="1039.9" y="722" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">stock_movement</text>
+        <circle cx="1247.9" cy="717" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1039.9" y="741" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 stock_movement_id</text>
+      <text x="1039.9" y="757" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="1039.9" y="773" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ product_id → product</text>
+        <line x1="1035.9" y1="779" x2="1253.9" y2="779" stroke="#e2e2e2"/>
+        <text x="1039.9" y="791" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">12 columns total · since V8</text>
+      </g>
+
+      <g>
+        <rect x="1029.9" y="830" width="230" height="76" rx="4" fill="#ffffff" stroke="#c1440e" stroke-width="1.3"/>
+        <rect x="1029.9" y="830" width="230" height="26" rx="4" fill="#c1440e"/>
+        <rect x="1029.9" y="852" width="230" height="4" fill="#c1440e"/>
+        <text x="1039.9" y="848" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">low_stock_snapshot</text>
+        <circle cx="1247.9" cy="843" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1039.9" y="867" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 low_stock_snapshot_id</text>
+      <text x="1039.9" y="883" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+        <line x1="1035.9" y1="889" x2="1253.9" y2="889" stroke="#e2e2e2"/>
+        <text x="1039.9" y="901" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">5 columns total · since V56</text>
+      </g>
+
+      <g>
+        <rect x="1351.9" y="74" width="326.5" height="124" rx="4" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.3"/>
+        <rect x="1351.9" y="74" width="326.5" height="26" rx="4" fill="#1a6fb0"/>
+        <rect x="1351.9" y="96" width="326.5" height="4" fill="#1a6fb0"/>
+        <text x="1361.9" y="92" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">quotation</text>
+        <circle cx="1666.4" cy="87" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1361.9" y="111" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 quotation_id</text>
+      <text x="1361.9" y="127" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="1361.9" y="143" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ customer_id → customer</text>
+      <text x="1361.9" y="159" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ converted_invoice_id → invoice</text>
+      <text x="1361.9" y="175" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ coupon_id → coupon</text>
+        <line x1="1357.9" y1="181" x2="1672.4" y2="181" stroke="#e2e2e2"/>
+        <text x="1361.9" y="193" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">21 columns total · since V10</text>
+      </g>
+
+      <g>
+        <rect x="1351.9" y="232" width="326.5" height="92" rx="4" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.3"/>
+        <rect x="1351.9" y="232" width="326.5" height="26" rx="4" fill="#1a6fb0"/>
+        <rect x="1351.9" y="254" width="326.5" height="4" fill="#1a6fb0"/>
+        <text x="1361.9" y="250" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">quotation_item</text>
+        
+        
+      <text x="1361.9" y="269" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 quotation_item_id</text>
+      <text x="1361.9" y="285" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ quotation_id → quotation</text>
+      <text x="1361.9" y="301" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ product_id → product</text>
+        <line x1="1357.9" y1="307" x2="1672.4" y2="307" stroke="#e2e2e2"/>
+        <text x="1361.9" y="319" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">14 columns total · since V10</text>
+      </g>
+
+      <g>
+        <rect x="1351.9" y="358" width="326.5" height="124" rx="4" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.3"/>
+        <rect x="1351.9" y="358" width="326.5" height="26" rx="4" fill="#1a6fb0"/>
+        <rect x="1351.9" y="380" width="326.5" height="4" fill="#1a6fb0"/>
+        <text x="1361.9" y="376" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">sales_order</text>
+        <circle cx="1666.4" cy="371" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1361.9" y="395" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 sales_order_id</text>
+      <text x="1361.9" y="411" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="1361.9" y="427" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ customer_id → customer</text>
+      <text x="1361.9" y="443" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ converted_invoice_id → invoice</text>
+      <text x="1361.9" y="459" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ converted_delivery_challan_id → delivery_challan</text>
+        <line x1="1357.9" y1="465" x2="1672.4" y2="465" stroke="#e2e2e2"/>
+        <text x="1361.9" y="477" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">22 columns total · since V35</text>
+      </g>
+
+      <g>
+        <rect x="1351.9" y="516" width="326.5" height="92" rx="4" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.3"/>
+        <rect x="1351.9" y="516" width="326.5" height="26" rx="4" fill="#1a6fb0"/>
+        <rect x="1351.9" y="538" width="326.5" height="4" fill="#1a6fb0"/>
+        <text x="1361.9" y="534" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">sales_order_item</text>
+        
+        
+      <text x="1361.9" y="553" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 sales_order_item_id</text>
+      <text x="1361.9" y="569" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ sales_order_id → sales_order</text>
+      <text x="1361.9" y="585" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ product_id → product</text>
+        <line x1="1357.9" y1="591" x2="1672.4" y2="591" stroke="#e2e2e2"/>
+        <text x="1361.9" y="603" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">16 columns total · since V35</text>
+      </g>
+
+      <g>
+        <rect x="1351.9" y="642" width="326.5" height="124" rx="4" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.3"/>
+        <rect x="1351.9" y="642" width="326.5" height="26" rx="4" fill="#1a6fb0"/>
+        <rect x="1351.9" y="664" width="326.5" height="4" fill="#1a6fb0"/>
+        <text x="1361.9" y="660" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">delivery_challan</text>
+        <circle cx="1666.4" cy="655" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1361.9" y="679" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 delivery_challan_id</text>
+      <text x="1361.9" y="695" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="1361.9" y="711" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ customer_id → customer</text>
+      <text x="1361.9" y="727" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ source_sales_order_id → sales_order</text>
+      <text x="1361.9" y="743" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ converted_invoice_id → invoice</text>
+        <line x1="1357.9" y1="749" x2="1672.4" y2="749" stroke="#e2e2e2"/>
+        <text x="1361.9" y="761" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">18 columns total · since V36</text>
+      </g>
+
+      <g>
+        <rect x="1351.9" y="800" width="326.5" height="92" rx="4" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.3"/>
+        <rect x="1351.9" y="800" width="326.5" height="26" rx="4" fill="#1a6fb0"/>
+        <rect x="1351.9" y="822" width="326.5" height="4" fill="#1a6fb0"/>
+        <text x="1361.9" y="818" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">delivery_challan_item</text>
+        
+        
+      <text x="1361.9" y="837" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 delivery_challan_item_id</text>
+      <text x="1361.9" y="853" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ delivery_challan_id → delivery_challan</text>
+      <text x="1361.9" y="869" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ product_id → product</text>
+        <line x1="1357.9" y1="875" x2="1672.4" y2="875" stroke="#e2e2e2"/>
+        <text x="1361.9" y="887" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">8 columns total · since V36</text>
+      </g>
+
+      <g>
+        <rect x="1351.9" y="926" width="326.5" height="140" rx="4" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.3"/>
+        <rect x="1351.9" y="926" width="326.5" height="26" rx="4" fill="#1a6fb0"/>
+        <rect x="1351.9" y="948" width="326.5" height="4" fill="#1a6fb0"/>
+        <text x="1361.9" y="944" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">invoice</text>
+        <circle cx="1666.4" cy="939" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1361.9" y="963" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 invoice_id</text>
+      <text x="1361.9" y="979" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="1361.9" y="995" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ customer_id → customer</text>
+      <text x="1361.9" y="1011" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ coupon_id → coupon</text>
+      <text x="1361.9" y="1027" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ bank_account_id → tenant_bank_account</text>
+      <text x="1361.9" y="1043" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ bank_account_qr_id → tenant_bank_account_qr</text>
+        <line x1="1357.9" y1="1049" x2="1672.4" y2="1049" stroke="#e2e2e2"/>
+        <text x="1361.9" y="1061" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">22 columns total · since V9</text>
+      </g>
+
+      <g>
+        <rect x="1351.9" y="1100" width="326.5" height="92" rx="4" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.3"/>
+        <rect x="1351.9" y="1100" width="326.5" height="26" rx="4" fill="#1a6fb0"/>
+        <rect x="1351.9" y="1122" width="326.5" height="4" fill="#1a6fb0"/>
+        <text x="1361.9" y="1118" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">invoice_item</text>
+        
+        
+      <text x="1361.9" y="1137" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 invoice_item_id</text>
+      <text x="1361.9" y="1153" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ invoice_id → invoice</text>
+      <text x="1361.9" y="1169" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ product_id → product</text>
+        <line x1="1357.9" y1="1175" x2="1672.4" y2="1175" stroke="#e2e2e2"/>
+        <text x="1361.9" y="1187" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">15 columns total · since V9</text>
+      </g>
+
+      <g>
+        <rect x="1351.9" y="1226" width="326.5" height="108" rx="4" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.3"/>
+        <rect x="1351.9" y="1226" width="326.5" height="26" rx="4" fill="#1a6fb0"/>
+        <rect x="1351.9" y="1248" width="326.5" height="4" fill="#1a6fb0"/>
+        <text x="1361.9" y="1244" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">credit_note</text>
+        <circle cx="1666.4" cy="1239" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1361.9" y="1263" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 credit_note_id</text>
+      <text x="1361.9" y="1279" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="1361.9" y="1295" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ invoice_id → invoice</text>
+      <text x="1361.9" y="1311" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ customer_id → customer</text>
+        <line x1="1357.9" y1="1317" x2="1672.4" y2="1317" stroke="#e2e2e2"/>
+        <text x="1361.9" y="1329" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">17 columns total · since V37</text>
+      </g>
+
+      <g>
+        <rect x="1351.9" y="1368" width="326.5" height="108" rx="4" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.3"/>
+        <rect x="1351.9" y="1368" width="326.5" height="26" rx="4" fill="#1a6fb0"/>
+        <rect x="1351.9" y="1390" width="326.5" height="4" fill="#1a6fb0"/>
+        <text x="1361.9" y="1386" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">credit_note_item</text>
+        
+        
+      <text x="1361.9" y="1405" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 credit_note_item_id</text>
+      <text x="1361.9" y="1421" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ credit_note_id → credit_note</text>
+      <text x="1361.9" y="1437" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ invoice_item_id → invoice_item</text>
+      <text x="1361.9" y="1453" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ product_id → product</text>
+        <line x1="1357.9" y1="1459" x2="1672.4" y2="1459" stroke="#e2e2e2"/>
+        <text x="1361.9" y="1471" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">12 columns total · since V37</text>
+      </g>
+
+      <g>
+        <rect x="1351.9" y="1510" width="326.5" height="92" rx="4" fill="#ffffff" stroke="#1a6fb0" stroke-width="1.3"/>
+        <rect x="1351.9" y="1510" width="326.5" height="26" rx="4" fill="#1a6fb0"/>
+        <rect x="1351.9" y="1532" width="326.5" height="4" fill="#1a6fb0"/>
+        <text x="1361.9" y="1528" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">payment</text>
+        <circle cx="1666.4" cy="1523" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1361.9" y="1547" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 payment_id</text>
+      <text x="1361.9" y="1563" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="1361.9" y="1579" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ invoice_id → invoice</text>
+        <line x1="1357.9" y1="1585" x2="1672.4" y2="1585" stroke="#e2e2e2"/>
+        <text x="1361.9" y="1597" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">9 columns total · since V9</text>
+      </g>
+
+      <g>
+        <rect x="1770.4" y="74" width="230" height="76" rx="4" fill="#ffffff" stroke="#a0388a" stroke-width="1.3"/>
+        <rect x="1770.4" y="74" width="230" height="26" rx="4" fill="#a0388a"/>
+        <rect x="1770.4" y="96" width="230" height="4" fill="#a0388a"/>
+        <text x="1780.4" y="92" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">coupon</text>
+        <circle cx="1988.4" cy="87" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1780.4" y="111" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 coupon_id</text>
+      <text x="1780.4" y="127" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+        <line x1="1776.4" y1="133" x2="1994.4" y2="133" stroke="#e2e2e2"/>
+        <text x="1780.4" y="145" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">18 columns total · since V16</text>
+      </g>
+
+      <g>
+        <rect x="1770.4" y="184" width="230" height="76" rx="4" fill="#ffffff" stroke="#a0388a" stroke-width="1.3"/>
+        <rect x="1770.4" y="184" width="230" height="26" rx="4" fill="#a0388a"/>
+        <rect x="1770.4" y="206" width="230" height="4" fill="#a0388a"/>
+        <text x="1780.4" y="202" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">coupon_product</text>
+        
+        
+      <text x="1780.4" y="221" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 coupon_id</text>
+      <text x="1780.4" y="237" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 product_id</text>
+        <line x1="1776.4" y1="243" x2="1994.4" y2="243" stroke="#e2e2e2"/>
+        <text x="1780.4" y="255" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">2 columns total · since V16</text>
+      </g>
+
+      <g>
+        <rect x="1770.4" y="294" width="230" height="76" rx="4" fill="#ffffff" stroke="#a0388a" stroke-width="1.3"/>
+        <rect x="1770.4" y="294" width="230" height="26" rx="4" fill="#a0388a"/>
+        <rect x="1770.4" y="316" width="230" height="4" fill="#a0388a"/>
+        <text x="1780.4" y="312" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">document_sequence</text>
+        <circle cx="1988.4" cy="307" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="1780.4" y="331" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 document_sequence_id</text>
+      <text x="1780.4" y="347" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+        <line x1="1776.4" y1="353" x2="1994.4" y2="353" stroke="#e2e2e2"/>
+        <text x="1780.4" y="365" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">9 columns total · since V29</text>
+      </g>
+
+      <g>
+        <rect x="2092.4" y="74" width="230" height="108" rx="4" fill="#ffffff" stroke="#2e7d32" stroke-width="1.3"/>
+        <rect x="2092.4" y="74" width="230" height="26" rx="4" fill="#2e7d32"/>
+        <rect x="2092.4" y="96" width="230" height="4" fill="#2e7d32"/>
+        <text x="2102.4" y="92" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">work_type</text>
+        <circle cx="2310.4" cy="87" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="2102.4" y="111" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 work_type_id</text>
+      <text x="2102.4" y="127" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="2102.4" y="143" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ created_by → app_user</text>
+      <text x="2102.4" y="159" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ updated_by → app_user</text>
+        <line x1="2098.4" y1="165" x2="2316.4" y2="165" stroke="#e2e2e2"/>
+        <text x="2102.4" y="177" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">8 columns total · since V18</text>
+      </g>
+
+      <g>
+        <rect x="2092.4" y="216" width="230" height="124" rx="4" fill="#ffffff" stroke="#2e7d32" stroke-width="1.3"/>
+        <rect x="2092.4" y="216" width="230" height="26" rx="4" fill="#2e7d32"/>
+        <rect x="2092.4" y="238" width="230" height="4" fill="#2e7d32"/>
+        <text x="2102.4" y="234" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">project</text>
+        <circle cx="2310.4" cy="229" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="2102.4" y="253" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 project_id</text>
+      <text x="2102.4" y="269" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="2102.4" y="285" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ customer_id → customer</text>
+      <text x="2102.4" y="301" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ work_type_id → work_type</text>
+      <text x="2102.4" y="317" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ manager_user_id → app_user</text>
+        <line x1="2098.4" y1="323" x2="2316.4" y2="323" stroke="#e2e2e2"/>
+        <text x="2102.4" y="335" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">21 columns total · since V18</text>
+      </g>
+
+      <g>
+        <rect x="2092.4" y="374" width="230" height="124" rx="4" fill="#ffffff" stroke="#2e7d32" stroke-width="1.3"/>
+        <rect x="2092.4" y="374" width="230" height="26" rx="4" fill="#2e7d32"/>
+        <rect x="2092.4" y="396" width="230" height="4" fill="#2e7d32"/>
+        <text x="2102.4" y="392" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">project_material</text>
+        <circle cx="2310.4" cy="387" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="2102.4" y="411" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 project_material_id</text>
+      <text x="2102.4" y="427" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="2102.4" y="443" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ project_id → project</text>
+      <text x="2102.4" y="459" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ product_id → product</text>
+      <text x="2102.4" y="475" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ supplier_id → supplier</text>
+        <line x1="2098.4" y1="481" x2="2316.4" y2="481" stroke="#e2e2e2"/>
+        <text x="2102.4" y="493" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">15 columns total · since V18</text>
+      </g>
+
+      <g>
+        <rect x="2092.4" y="532" width="230" height="92" rx="4" fill="#ffffff" stroke="#2e7d32" stroke-width="1.3"/>
+        <rect x="2092.4" y="532" width="230" height="26" rx="4" fill="#2e7d32"/>
+        <rect x="2092.4" y="554" width="230" height="4" fill="#2e7d32"/>
+        <text x="2102.4" y="550" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">project_expense</text>
+        <circle cx="2310.4" cy="545" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="2102.4" y="569" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 project_expense_id</text>
+      <text x="2102.4" y="585" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="2102.4" y="601" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ project_id → project</text>
+        <line x1="2098.4" y1="607" x2="2316.4" y2="607" stroke="#e2e2e2"/>
+        <text x="2102.4" y="619" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">9 columns total · since V18</text>
+      </g>
+
+      <g>
+        <rect x="2092.4" y="658" width="230" height="92" rx="4" fill="#ffffff" stroke="#2e7d32" stroke-width="1.3"/>
+        <rect x="2092.4" y="658" width="230" height="26" rx="4" fill="#2e7d32"/>
+        <rect x="2092.4" y="680" width="230" height="4" fill="#2e7d32"/>
+        <text x="2102.4" y="676" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">project_payment</text>
+        <circle cx="2310.4" cy="671" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="2102.4" y="695" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 project_payment_id</text>
+      <text x="2102.4" y="711" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="2102.4" y="727" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ project_id → project</text>
+        <line x1="2098.4" y1="733" x2="2316.4" y2="733" stroke="#e2e2e2"/>
+        <text x="2102.4" y="745" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">8 columns total · since V18</text>
+      </g>
+
+      <g>
+        <rect x="2092.4" y="784" width="230" height="76" rx="4" fill="#ffffff" stroke="#2e7d32" stroke-width="1.3"/>
+        <rect x="2092.4" y="784" width="230" height="26" rx="4" fill="#2e7d32"/>
+        <rect x="2092.4" y="806" width="230" height="4" fill="#2e7d32"/>
+        <text x="2102.4" y="802" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">worker</text>
+        <circle cx="2310.4" cy="797" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="2102.4" y="821" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 worker_id</text>
+      <text x="2102.4" y="837" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+        <line x1="2098.4" y1="843" x2="2316.4" y2="843" stroke="#e2e2e2"/>
+        <text x="2102.4" y="855" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">11 columns total · since V25</text>
+      </g>
+
+      <g>
+        <rect x="2092.4" y="894" width="230" height="108" rx="4" fill="#ffffff" stroke="#2e7d32" stroke-width="1.3"/>
+        <rect x="2092.4" y="894" width="230" height="26" rx="4" fill="#2e7d32"/>
+        <rect x="2092.4" y="916" width="230" height="4" fill="#2e7d32"/>
+        <text x="2102.4" y="912" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">worker_attendance</text>
+        <circle cx="2310.4" cy="907" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="2102.4" y="931" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 worker_attendance_id</text>
+      <text x="2102.4" y="947" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="2102.4" y="963" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ worker_id → worker</text>
+      <text x="2102.4" y="979" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ project_id → project</text>
+        <line x1="2098.4" y1="985" x2="2316.4" y2="985" stroke="#e2e2e2"/>
+        <text x="2102.4" y="997" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">11 columns total · since V25</text>
+      </g>
+
+      <g>
+        <rect x="2092.4" y="1036" width="230" height="92" rx="4" fill="#ffffff" stroke="#2e7d32" stroke-width="1.3"/>
+        <rect x="2092.4" y="1036" width="230" height="26" rx="4" fill="#2e7d32"/>
+        <rect x="2092.4" y="1058" width="230" height="4" fill="#2e7d32"/>
+        <text x="2102.4" y="1054" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">worker_payment</text>
+        <circle cx="2310.4" cy="1049" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="2102.4" y="1073" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 worker_payment_id</text>
+      <text x="2102.4" y="1089" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="2102.4" y="1105" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ worker_id → worker</text>
+        <line x1="2098.4" y1="1111" x2="2316.4" y2="1111" stroke="#e2e2e2"/>
+        <text x="2102.4" y="1123" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">13 columns total · since V25</text>
+      </g>
+
+      <g>
+        <rect x="2414.4" y="74" width="230" height="76" rx="4" fill="#ffffff" stroke="#8d6e63" stroke-width="1.3"/>
+        <rect x="2414.4" y="74" width="230" height="26" rx="4" fill="#8d6e63"/>
+        <rect x="2414.4" y="96" width="230" height="4" fill="#8d6e63"/>
+        <text x="2424.4" y="92" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">expense_category</text>
+        <circle cx="2632.4" cy="87" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="2424.4" y="111" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 expense_category_id</text>
+      <text x="2424.4" y="127" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+        <line x1="2420.4" y1="133" x2="2638.4" y2="133" stroke="#e2e2e2"/>
+        <text x="2424.4" y="145" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">8 columns total · since V24</text>
+      </g>
+
+      <g>
+        <rect x="2414.4" y="184" width="230" height="92" rx="4" fill="#ffffff" stroke="#8d6e63" stroke-width="1.3"/>
+        <rect x="2414.4" y="184" width="230" height="26" rx="4" fill="#8d6e63"/>
+        <rect x="2414.4" y="206" width="230" height="4" fill="#8d6e63"/>
+        <text x="2424.4" y="202" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">business_expense</text>
+        <circle cx="2632.4" cy="197" r="4" fill="#ffffff" opacity="0.9"/>
+        
+      <text x="2424.4" y="221" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 business_expense_id</text>
+      <text x="2424.4" y="237" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ tenant_id → tenant</text>
+      <text x="2424.4" y="253" font-size="10.3" font-family="Consolas, monospace" fill="#3a3a3a" font-weight="400">↳ category_id → expense_category</text>
+        <line x1="2420.4" y1="259" x2="2638.4" y2="259" stroke="#e2e2e2"/>
+        <text x="2424.4" y="271" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">12 columns total · since V24</text>
+      </g>
+
+      <g>
+        <rect x="2414.4" y="310" width="230" height="60" rx="4" fill="#ffffff" stroke="#8d6e63" stroke-width="1.3"/>
+        <rect x="2414.4" y="310" width="230" height="26" rx="4" fill="#8d6e63"/>
+        <rect x="2414.4" y="332" width="230" height="4" fill="#8d6e63"/>
+        <text x="2424.4" y="328" font-size="12.5" font-weight="700" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif">expense_receipt</text>
+        
+        
+      <text x="2424.4" y="347" font-size="10.3" font-family="Consolas, monospace" fill="#1a1a2e" font-weight="700">🔑 business_expense_id</text>
+        <line x1="2420.4" y1="353" x2="2638.4" y2="353" stroke="#e2e2e2"/>
+        <text x="2424.4" y="365" font-size="9" fill="#8a8a8a" font-family="Segoe UI, Arial, sans-serif">5 columns total · since V24</text>
+      </g>
+  </svg></div>
+  <p class="caption">45 of the 73 tables, grouped by business domain, with 90 foreign keys drawn. Each box lists its primary key and foreign keys only; the footer gives the full column count and the migration that created it. The remaining 28 tables (branding media, notifications, security audit, support desk, the platform console) are listed with their keys in Appendix A. Derived automatically from <code>backend/src/main/resources/db/migration/V1..V56</code> — the diagram cannot drift from the schema. Line-item tables (<code>*_item</code>) carry no <code>tenant_id</code> of their own: they inherit scope through their parent document and are only ever loaded via it.</p>
+  <p class="caption">Foreign keys from drawn tables to appendix tables, not drawn to keep the picture readable: <code>invoice.bank_account_id → tenant_bank_account</code>, <code>invoice.bank_account_qr_id → tenant_bank_account_qr</code>.</p>
+</div>
+
+<!-- ================= 5b. TABLE GUIDE ================= -->
+<div class="section newpage">
+  <h2>5. Table guide — what each entity in the diagram holds</h2>
+  <p>Same grouping and colours as the diagram. "Since" is the Flyway migration that created the table; later migrations may have added columns (the diagram footer counts them all).</p>
+  
+<h3><span class="swatch" style="background:#6d5ce8"></span>Identity &amp; Tenant</h3>
+<table class="tbl"><thead><tr><th style="width:22%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>tenant</code></td><td>V6</td><td>18</td><td>yes</td><td>The shop. Name, GSTIN, address, subscription tier and trial expiry. Root of every tenant-scoped row.</td></tr>
+<tr><td><code>app_user</code></td><td>V1</td><td>24</td><td>yes</td><td>A login account inside one tenant. Mobile/email are globally unique across tenants (CR-016 trade-off). Soft-deleted, never removed.</td></tr>
+<tr><td><code>role</code></td><td>V1</td><td>13</td><td>yes</td><td>A named bundle of permissions per tenant. OWNER, MANAGER, ACCOUNTANT and STAFF are seeded as system roles; owners can add their own.</td></tr>
+<tr><td><code>permission</code></td><td>V1</td><td>8</td><td>—</td><td>The 48 fine-grained permission codes (USER_MANAGE, INVOICE_CREATE, ...). The DB row is authoritative; PermissionCode.java mirrors it for the compiler.</td></tr>
+<tr><td><code>role_permission</code></td><td>V1</td><td>2</td><td>—</td><td>Many-to-many join between role and permission.</td></tr>
+<tr><td><code>refresh_token</code></td><td>V1</td><td>11</td><td>—</td><td>Opaque, rotating refresh tokens. replaced_by_token_id chains rotations so reuse of an old token is detected (BUG-AUTH-014).</td></tr>
+</tbody></table>
+
+<h3><span class="swatch" style="background:#1f8a70"></span>Catalog</h3>
+<table class="tbl"><thead><tr><th style="width:22%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>category</code></td><td>V7</td><td>12</td><td>yes</td><td>Product category tree (parent_category_id is self-referencing).</td></tr>
+<tr><td><code>brand</code></td><td>V7</td><td>11</td><td>yes</td><td>Product brand.</td></tr>
+<tr><td><code>product</code></td><td>V7</td><td>27</td><td>yes</td><td>One SKU: HSN code, GST rate, purchase and selling price in paise, unit, reorder level. category_id and brand_id are NOT NULL.</td></tr>
+<tr><td><code>product_image</code></td><td>V23</td><td>5</td><td>—</td><td>Product photos stored as bytea (CR-036).</td></tr>
+</tbody></table>
+
+<h3><span class="swatch" style="background:#b8860b"></span>Parties</h3>
+<table class="tbl"><thead><tr><th style="width:22%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>customer</code></td><td>V9</td><td>17</td><td>yes</td><td>Buyer. Credit limit in paise, GSTIN, addresses; the map picker (CR-076) fills the address.</td></tr>
+<tr><td><code>supplier</code></td><td>V2</td><td>31</td><td>yes</td><td>Vendor. GSTIN, encrypted bank details (CR-018), soft-deleted with restore (CR-058).</td></tr>
+<tr><td><code>supplier_contact</code></td><td>V2</td><td>12</td><td>—</td><td>Named contact people at a supplier.</td></tr>
+</tbody></table>
+
+<h3><span class="swatch" style="background:#c1440e"></span>Purchase &amp; Inventory</h3>
+<table class="tbl"><thead><tr><th style="width:22%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>purchase</code></td><td>V21</td><td>20</td><td>yes</td><td>A supplier bill / goods receipt. Created by hand or via the preview-then-confirm bill import (CR-035).</td></tr>
+<tr><td><code>purchase_item</code></td><td>V21</td><td>11</td><td>—</td><td>One line of a purchase: product, quantity, unit rate DECIMAL(18,6).</td></tr>
+<tr><td><code>purchase_payment</code></td><td>V21</td><td>9</td><td>yes</td><td>Money paid to the supplier against a purchase.</td></tr>
+<tr><td><code>purchase_document</code></td><td>V21</td><td>11</td><td>yes</td><td>The scanned supplier bill attached to a purchase.</td></tr>
+<tr><td><code>stock</code></td><td>V8</td><td>9</td><td>yes</td><td>Current on-hand quantity per product, per tenant.</td></tr>
+<tr><td><code>stock_movement</code></td><td>V8</td><td>12</td><td>yes</td><td>Append-only ledger of every IN / OUT / ADJUST with its source document.</td></tr>
+<tr><td><code>low_stock_snapshot</code></td><td>V56</td><td>5</td><td>yes</td><td>Daily count of products under reorder level, so the dashboard can show a real delta (CR-084).</td></tr>
+</tbody></table>
+
+<h3><span class="swatch" style="background:#1a6fb0"></span>Sales Documents</h3>
+<table class="tbl"><thead><tr><th style="width:22%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>quotation</code></td><td>V10</td><td>21</td><td>yes</td><td>A priced offer to a customer. Not a tax document; converted_invoice_id links it to the invoice it became.</td></tr>
+<tr><td><code>quotation_item</code></td><td>V10</td><td>14</td><td>—</td><td>One quotation line.</td></tr>
+<tr><td><code>sales_order</code></td><td>V35</td><td>22</td><td>yes</td><td>Internal commitment after a quote is accepted. Converts to a delivery challan or straight to an invoice (CR-052).</td></tr>
+<tr><td><code>sales_order_item</code></td><td>V35</td><td>16</td><td>—</td><td>One sales-order line, tracking delivered and invoiced quantities.</td></tr>
+<tr><td><code>delivery_challan</code></td><td>V36</td><td>18</td><td>yes</td><td>Goods leave the shop. Moves stock, is not a tax document; converts to an invoice (CR-052).</td></tr>
+<tr><td><code>delivery_challan_item</code></td><td>V36</td><td>8</td><td>—</td><td>One challan line.</td></tr>
+<tr><td><code>invoice</code></td><td>V9</td><td>22</td><td>yes</td><td>The GST tax invoice — the settlement point of the whole system. Status UNPAID → PARTIALLY_PAID → PAID, or CANCELLED. Coupon, bank account and UPI QR are printed on the PDF.</td></tr>
+<tr><td><code>invoice_item</code></td><td>V9</td><td>15</td><td>—</td><td>One invoice line with GST split.</td></tr>
+<tr><td><code>credit_note</code></td><td>V37</td><td>17</td><td>yes</td><td>Return or correction against an invoice; puts stock back (CR-052).</td></tr>
+<tr><td><code>credit_note_item</code></td><td>V37</td><td>12</td><td>—</td><td>One returned line, pointing at the original invoice_item.</td></tr>
+<tr><td><code>payment</code></td><td>V9</td><td>9</td><td>yes</td><td>A receipt against an invoice: amount in paise and method (cash, UPI, bank...).</td></tr>
+</tbody></table>
+
+<h3><span class="swatch" style="background:#a0388a"></span>Commerce Extras</h3>
+<table class="tbl"><thead><tr><th style="width:22%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>coupon</code></td><td>V16</td><td>18</td><td>yes</td><td>Discount code with validity window, usage limit and optional product restriction (CR-028).</td></tr>
+<tr><td><code>coupon_product</code></td><td>V16</td><td>2</td><td>—</td><td>Restricts a coupon to particular products.</td></tr>
+<tr><td><code>document_sequence</code></td><td>V29</td><td>9</td><td>yes</td><td>Per-tenant, per-document-type running numbers, allocated under SELECT ... FOR UPDATE so two invoices can never share a number (CR-041).</td></tr>
+</tbody></table>
+
+<h3><span class="swatch" style="background:#2e7d32"></span>Projects &amp; Labour</h3>
+<table class="tbl"><thead><tr><th style="width:22%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>work_type</code></td><td>V18</td><td>8</td><td>yes</td><td>Kind of job a project is (e.g. rooftop installation).</td></tr>
+<tr><td><code>project</code></td><td>V18</td><td>21</td><td>yes</td><td>A customer job with a manager, budget and computed profitability (CR-029).</td></tr>
+<tr><td><code>project_material</code></td><td>V18</td><td>15</td><td>yes</td><td>Material issued to a project, from stock or bought from a supplier (CR-064 stock link).</td></tr>
+<tr><td><code>project_expense</code></td><td>V18</td><td>9</td><td>yes</td><td>Cash spent on a project that is not material or labour.</td></tr>
+<tr><td><code>project_payment</code></td><td>V18</td><td>8</td><td>yes</td><td>Money the customer paid against a project.</td></tr>
+<tr><td><code>worker</code></td><td>V25</td><td>11</td><td>yes</td><td>A labourer on the shop’s books (CR-036).</td></tr>
+<tr><td><code>worker_attendance</code></td><td>V25</td><td>11</td><td>yes</td><td>One day of attendance, optionally charged to a project.</td></tr>
+<tr><td><code>worker_payment</code></td><td>V25</td><td>13</td><td>yes</td><td>Wages and advances paid to a worker.</td></tr>
+</tbody></table>
+
+<h3><span class="swatch" style="background:#8d6e63"></span>Expenses</h3>
+<table class="tbl"><thead><tr><th style="width:22%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>expense_category</code></td><td>V24</td><td>8</td><td>yes</td><td>Owner-defined expense heads (rent, electricity...).</td></tr>
+<tr><td><code>business_expense</code></td><td>V24</td><td>12</td><td>yes</td><td>A shop overhead entry — not tied to any sale or purchase.</td></tr>
+<tr><td><code>expense_receipt</code></td><td>V24</td><td>5</td><td>—</td><td>Receipt image attached to an expense.</td></tr>
+</tbody></table>
+</div>
+
+<!-- ================= 6. ROLES ================= -->
+<div class="section">
+  <h2>6. Roles and permissions</h2>
+  <p>Authorisation is <strong>permission-based, never role-based</strong> (hard rule 6). A role is only a named set of permissions; business rules check a permission such as <code>INVOICE_CANCEL</code>, never "is the caller an owner". That is what lets an owner create a custom role — say "Senior counter" with <code>INVOICE_DISCOUNT_OVERRIDE</code> — without any code change.</p>
+  <table><thead><tr><th style="width:20%">Seeded role</th><th>Typical scope</th></tr></thead><tbody>
+    <tr><td><code>OWNER</code></td><td>Everything in the shop, including users, roles, settings, subscription and data reset.</td></tr>
+<tr><td><code>MANAGER</code></td><td>Day-to-day operations: products, stock, purchases, sales documents, projects, reports.</td></tr>
+<tr><td><code>ACCOUNTANT</code></td><td>Invoices, payments, expenses, purchase payments, reports; no user or settings management.</td></tr>
+<tr><td><code>STAFF</code></td><td>Counter work: quotations, invoices, customers, stock lookup.</td></tr>
+  </tbody></table>
+  <p>The 48 permission codes live in the <code>permission</code> table (authoritative) and in <code>auth/entity/PermissionCode.java</code> (so <code>@PreAuthorize</code> strings are compiler-checked; <code>PermissionCodeConsistencyTest</code> asserts the two agree). Families: USER, ROLE, AUDIT, CUSTOMER, SUPPLIER (incl. <code>SUPPLIER_VIEW_BANK_ACCOUNT</code>), PRODUCT (incl. <code>PRODUCT_VIEW_COST</code>, <code>PRODUCT_VIEW_STOCK</code>), INVENTORY, PURCHASE, QUOTATION, INVOICE (VIEW / CREATE / CANCEL / DISCOUNT_OVERRIDE), PAYMENT, EXPENSE, PROJECT, LABOUR, COUPON, REPORT, SETTINGS, DATA_RESET and <code>DEVELOPER_INSPECT</code> (held by no default role).</p>
+  <h3>How a permission is enforced, end to end</h3>
+  <ul>
+    <li><strong>Backend, the real gate:</strong> <code>@PreAuthorize("hasAuthority('INVOICE_CREATE')")</code> on the controller method; the authorities come from the JWT, which was built from <code>role_permission</code> at login.</li>
+    <li><strong>Frontend, for a sensible UI only:</strong> <code>RequirePermission</code> hides routes and <code>PermissionGate</code> hides buttons the caller cannot use. Removing them would change nothing about what the API allows.</li>
+    <li><strong>Refusals are recorded:</strong> <code>RestAccessDeniedHandler</code> writes an <code>ACCESS_DENIED</code> row to <code>security_audit_log</code>.</li>
+    <li><strong>Platform admins are a different identity</strong> with their own table, tokens, MFA and audit log; a tenant-facing controller never calls into <code>platformadmin</code>.</li>
+  </ul>
+</div>
+
+<!-- ================= 7. REPO MAP ================= -->
+<div class="section newpage">
+  <h2>7. Repository map — where everything lives</h2>
+  <pre>hardware-erp/
+├── CLAUDE.md                     rules for every task; which guide to load
+├── RESUME_POINT.md               where the last session stopped
+├── README.md, MASTER_PROJECT_STATUS.md, AUDIT_GAP_REPORT.md, IMPROVEMENT_OPPORTUNITIES.md
+├── docker-compose.yml            local PostgreSQL 16
+├── docker-compose.selfhosted.yml the whole stack for a shop's own machine
+├── render.yaml                   cloud deployment manifest
+├── scripts/                      backup-db.sh, restore-db.sh, run-local.sh, run-cloud.*, new-secret.ps1
+├── registry/                     static_check.py, check_registry.py, registry.json  (need python3)
+├── project-knowledge/            the registries — source of truth (section 10)
+├── .claude/guides/               coding, business, database, security, testing, architecture rules
+├── docs/                         DEPLOYMENT*.md, MANUAL_WHATSAPP.md, SECURITY_AUDIT.md, Postman, this overview
+├── backend/                      Maven project
+│   ├── pom.xml
+│   └── src/main/java/com/hardware/erp/…        src/main/resources/{application*.yml, db/migration, db/seed}
+│       src/test/java/…                          *Test (unit, Mockito) and *IT (Testcontainers PostgreSQL)
+└── frontend/                     Vite project
+    ├── package.json, vite.config.ts, tailwind.config.*, tsconfig*.json
+    ├── src/                      (section 9)
+    └── tests/                    Playwright suites + run.mjs, run against the built dist/</pre>
+  <h3>Backend modules (30 packages)</h3>
+  
+<table><thead><tr><th style="width:38%">Package under com.hardware.erp</th><th>Owns</th></tr></thead><tbody>
+<tr><td><code>auth</code></td><td>Login, refresh, logout, MFA, users, roles, permissions, sessions, security audit log.</td></tr>
+<tr><td><code>tenant</code></td><td>Tenant row, settings, branding media, bank accounts, subscription tier, self-registration (CR-028), data reset (CR-067).</td></tr>
+<tr><td><code>product</code></td><td>Category, brand, product, product image, CSV import, price history.</td></tr>
+<tr><td><code>inventory</code></td><td>stock and stock_movement; StockService.applyMovement is the only writer.</td></tr>
+<tr><td><code>supplier</code></td><td>Suppliers, contacts, encrypted bank details, soft delete + restore.</td></tr>
+<tr><td><code>purchase</code></td><td>Purchases, items, payments, documents, bill import with preview.</td></tr>
+<tr><td><code>customer</code></td><td>Customers and credit limits.</td></tr>
+<tr><td><code>quotation</code></td><td>Quotations and conversion to invoice.</td></tr>
+<tr><td><code>salesorder</code></td><td>Sales orders; conversion to challan or invoice.</td></tr>
+<tr><td><code>deliverychallan</code></td><td>Delivery challans; stock out; conversion to invoice.</td></tr>
+<tr><td><code>invoice</code></td><td>Invoices, items, payments, PDF, email/WhatsApp send.</td></tr>
+<tr><td><code>creditnote</code></td><td>Credit notes; stock back in.</td></tr>
+<tr><td><code>coupon</code></td><td>Coupons and product restrictions.</td></tr>
+<tr><td><code>project</code></td><td>Projects, work types, materials, expenses, payments, profitability.</td></tr>
+<tr><td><code>labour</code></td><td>Workers, attendance, wages.</td></tr>
+<tr><td><code>expense</code></td><td>Expense categories, business expenses, receipts.</td></tr>
+<tr><td><code>report</code></td><td>Period reports and GSTR-1, rendered via export/.</td></tr>
+<tr><td><code>dashboard, analytics</code></td><td>Aggregations over invoice, stock and payments for the home screen and analytics page.</td></tr>
+<tr><td><code>notification</code></td><td>Email (SMTP / SendGrid), SMS (Twilio), WhatsApp (per-tenant Cloud API) with a delivery log.</td></tr>
+<tr><td><code>export</code></td><td>PDF and XLSX rendering; owns no entity.</td></tr>
+<tr><td><code>ai</code></td><td>Read-only tools over the modules above for the assistant.</td></tr>
+<tr><td><code>supportticket</code></td><td>Support desk.</td></tr>
+<tr><td><code>legal</code></td><td>user_consent entity only (no controller yet).</td></tr>
+<tr><td><code>developer</code></td><td>Diagnostics endpoints, double-gated.</td></tr>
+<tr><td><code>platformadmin, billing</code></td><td>Cross-tenant console and Razorpay subscriptions — deliberately outside tenant isolation, with its own identity and audit log.</td></tr>
+</tbody></table>
+  <h3>Frontend modules (25 folders under src/modules)</h3>
+  
+<table><thead><tr><th style="width:38%">Module</th><th>Screens and responsibilities</th></tr></thead><tbody>
+<tr><td><code>auth</code></td><td>Login, MFA, forgot/reset password, first-run password change, sessions.</td></tr>
+<tr><td><code>onboarding</code></td><td>Permission-filtered product tour and per-page first-visit tips (CR-075).</td></tr>
+<tr><td><code>dashboard</code></td><td>KPI cards with sparklines, sales trend, sales by category, quick actions, recent actions (CR-082/084).</td></tr>
+<tr><td><code>tenant / settings</code></td><td>Shop profile, logo, signature, bank accounts, UPI QR, WhatsApp connection, subscription, data reset.</td></tr>
+<tr><td><code>product</code></td><td>Categories, brands, products, images, CSV import (preview → confirm), price history.</td></tr>
+<tr><td><code>inventory</code></td><td>Stock levels, movements, adjustments, low-stock view.</td></tr>
+<tr><td><code>supplier</code></td><td>Supplier wizard, contacts, bank details behind SUPPLIER_VIEW_BANK_ACCOUNT.</td></tr>
+<tr><td><code>purchase</code></td><td>Purchase entry, bill import, purchase payments, documents.</td></tr>
+<tr><td><code>customer</code></td><td>Customer CRUD with credit limit and map address picker.</td></tr>
+<tr><td><code>quotation</code></td><td>Quotation create / convert to invoice.</td></tr>
+<tr><td><code>invoice</code></td><td>Invoice wizard, detail, cancel, PDF, WhatsApp send.</td></tr>
+<tr><td><code>payment</code></td><td>Standalone receipts view (CR-027).</td></tr>
+<tr><td><code>coupon</code></td><td>Coupon management.</td></tr>
+<tr><td><code>project</code></td><td>Projects, materials, expenses, payments, profitability, rooftop calculator.</td></tr>
+<tr><td><code>labour</code></td><td>Workers, attendance, wages, project labour cost.</td></tr>
+<tr><td><code>expense</code></td><td>Expense categories and the overhead ledger with receipts.</td></tr>
+<tr><td><code>report</code></td><td>Day Book, Receivables Ageing, Stock Valuation, Purchase Register, GST Summary, GSTR-1 — PDF/XLSX (CR-086/087).</td></tr>
+<tr><td><code>activity</code></td><td>Activity-log viewer (business changes).</td></tr>
+<tr><td><code>notification</code></td><td>Contact-admin form; message log.</td></tr>
+<tr><td><code>support</code></td><td>Support tickets to the platform team.</td></tr>
+<tr><td><code>ai</code></td><td>Assistant chat over the tenant’s own data (Anthropic-only, key optional).</td></tr>
+<tr><td><code>tools</code></td><td>Utilities such as the rooftop calculator.</td></tr>
+<tr><td><code>developer</code></td><td>Diagnostics, double-gated: environment and DEVELOPER_INSPECT permission (CR-045).</td></tr>
+<tr><td><code>platform-admin</code></td><td>The cross-tenant console: tenants, incidents, feature flags, system health, billing.</td></tr>
+</tbody></table>
+</div>
+
+<!-- ================= 8. BACKEND FILES ================= -->
+<div class="section newpage">
+  <h2>8. Backend — foundation files and the anatomy of one module</h2>
+  <p>These files are shared by every module. A module never ships its own JWT handling, error envelope, money formatting or tenant lookup — it imports these.</p>
+  
+<table><thead><tr><th style="width:38%">File (under backend/src/main/…)</th><th>Why it exists</th></tr></thead><tbody>
+<tr><td><code>HardwareErpApplication.java</code></td><td>Spring Boot entry point. One JAR, one process.</td></tr>
+<tr><td><code>application*.yml</code></td><td>Profiles: local, dev, test, prod, plus cloud / selfhosted layered on prod (CR-059). Environments are profiles, never branches.</td></tr>
+<tr><td><code>db/migration/V1..V56__*.sql</code></td><td>Flyway schema history. An applied migration is never edited; a change is a new version (hard rule 1).</td></tr>
+<tr><td><code>db/seed/V900..V904__*.sql</code></td><td>Dev/test seed data only: owner user, sample supplier, products, categories, document sequences.</td></tr>
+<tr><td><code>common/entity/BaseEntity.java</code></td><td>id, created_at/by, updated_at/by, version for every entity.</td></tr>
+<tr><td><code>common/dto/ApiResponse, PageResponse, ErrorResponse</code></td><td>The one response envelope { success, message, data, timestamp } every endpoint returns.</td></tr>
+<tr><td><code>common/exception/GlobalExceptionHandler.java</code></td><td>Maps BusinessException / ResourceNotFound / Duplicate / RateLimit to the right HTTP status and envelope.</td></tr>
+<tr><td><code>common/web/RequestCorrelationFilter.java</code></td><td>Puts an X-Request-ID on every request and log line.</td></tr>
+<tr><td><code>common/activity/ActivityLogWriter, ActivityLogService</code></td><td>Writes activity_log rows (created / updated / cancelled, with before/after JSON).</td></tr>
+<tr><td><code>common/sequence/DocumentSequence.java</code></td><td>Entity behind the race-free document number allocator (CR-041).</td></tr>
+<tr><td><code>common/idempotency/IdempotencyService</code></td><td>Replays a stored response for a repeated Idempotency-Key (CR-051).</td></tr>
+<tr><td><code>common/security/FieldEncryptor.java</code></td><td>AES field encryption for supplier bank details, WhatsApp and Razorpay secrets.</td></tr>
+<tr><td><code>common/util/IndianCurrencyFormat, LineDiscount, Gstin, PhoneNumberNormalizer</code></td><td>Money in paise formatted with Indian digit grouping; discount maths rounded once; GSTIN checksum; phone normalisation.</td></tr>
+<tr><td><code>common/validation/ValidGstin + GstinValidator</code></td><td>Bean-validation annotation with the Modulo-36 GSTIN checksum, on every GSTIN request field.</td></tr>
+<tr><td><code>security/SecurityConfig.java</code></td><td>Filter chain, stateless sessions, public paths, method security on.</td></tr>
+<tr><td><code>security/JwtAuthenticationFilter, JwtService, JwtProperties</code></td><td>Reads the Bearer token, validates it, populates SecurityContext with user id, tenant id and permissions.</td></tr>
+<tr><td><code>security/RefreshTokenCookieService.java</code></td><td>Sets / clears the HttpOnly refresh cookie; Secure flag depends on deployment mode.</td></tr>
+<tr><td><code>security/SecurityUtils.java</code></td><td>currentUserId(), currentTenantId(), requireCurrentTenantId() — the only source of tenant scope.</td></tr>
+<tr><td><code>security/ratelimit/RateLimitFilter, RateLimitService</code></td><td>Bucket4j + Caffeine in-process limits on login, refresh, forgot-password, tenant registration.</td></tr>
+<tr><td><code>security/totp/TotpService.java</code></td><td>TOTP MFA enrolment and verification.</td></tr>
+<tr><td><code>security/captcha/</code></td><td>Captcha check on public endpoints.</td></tr>
+<tr><td><code>config/DeploymentMode, DeploymentModeGuard</code></td><td>CLOUD vs SELF_HOSTED; refuses to start a self-hosted process pointed at the managed database (CR-059).</td></tr>
+<tr><td><code>config/JwtSecretGuard.java</code></td><td>Refuses to start with a weak or default JWT secret.</td></tr>
+<tr><td><code>config/BootstrapOwnerInitializer.java</code></td><td>Creates the first owner account from environment on an empty database.</td></tr>
+<tr><td><code>config/OpenApiConfig.java</code></td><td>springdoc — Swagger UI at /api/swagger-ui.html.</td></tr>
+<tr><td><code>config/AsyncConfig, JpaAuditingConfig</code></td><td>Thread pool for @Async notifications; fills created_by / updated_by.</td></tr>
+</tbody></table>
+  <h3>Anatomy of one module: <code>invoice</code></h3>
+  <p>Every business module has the same seven folders, in the same order the code is written (CLAUDE.md, "specification change" steps 3–4). Reading <code>invoice</code> teaches you all of them.</p>
+  
+<table><thead><tr><th style="width:38%">invoice/…</th><th>Role</th></tr></thead><tbody>
+<tr><td><code>entity/Invoice.java, InvoiceItem.java, Payment.java, InvoiceStatus.java, PaymentMethod.java</code></td><td>JPA entities, one per table; status is a Java enum stored as VARCHAR(20).</td></tr>
+<tr><td><code>repository/InvoiceRepository.java ...</code></td><td>Spring Data. Every finder takes tenantId — findByIdAndTenantId, findAllByTenantId(pageable).</td></tr>
+<tr><td><code>dto/InvoiceRequest.java, InvoiceResponse.java, InvoiceSummaryResponse.java ...</code></td><td>Records with Bean Validation. Field names mirror the columns in camelCase; money fields end in Paise.</td></tr>
+<tr><td><code>mapper/InvoiceMapper.java</code></td><td>Entity ↔ DTO, no business logic.</td></tr>
+<tr><td><code>service/InvoiceService.java + service/impl/InvoiceServiceImpl.java</code></td><td>The rules: credit-limit check, coupon, stock movement, document number, activity log, async notification — inside one @Transactional.</td></tr>
+<tr><td><code>pdf/InvoicePdfService.java</code></td><td>Renders the invoice PDF with the tenant’s logo, signature, bank account and UPI QR.</td></tr>
+<tr><td><code>controller/InvoiceController.java, PaymentController.java</code></td><td>Thin. @PreAuthorize(PermissionCode.X) on every method; returns ApiResponse.</td></tr>
+</tbody></table>
+  <div class="callout">What happens inside <code>InvoiceServiceImpl.create()</code>, in one transaction: resolve the customer and check the credit limit → resolve each product and price the line (<code>LineDiscount</code>, rounded to whole paise once) → apply a coupon if given → allocate the invoice number from <code>document_sequence</code> under a row lock → save → <code>StockService.applyMovement(-qty)</code> per line → record coupon usage → write <code>activity_log</code> → after commit, <code>@Async</code> notification. If any step throws, none of it happened.</div>
+  <h3>Tests</h3>
+  <p><code>*Test</code> classes are unit tests with Mockito; <code>*IT</code> classes start a real PostgreSQL 16 in Testcontainers and exercise the HTTP layer with MockMvc, including tenant isolation (<code>docs/MULTI_TENANT_SECURITY_TEST.md</code>). 114 test classes today, 36 of them integration. Last full green run: 599 unit + 251 integration, <code>mvn -o clean verify</code>.</p>
+</div>
+
+<!-- ================= 9. FRONTEND FILES ================= -->
+<div class="section newpage">
+  <h2>9. Frontend — foundation files and the anatomy of one module</h2>
+  
+<table><thead><tr><th style="width:38%">File (under frontend/src/…)</th><th>Why it exists</th></tr></thead><tbody>
+<tr><td><code>main.tsx, App.tsx, index.css</code></td><td>Bootstraps React, providers (theme, query, auth), Tailwind layers and the CSS design tokens.</td></tr>
+<tr><td><code>routes/index.tsx</code></td><td>Every route. Auth pages under AuthLayout; the app under AppLayout; /platform-admin/* separately.</td></tr>
+<tr><td><code>routes/ProtectedRoute.tsx, RequirePermission.tsx</code></td><td>Redirect to /login without a session; hide a route the caller has no permission for.</td></tr>
+<tr><td><code>services/apiClient.ts</code></td><td>The single Axios instance: Bearer header, refresh-on-401 once, 90 s timeout for Render cold starts, error normalisation.</td></tr>
+<tr><td><code>services/tokenStorage.ts</code></td><td>Access token in memory only (hard rule 9).</td></tr>
+<tr><td><code>services/apiBaseUrl.ts, deploymentConfig.ts</code></td><td>Which backend to talk to; CLOUD / SELF_HOSTED flags from GET /deployment-config.</td></tr>
+<tr><td><code>services/platformAdminApiClient.ts, platformAdminTokenStorage.ts</code></td><td>Separate client and token for the cross-tenant console.</td></tr>
+<tr><td><code>layouts/AuthLayout.tsx, AuthHeroBackdrop.tsx</code></td><td>The approved sign-in design (CR-081): 50/50 hero, AuthCard shell on all six auth screens.</td></tr>
+<tr><td><code>layouts/AppLayout.tsx, Sidebar.tsx, AppChromeProvider.tsx</code></td><td>The app shell (CR-082): folding nav groups, shop card, header with ⌘K search, ? tour, theme toggle.</td></tr>
+<tr><td><code>layouts/MobileTabBar.tsx, MobileMoreMenu.tsx</code></td><td>Phone shell — native-feeling tab bar (CR-061/062).</td></tr>
+<tr><td><code>theme/ThemeProvider, ColorThemeProvider, colorThemes.ts</code></td><td>Eleven colour themes × light/dark, default emerald. Every colour is a token (hard rule 11).</td></tr>
+<tr><td><code>theme/themeScope.ts, useThemeScope.ts</code></td><td>Per-user client-side scope for theme, tour-seen and first-visit tips.</td></tr>
+<tr><td><code>shared/components/</code></td><td>PageHeader, StatusBadge, Pagination, ConfirmDialog, ImageUpload, AddressMapPicker, GlobalSearch, WhatsAppButton, table/, ui/ (shadcn).</td></tr>
+<tr><td><code>shared/hooks/</code></td><td>useAsyncData, useAsyncList (pagination + filters), useDebouncedValue, useAuthenticatedImage, useEnterAdvances.</td></tr>
+<tr><td><code>shared/lib/gstin.ts, geocoding.ts, utils.ts</code></td><td>GSTIN checksum mirrored from the backend; OpenStreetMap geocoding for the address picker.</td></tr>
+<tr><td><code>shared/types/api.ts</code></td><td>ApiResponse, ApiError, PageResponse — the TypeScript twin of common/dto.</td></tr>
+</tbody></table>
+  <h3>Anatomy of one module: <code>modules/invoice</code></h3>
+  
+<table><thead><tr><th style="width:38%">modules/invoice/…</th><th>Role</th></tr></thead><tbody>
+<tr><td><code>types/index.ts</code></td><td>Mirrors the backend DTOs field-for-field (InvoiceRequest, InvoiceResponse, InvoiceStatus).</td></tr>
+<tr><td><code>validation/schemas.ts</code></td><td>Zod schemas mirroring the Bean Validation rules, so the form rejects what the API would reject.</td></tr>
+<tr><td><code>services/invoiceService.ts</code></td><td>Typed calls through apiClient: list, get, create, cancel, record payment, send WhatsApp.</td></tr>
+<tr><td><code>constants/index.ts</code></td><td>Status labels, colours-by-token, table column definitions.</td></tr>
+<tr><td><code>components/InvoiceStatusBadge, ProductPicker, CreditLimitWarning</code></td><td>Module-local UI pieces.</td></tr>
+<tr><td><code>forms/InvoiceWizard.tsx</code></td><td>The four-step create flow: customer → lines → discount/coupon → review.</td></tr>
+<tr><td><code>pages/InvoiceListPage, InvoiceCreatePage, InvoiceDetailPage</code></td><td>Routed screens; each is wrapped by RequirePermission in routes/index.tsx.</td></tr>
+</tbody></table>
+  <div class="callout">The contract discipline: <code>types/index.ts</code> mirrors the Java DTO exactly (a <code>Long totalPaise</code> is a <code>number totalPaise</code>, never <code>total</code>), and <code>validation/schemas.ts</code> mirrors the Bean Validation annotations. When a screen shows the wrong thing but Postman shows the right JSON, the bug is in the frontend only — and vice versa. CLAUDE.md requires every bug fix to begin by naming that scope.</div>
+  <h3>Design system rules</h3>
+  <ul>
+    <li><strong>Never hardcode a colour</strong> (hard rule 11): eleven themes × light/dark from <code>theme/colorThemes.ts</code>; components use tokens such as <code>bg-primary</code>, <code>text-muted-foreground</code>, <code>--sidebar</code>.</li>
+    <li><strong>Never draw data that does not exist</strong> (hard rule 12): dashboard sparklines and deltas are measured (CR-084), and an empty state says so.</li>
+    <li><strong>A visible redesign is approved as a render first, then coded exactly</strong> (hard rule 13) — the sign-in page (CR-081) and dashboard (CR-082) were built that way.</li>
+    <li>Inline "+ Add new X" (category, brand, expense category) uses one shared pattern; BUG-FE-007 documents the Radix Select quirk it must handle.</li>
+    <li>Import flows are always <em>preview → confirm → import</em>, never upload-and-insert (product CSV, supplier bill).</li>
+  </ul>
+</div>
+
+<!-- ================= 10. REGISTRIES ================= -->
+<div class="section">
+  <h2>10. Registries and documentation — the source of truth</h2>
+  <p>Decisions live in files, not in anyone's memory. A new contributor (human or AI) reads <code>CLAUDE.md</code>, loads the guide for the task, then the registries the task touches. Nobody should have to re-explain a recorded decision.</p>
+  
+<table><thead><tr><th style="width:38%">File</th><th>Contains</th></tr></thead><tbody>
+<tr><td><code>CLAUDE.md</code></td><td>The rules that apply to every task and which guide to load. Read first, every session.</td></tr>
+<tr><td><code>.claude/guides/*.md</code></td><td>coding-rules, business-rules, database-rules, security-rules, testing, architecture — loaded per task.</td></tr>
+<tr><td><code>project-knowledge/PROJECT_REGISTRY.md</code></td><td>Stack, naming law, module status, deployment modes.</td></tr>
+<tr><td><code>project-knowledge/DATABASE_REGISTRY.md</code></td><td>Every table, column and constraint, with the CR that added it.</td></tr>
+<tr><td><code>project-knowledge/API_REGISTRY.md</code></td><td>Every endpoint and the permission it requires.</td></tr>
+<tr><td><code>project-knowledge/SECURITY_REGISTRY.md</code></td><td>Auth design, token rules, rate limits.</td></tr>
+<tr><td><code>project-knowledge/CHANGE_REQUEST_REGISTRY.md</code></td><td>CR-001 onward: every approved design change and why.</td></tr>
+<tr><td><code>project-knowledge/BUG_REGISTRY.md</code></td><td>Every bug, its layer, root cause and regression test.</td></tr>
+<tr><td><code>project-knowledge/PROJECT_SKILLS.md</code></td><td>Lessons learned — mistakes not to repeat.</td></tr>
+<tr><td><code>project-knowledge/FEATURE_REGISTRY.md, MODULE_DEPENDENCY_MAP.md</code></td><td>Feature status; the real import graph between modules.</td></tr>
+<tr><td><code>RESUME_POINT.md</code></td><td>Exactly where the last session stopped.</td></tr>
+<tr><td><code>registry/static_check.py, check_registry.py</code></td><td>Structure and naming drift checks (need python3).</td></tr>
+<tr><td><code>docs/DEPLOYMENT*.md, MANUAL_WHATSAPP.md, SECURITY_AUDIT.md</code></td><td>Operations: Render + Vercel + Supabase, self-hosted Docker, WhatsApp setup, audit findings.</td></tr>
+<tr><td><code>docker-compose.yml, docker-compose.selfhosted.yml, render.yaml</code></td><td>Local PostgreSQL; the self-hosted stack; the cloud deployment manifest.</td></tr>
+<tr><td><code>scripts/</code></td><td>backup-db.sh, restore-db.sh, run-local.sh, run-cloud.sh/.ps1, new-secret.ps1.</td></tr>
+<tr><td><code>frontend/tests/run.mjs + suites</code></td><td>Playwright suites run against the built dist/.</td></tr>
+</tbody></table>
+  <h3>The shape of every change</h3>
+  <ol>
+    <li>Name the layer at fault: <code>SCOPE: FRONTEND ONLY</code> / <code>BACKEND ONLY</code> / <code>BOTH</code>.</li>
+    <li>Claim a CR or BUG number in the registry <em>before</em> writing code (other sessions allocate numbers too — grep first).</li>
+    <li>For a specification change: registry → new Flyway migration → entity → repository → DTO → mapper → service → controller → tests → <code>types/index.ts</code> → validation schema → service/form/page → Postman → registries.</li>
+    <li>Fix same-root-cause defects found on the way in the same commit; propose anything bigger as its own CR.</li>
+    <li>Verify in isolation, quote the numbers, update <code>RESUME_POINT.md</code>, commit with Conventional Commits (<code>feat:</code> <code>fix:</code> <code>docs:</code> …), one concern per commit, body says <em>why</em>.</li>
+  </ol>
+</div>
+
+<!-- ================= 11. CONVENTIONS ================= -->
+<div class="section">
+  <h2>11. Conventions that never bend</h2>
+  <h3>Naming law — one concept, one name, database → entity → DTO → JSON → TypeScript</h3>
+  <table><tbody>
+    <tr><td>Only transformation</td><td><code>snake_case</code> → <code>camelCase</code>. <code>credit_limit_paise</code> is <code>creditLimitPaise</code> everywhere.</td></tr>
+    <tr><td>Tables</td><td>singular <code>snake_case</code>; line tables <code>&lt;parent&gt;_item</code>; <code>app_user</code> because <code>user</code> is reserved.</td></tr>
+    <tr><td>Primary key</td><td>column <code>&lt;table&gt;_id</code>; Java field always <code>id</code>.</td></tr>
+    <tr><td>Foreign key</td><td>column <code>&lt;target&gt;_id</code>; the entity holds the object, the DTO holds <code>&lt;target&gt;Id</code>.</td></tr>
+    <tr><td>Money</td><td><code>BIGINT</code> paise, never float or double. <code>BigDecimal</code> only inside <code>LineDiscount</code> / <code>IndianCurrencyFormat</code>, rounded back to paise once.</td></tr>
+    <tr><td>Unit rates / quantities</td><td><code>DECIMAL(18,6)</code> / <code>DECIMAL(18,4)</code> — a ₹875 box of 1000 screws is ₹0.875 each.</td></tr>
+    <tr><td>Status</td><td><code>VARCHAR(20)</code> + CHECK constraint; never TINYINT, never a native ENUM type.</td></tr>
+    <tr><td>Timestamps / dates / booleans</td><td><code>TIMESTAMP(3)</code> suffix <code>_at</code>; <code>DATE</code> suffix <code>_date</code>; booleans without <code>is_</code>.</td></tr>
+    <tr><td>API paths</td><td><code>/api/v1/&lt;plural-kebab-noun&gt;</code>; verbs only under <code>/auth</code>.</td></tr>
+    <tr><td>Banned aliases</td><td><code>name</code>, <code>phoneNo</code>, <code>phoneNumber</code>, <code>emailId</code>, <code>gstNumber</code>, <code>UserHelper</code>, <code>UserUtil</code> …</td></tr>
+  </tbody></table>
+  <h3>Hard rules</h3>
+  <ol class="two">
+    <li>Never edit an applied Flyway migration; add a new version.</li>
+    <li>Hibernate is <code>ddl-auto: validate</code>. Never <code>update</code>.</li>
+    <li>PostgreSQL only. No MySQL syntax.</li>
+    <li>Seed data in <code>db/seed/</code>, dev and test profiles only.</li>
+    <li>No self-registration of users; the owner creates accounts. (New-<em>tenant</em> sign-up is a separate, rate-limited endpoint — CR-028.)</li>
+    <li>Authorization is permission-based, never <code>hasRole('OWNER')</code>.</li>
+    <li>Users and suppliers are soft-deleted; financial records reference them forever.</li>
+    <li>Security events → <code>security_audit_log</code>; business changes → <code>activity_log</code>.</li>
+    <li>Access token in memory only. Never <code>localStorage</code>.</li>
+    <li>Never claim a build passes without running it.</li>
+    <li>Never hardcode a colour.</li>
+    <li>Never draw data that does not exist.</li>
+    <li>A visible redesign is approved as a render first, then coded exactly.</li>
+  </ol>
+  <h3>Git</h3>
+  <p><code>main</code> (tagged releases) ← <code>develop</code> ← <code>feature/*</code>, <code>bugfix/*</code>; <code>hotfix/*</code> from <code>main</code> back into both. Merge with <code>--no-ff</code>. Runtime environments are Spring profiles, never branches. Several sessions work the same checkout at once, so files are staged by explicit path and CR numbers are claimed in the registry first.</p>
+</div>
+
+<!-- ================= 12. RUN ================= -->
+<div class="section">
+  <h2>12. How to run and verify</h2>
+  <pre>docker compose up -d                                             # PostgreSQL 16 on localhost
+cd backend  && mvn spring-boot:run -Dspring-boot.run.profiles=local
+cd frontend && npm install && npm run dev                        # http://localhost:5173 → /api on :8080
+Swagger: http://localhost:8080/api/swagger-ui.html
+
+# verification (quote the numbers, never assume)
+cd backend  && mvn -o clean verify                               # unit + Testcontainers ITs (needs Docker)
+cd frontend && node ./node_modules/typescript/bin/tsc -b --force
+cd frontend && node ./node_modules/vite/bin/vite.js build
+cd frontend && node tests/run.mjs                                # Playwright, against dist/
+python3 registry/static_check.py                                 # structure + naming drift
+
+# this document
+node docs/project-overview/build.mjs                             # regenerates the PDF from the migrations</pre>
+  <p>On a Windows machine with Git Bash, npm script shims can fail (<code>'"node"' is not recognized</code>) — call the tools directly as shown. <code>docker</code> from Git Bash needs an isolated <code>DOCKER_CONFIG</code> holding an empty <code>config.json</code>.</p>
+</div>
+
+<!-- ================= APPENDIX A ================= -->
+<div class="section newpage">
+  <h2>Appendix A — tables not drawn in the ER diagram</h2>
+  <p>These 28 tables exist in the same schema and follow the same rules; they were left out of the drawing only because they hang off <code>tenant</code>, <code>app_user</code> or each other and would add lines without adding understanding. The platform-console tables are the one deliberate exception to tenant isolation.</p>
+  
+<h3>Branding &amp; documents (tenant-owned media, stored as bytea)</h3>
+<table class="tbl"><thead><tr><th style="width:26%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th style="width:22%">Foreign keys</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>tenant_logo</code></td><td>V11</td><td>5</td><td>yes</td><td class="small">tenant_id → tenant</td><td>Shop logo printed on invoices.</td></tr>
+<tr><td><code>tenant_signature</code></td><td>V11</td><td>5</td><td>yes</td><td class="small">tenant_id → tenant</td><td>Authorised signature image for invoices.</td></tr>
+<tr><td><code>tenant_upi_qr</code></td><td>V13</td><td>5</td><td>yes</td><td class="small">tenant_id → tenant</td><td>Shop-level UPI QR code.</td></tr>
+<tr><td><code>tenant_bank_account</code></td><td>V22</td><td>14</td><td>yes</td><td class="small">tenant_id → tenant</td><td>Bank accounts shown on invoices for payment (CR-036).</td></tr>
+<tr><td><code>tenant_bank_account_qr</code></td><td>V22</td><td>10</td><td>—</td><td class="small">bank_account_id → tenant_bank_account</td><td>UPI QR per bank account.</td></tr>
+<tr><td><code>user_avatar</code></td><td>V11</td><td>5</td><td>—</td><td class="small">user_id → app_user</td><td>Profile picture.</td></tr>
+</tbody></table>
+
+<h3>Notifications &amp; messaging</h3>
+<table class="tbl"><thead><tr><th style="width:26%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th style="width:22%">Foreign keys</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>notification_log</code></td><td>V14</td><td>12</td><td>yes</td><td class="small">tenant_id → tenant</td><td>Every email / SMS / WhatsApp attempt with its status (CR-027, CR-074).</td></tr>
+<tr><td><code>tenant_whatsapp_connection</code></td><td>V45</td><td>15</td><td>yes</td><td class="small">tenant_id → tenant</td><td>The tenant’s own WhatsApp Business API credentials, encrypted (CR-056).</td></tr>
+</tbody></table>
+
+<h3>Security, audit &amp; compliance</h3>
+<table class="tbl"><thead><tr><th style="width:26%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th style="width:22%">Foreign keys</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>security_audit_log</code></td><td>V1</td><td>12</td><td>—</td><td class="small">—</td><td>Login, logout, lockout, MFA and ACCESS_DENIED events (hard rule 8).</td></tr>
+<tr><td><code>activity_log</code></td><td>V3</td><td>16</td><td>yes</td><td class="small">—</td><td>Business change history with before/after values (CR-015); tenant_id added in V55.</td></tr>
+<tr><td><code>password_reset_token</code></td><td>V1</td><td>7</td><td>—</td><td class="small">user_id → app_user</td><td>Single-use forgot-password tokens.</td></tr>
+<tr><td><code>user_backup_code</code></td><td>V52</td><td>5</td><td>—</td><td class="small">user_id → app_user</td><td>Hashed MFA recovery codes.</td></tr>
+<tr><td><code>user_consent</code></td><td>V28</td><td>11</td><td>yes</td><td class="small">tenant_id → tenant<br>user_id → app_user</td><td>Which terms/privacy version a user accepted.</td></tr>
+</tbody></table>
+
+<h3>Support desk</h3>
+<table class="tbl"><thead><tr><th style="width:26%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th style="width:22%">Foreign keys</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>support_ticket</code></td><td>V47</td><td>12</td><td>yes</td><td class="small">tenant_id → tenant<br>user_id → app_user</td><td>A tenant’s support request to the platform team.</td></tr>
+<tr><td><code>support_ticket_message</code></td><td>V47</td><td>8</td><td>—</td><td class="small">support_ticket_id → support_ticket</td><td>Messages in a ticket thread.</td></tr>
+</tbody></table>
+
+<h3>Cross-tenant Platform Admin console (outside tenant isolation, own auth)</h3>
+<table class="tbl"><thead><tr><th style="width:26%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th style="width:22%">Foreign keys</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>platform_admin</code></td><td>V39</td><td>18</td><td>—</td><td class="small">created_by → platform_admin<br>updated_by → platform_admin</td><td>Operator accounts for the cross-tenant console (CR-054). Own auth, own refresh tokens, own MFA.</td></tr>
+<tr><td><code>platform_admin_backup_code</code></td><td>V39</td><td>5</td><td>—</td><td class="small">platform_admin_id → platform_admin</td><td>MFA recovery codes for platform admins.</td></tr>
+<tr><td><code>platform_admin_refresh_token</code></td><td>V39</td><td>11</td><td>—</td><td class="small">platform_admin_id → platform_admin</td><td>Refresh tokens for platform admins.</td></tr>
+<tr><td><code>platform_audit_log</code></td><td>V39</td><td>10</td><td>—</td><td class="small">—</td><td>What platform admins did, across tenants.</td></tr>
+<tr><td><code>platform_incident</code></td><td>V46</td><td>13</td><td>—</td><td class="small">—</td><td>Operational incidents shown on the platform status page.</td></tr>
+<tr><td><code>feature_flag</code></td><td>V48</td><td>9</td><td>—</td><td class="small">—</td><td>Platform-wide feature switches.</td></tr>
+<tr><td><code>job_execution_log</code></td><td>V46</td><td>7</td><td>—</td><td class="small">—</td><td>Scheduled-job runs (backups, snapshots).</td></tr>
+<tr><td><code>platform_subscription_order</code></td><td>V49</td><td>11</td><td>yes</td><td class="small">tenant_id → tenant</td><td>A tenant’s subscription order (CR-057).</td></tr>
+<tr><td><code>platform_subscription_payment</code></td><td>V49</td><td>12</td><td>—</td><td class="small">subscription_order_id → platform_subscription_order</td><td>Razorpay payment against an order.</td></tr>
+<tr><td><code>platform_tenant_export</code></td><td>V50</td><td>9</td><td>yes</td><td class="small">tenant_id → tenant</td><td>A requested tenant data export / backup (CR-057).</td></tr>
+<tr><td><code>platform_razorpay_config</code></td><td>V51</td><td>9</td><td>—</td><td class="small">—</td><td>Razorpay keys, encrypted.</td></tr>
+<tr><td><code>subscription_coupon</code></td><td>V20</td><td>16</td><td>yes</td><td class="small">tenant_id → tenant</td><td>Trial coupons that grant a plan free for a period (CR-032).</td></tr>
+</tbody></table>
+
+<h3>Cross-cutting infrastructure</h3>
+<table class="tbl"><thead><tr><th style="width:26%">Table</th><th style="width:8%">Since</th><th style="width:7%">Cols</th><th style="width:7%">Tenant</th><th style="width:22%">Foreign keys</th><th>What it holds</th></tr></thead><tbody>
+<tr><td><code>idempotency_record</code></td><td>V34</td><td>8</td><td>yes</td><td class="small">tenant_id → tenant</td><td>Stored response for an Idempotency-Key so a retried POST cannot create a second document (CR-051).</td></tr>
+</tbody></table>
+</div>
+
+</body></html>
