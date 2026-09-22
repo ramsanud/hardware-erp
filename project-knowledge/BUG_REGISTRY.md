@@ -96,6 +96,8 @@ generating new code; never reintroduce a listed bug.
 | BUG-FE-036 | Frontend | Medium | Fixed 2026-09-09 |
 | BUG-FE-037 | Frontend | Medium | Fixed 2026-09-12 |
 | BUG-FE-038 | Frontend | Medium | Fixed 2026-09-14 |
+| BUG-FE-039 | Frontend | Low | Fixed 2026-09-16 |
+| BUG-FE-040 | Frontend | Low | Fixed 2026-09-16 |
 | BUG-BE-003 | Backend / Inventory | High | Fixed 2026-09-09 |
 | BUG-BE-004 | Backend / Common | Medium | Fixed 2026-09-09 |
 | BUG-BE-005 | Backend / Quotation | Medium | Fixed 2026-09-14 |
@@ -104,6 +106,7 @@ generating new code; never reintroduce a listed bug.
 | BUG-BE-007 | Backend / Sync | High | Fixed 2026-09-21 |
 | BUG-FE-041 | Frontend / Tests | Low | Fixed 2026-09-22 |
 | BUG-FE-042 | Frontend | Medium | Fixed 2026-09-20 |
+| BUG-BE-008 | Backend / Architecture | Medium | Fixed 2026-09-16 |
 
 **This index is complete and covers every entry in this file (verified
 2026-09-08).** It previously stopped at `BUG-ENV-003`, omitting 33 later
@@ -3907,58 +3910,64 @@ and 1366×768 specifically. Flagging as a gap rather than adding it
 silently, since it also needs a call on whether the 1366×768 residual
 should assert clean (requiring the design change above) or assert "≤5px".
 
-## BUG-BE-006 — every automatic customer notification failed before reaching the provider (FIXED, 2026-09-21)
+## BUG-FE-039 — every page load asked for an avatar that did not exist (FIXED, 2026-09-16)
 
 | | |
 |---|---|
-| **Severity** | High — SMS/WhatsApp/email on invoice creation and payment never sent; nothing surfaced to the user; the usage counter CR-088 meant to enforce was never written |
-| **Layer** | BACKEND ONLY |
-| **Found** | In the CR-091 IT logs: "Async method notifyInvoiceCreated failed … TransactionRequiredException: Executing an update/delete query" on every invoice created, in every run |
-| **Symptom** | `@Async notifyInvoiceCreated` → `NotificationServiceImpl.attempt()` → `usageTrackingService.tryConsume(tenantId, key)` threw before `provider.send()` was reached; the async exception handler logged it and the invoice flow carried on |
+| **Severity** | Low — a 404 per navigation in the network log and the server log, for most accounts, forever |
+| **Layer** | BOTH — the response needed a field the client could act on |
+| **Found** | Live smoke on 2026-09-12 (recorded in RESUME_POINT as a candidate CR); fixed under the CR-085 hygiene pass |
+| **Symptom** | `GET /v1/auth/me/avatar` → 404 on the rail footer, the top bar and the profile page, on every route change, for any user who never uploaded a picture — which is nearly all of them |
 
-**Root cause — BUG-BE-002's species, in the CR-088 metering.**
-`UsageTrackingServiceImpl.tryConsume(Long, UsageKey)` was a plain delegate to
-the three-arg overload that carries `@Transactional(REQUIRES_NEW)`. The
-delegate is `this.tryConsume(...)` - a same-class self-invocation that never
-passes through the Spring proxy - so no transaction was opened, and the
-`@Modifying` consume query threw. The only external caller uses the two-arg
-form, so the annotated overload was never reached through the proxy at all.
+**Root cause.** `useAuthenticatedImage(avatarService.url, …)` fetched
+unconditionally; nothing on `/me` said whether there was anything to fetch.
 
-**Fix.** The two-arg overload is annotated `@Transactional(REQUIRES_NEW)`
-too; the proxy opens the transaction on entry, and the inner self-invoked
-call runs inside it. Verified by the disappearance of the error from every
-IT run that creates an invoice (`CustomerLedgerIT`, `ProfitHistoricalCostIT`,
-`OfflineSyncIT`, `ProductRequestIT` …).
+**Fix.** `UserResponse.hasAvatar`, computed only on the current-user paths
+(login, refresh, `/me` — `UserAvatarRepository.existsById`), false from the
+plain mapper so a user list never pays a query per row for a picture it does
+not draw. The three consumers pass `null` to the hook unless `hasAvatar`; the
+profile page refreshes `/me` after an upload or removal before bumping the
+cache-busting version, so the flag is never stale.
 
-**Lesson (PROJECT_SKILLS):** a convenience overload that delegates with
-`this.` must carry the same transactional annotation as its target, or be
-the annotated one itself.
+**Regression test.** `navigation/sidebar.spec.mjs`: with the fixture user
+(`hasAvatar: false`), three routes produce zero requests to `/me/avatar`.
 
-## BUG-BE-007 — a conflicting row turned a whole offline-sync batch into a 500 (FIXED, 2026-09-21)
+---
+
+## BUG-FE-040 — two spinners on the supplier wizard's save button (FIXED, 2026-09-16)
 
 | | |
 |---|---|
-| **Severity** | High — the one case offline sync exists for (stock sold meanwhile) failed the request instead of recording a CONFLICT, and every other row in the same batch was reported as failed too |
+| **Severity** | Low — cosmetic, but it is the button every supplier is created with |
+| **Layer** | FRONTEND ONLY |
+| **Found** | Noticed during CR-053 phase 2 and recorded as "worth a one-line fix"; fixed under the CR-085 hygiene pass |
+
+**Root cause.** `SupplierWizard` passed `loading={submitting}` to `Button`,
+which renders its own spinner, *and* rendered a second `<Loader2>` inside the
+button's children. `RegisterPage`'s wizard, written later, did not repeat it.
+
+**Fix.** The hand-rolled spinner and its import are gone; `Button`'s `loading`
+prop is the one source of the spinner, as everywhere else.
+
+---
+
+## BUG-BE-008 — the product module depended on the invoice module that depends on it (FIXED, 2026-09-16)
+
+| | |
+|---|---|
+| **Severity** | Medium — a package cycle; neither module could be compiled, tested or reasoned about alone |
 | **Layer** | BACKEND ONLY |
-| **Found** | `OfflineSyncIT.insufficientStockAtSyncTimeIsAConflictNotASilentRetry` on its first run, before CR-091 was committed |
-| **Symptom** | `POST /v1/sync/transactions` → 500 `UnexpectedRollbackException` when any row's invoice attempt threw a `BusinessException` |
+| **Found** | The 2026-09-02 architecture audit named it; nothing was done until the CR-085 hygiene pass |
+| **Symptom** | `ProductServiceImpl` injected `InvoiceItemRepository` and imported `InvoiceStatus` for one method, `priceHistory()`, while `invoice` imports `product` for every line item |
 
-**Root cause — a catch block cannot un-mark rollback-only.**
-`SyncTransactionExecutor.processOne()` held a REQUIRES_NEW transaction and
-called `InvoiceServiceImpl.create()` inside it. `create()` is plain
-`@Transactional` (REQUIRED) so it *joined* that transaction; when it threw
-INSUFFICIENT_STOCK its interceptor marked the shared transaction
-rollback-only before the exception reached the catch in `processOne()`.
-The catch set the row to CONFLICT and `save()`d it - apparently fine - and
-the commit at the end of `processOne()` then threw and discarded the row.
+**Fix.** Dependency inversion: `product.service.ProductSaleHistoryProvider`
+declares what product needs to know ("the most recent non-cancelled sales
+of this product"); `invoice.service.impl.InvoiceProductSaleHistoryProvider`
+implements it with the same query and the same exclusion of cancelled
+invoices. `product` now imports nothing from `invoice`; the endpoint, the
+DTO and the behaviour are unchanged.
 
-**Fix.** The attempt runs in a separate bean's own REQUIRES_NEW
-(`SyncInvoiceCreator.create()`), so its rollback is isolated; the executor
-holds no transaction of its own and records the outcome in a fresh short
-transaction via the repository. Same-batch isolation the design already
-wanted is now real.
-
-**Lesson (PROJECT_SKILLS):** "catch the exception and keep going" only
-works if the thing that threw ran in a *different* physical transaction.
-Inside the same one, the transaction is already dead - move the risky call
-into its own REQUIRES_NEW on another bean.
+**Regression test.** `architecture/PackageCycleTest` scans the product
+sources and fails on any import from `invoice`, `quotation`, `salesorder`,
+`deliverychallan`, `creditnote` or `payment` — the modules that all point at
+product. No library; runs in the unit tier.

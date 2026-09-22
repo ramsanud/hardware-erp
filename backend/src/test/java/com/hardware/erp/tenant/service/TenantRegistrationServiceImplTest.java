@@ -45,13 +45,18 @@ class TenantRegistrationServiceImplTest {
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private com.hardware.erp.legal.repository.UserConsentRepository userConsentRepository;
     @Mock private com.hardware.erp.subscription.service.SubscriptionLifecycleService subscriptionLifecycleService;
+    @Mock private com.hardware.erp.auth.service.EmailOtpService emailOtpService;
+    // CR-078: verification off for these tests - they are about roles, slugs and
+    // consent; the code path is proven by EmailOtpFlowIT against PostgreSQL.
+    @org.mockito.Spy private com.hardware.erp.security.SecurityProperties securityProperties =
+            new com.hardware.erp.security.SecurityProperties(null, null, null, null, null, false, java.util.List.of());
 
     @InjectMocks private TenantRegistrationServiceImpl service;
 
     private TenantRegistrationRequest validRequest() {
         return new TenantRegistrationRequest(
                 "New Hardware Shop", "New Owner", "9123456780", "owner@newshop.in",
-                "Passw0rd", SubscriptionTier.PRO, true, "1.0", "1.0", false);
+                "Passw0rd", SubscriptionTier.PRO, true, "1.0", "1.0", false, null);
     }
 
     private void stubHappyPath() {
@@ -109,7 +114,7 @@ class TenantRegistrationServiceImplTest {
         stubHappyPath();
         TenantRegistrationRequest request = new TenantRegistrationRequest(
                 "Another Shop", "Owner Two", "9123456781", "owner2@newshop.in", "Passw0rd", null,
-                true, "1.0", "1.0", false);
+                true, "1.0", "1.0", false, null);
 
         service.register(request);
 
@@ -160,7 +165,7 @@ class TenantRegistrationServiceImplTest {
     private TenantRegistrationRequest requestWith(String termsVersion, String privacyVersion, Boolean marketing) {
         return new TenantRegistrationRequest(
                 "Consent Shop", "Consent Owner", "9123456799", "consent@newshop.in",
-                "Passw0rd", SubscriptionTier.FREE, true, termsVersion, privacyVersion, marketing);
+                "Passw0rd", SubscriptionTier.FREE, true, termsVersion, privacyVersion, marketing, null);
     }
 
     @Test

@@ -52,6 +52,8 @@ export interface ResetUserPasswordRequest {
 export interface UpdateProfileRequest {
   fullName: string;
   email?: string | null;
+  /** CR-078. Required only when email is changing and the CURRENT address was verified - a takeover step. From /step-up/verify. */
+  stepUpToken?: string | null;
 }
 
 export interface CreateUserRequest {
@@ -95,6 +97,12 @@ export interface UserResponse {
   permissions: string[];
   status: UserStatus;
   mustChangePassword: boolean;
+  /** BUG-FE-039. True only when /me/avatar would answer 200; the shell asks for the image only then. */
+  hasAvatar: boolean;
+  /** CR-078. Whether an authenticator app is enrolled - the profile offers "set one up" when false. */
+  mfaEnabled: boolean;
+  /** CR-078. Whether a code sent to `email` was ever entered correctly. False for a blank email. */
+  emailVerified: boolean;
   lastLoginAt?: string | null;
   createdAt?: string | null;
 }
@@ -120,7 +128,6 @@ export interface LoginResponse {
   mustChangePassword: boolean;
   user: UserResponse;
 }
-
 /**
  * CR-058 - what POST /v1/auth/login now returns. A correct password proves
  * only the first factor; the session arrives from /mfa/verify or
@@ -129,9 +136,17 @@ export interface LoginResponse {
 export interface LoginChallengeResponse {
   /** Null when MFA is disabled server-side (CR-060) - there is no challenge to identify. */
   mfaToken: string | null;
-  /** True for an account that has not set up an authenticator app yet. */
+  /** True for an account that has no authenticator app AND no email fallback available - it must enroll before it can sign in. */
   enrollmentRequired: boolean;
   expiresInSeconds: number;
+  /**
+   * CR-078. How the second factor is collected: TOTP (authenticator app or
+   * backup code) or EMAIL (a code sent to emailHint). Null when enrolling or
+   * when MFA is disabled.
+   */
+  mfaMethod: 'TOTP' | 'EMAIL' | null;
+  /** CR-078. The masked address a sign-in code went to, e.g. o***r@sarahardware.in. Null unless mfaMethod is EMAIL. */
+  emailHint: string | null;
   /**
    * CR-060 - the completed session, present ONLY when the server has
    * app.security.mfa-required=false and the password was therefore the only
@@ -143,6 +158,21 @@ export interface LoginChallengeResponse {
    */
   session: LoginResponse | null;
 }
+
+/** CR-078. Acknowledges a code sent by email - resend, step-up or registration - and says where it went, masked. */
+export interface OtpSentResponse {
+  emailHint: string;
+  /** Seconds before another code may be requested. */
+  resendAfterSeconds: number;
+}
+
+/** CR-078. Proof a signed-in user just re-confirmed by email code. Presented as stepUpToken to the endpoints that demand it. */
+export interface StepUpResponse {
+  stepUpToken: string;
+  expiresInSeconds: number;
+}
+
+
 
 export interface MfaEnrollResponse {
   otpAuthUri: string;

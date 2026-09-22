@@ -7,7 +7,7 @@ import { tokenStorage } from '@/services/tokenStorage';
 import { setThemeScope } from '@/theme/themeScope';
 import { authService } from '../services/authService';
 import type {
-  LoginRequest, LoginResponse, MfaEnrollResponse, UserResponse,
+  LoginRequest, LoginResponse, MfaEnrollResponse, OtpSentResponse, UserResponse,
 } from '../types';
 
 interface AuthContextValue {
@@ -22,6 +22,10 @@ interface AuthContextValue {
    */
   mfaToken: string | null;
   enrollmentRequired: boolean;
+  /** CR-078. How the pending challenge is verified - null while enrolling or before a login attempt. */
+  mfaMethod: 'TOTP' | 'EMAIL' | null;
+  /** CR-078. The masked address a sign-in code went to. Null unless mfaMethod is EMAIL. */
+  emailHint: string | null;
   /**
    * `signedIn` is true only when the server has MFA disabled (CR-060) and the
    * session is already live, so the caller must go straight to the app instead
@@ -46,6 +50,8 @@ interface AuthContextValue {
   verifyMfa: (code: string) => Promise<UserResponse>;
   enrollMfa: () => Promise<MfaEnrollResponse>;
   confirmMfaEnroll: (code: string) => Promise<{ user: UserResponse; backupCodes: string[] }>;
+  /** CR-078 - another code to the same address the current challenge already went to. */
+  resendEmailCode: () => Promise<OtpSentResponse>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -62,6 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [enrollmentRequired, setEnrollmentRequired] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [mfaMethod, setMfaMethod] = useState<'TOTP' | 'EMAIL' | null>(null);
+  const [emailHint, setEmailHint] = useState<string | null>(null);
   const bootstrapped = useRef(false);
   // Read inside the expiry handler, which is registered once and must not
   // capture a stale `user`. Written from an effect, never during render; the
@@ -75,6 +83,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMustChangePassword(false);
     setMfaToken(null);
     setEnrollmentRequired(false);
+    setMfaMethod(null);
+    setEmailHint(null);
     // CR-034: theme/appearance prefs are scoped per user id (see theme/themeScope.ts) - drop back to the shared "guest" scope so the next sign-in on this browser never inherits this user's look.
     setThemeScope(null);
   }, []);
@@ -121,6 +131,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setThemeScope(session.user.id);
     setMfaToken(null);
     setEnrollmentRequired(false);
+    setMfaMethod(null);
+    setEmailHint(null);
     return session.user;
   }, []);
 
@@ -143,12 +155,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setMfaToken(challenge.mfaToken);
     setEnrollmentRequired(challenge.enrollmentRequired);
+    setMfaMethod(challenge.mfaMethod);
+    setEmailHint(challenge.emailHint);
     return { enrollmentRequired: challenge.enrollmentRequired, signedIn: false };
   }, [applySession]);
 
   const cancelPendingLogin = useCallback(() => {
     setMfaToken(null);
     setEnrollmentRequired(false);
+    setMfaMethod(null);
+    setEmailHint(null);
   }, []);
 
   const verifyMfa = useCallback(async (code: string) => {
@@ -166,6 +182,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await authService.confirmMfaEnroll(mfaToken, code);
     return { user: applySession(result.session), backupCodes: result.backupCodes };
   }, [mfaToken, applySession]);
+
+  const resendEmailCode = useCallback(async () => {
+    if (!mfaToken) throw new Error('No verification in progress. Please sign in again.');
+    return authService.resendEmailCode(mfaToken);
+  }, [mfaToken]);
 
   /**
    * Never rejects. Local state clears even if the call fails, so the user is
@@ -230,20 +251,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mustChangePassword,
       mfaToken,
       enrollmentRequired,
+      mfaMethod,
+      emailHint,
       login,
       cancelPendingLogin,
       sessionExpired,
       verifyMfa,
       enrollMfa,
       confirmMfaEnroll,
+      resendEmailCode,
       logout,
       logoutAll,
       refreshUser,
       hasPermission,
       hasAnyPermission,
     }),
-    [user, initialising, mustChangePassword, mfaToken, enrollmentRequired, login,
-      cancelPendingLogin, sessionExpired, verifyMfa, enrollMfa, confirmMfaEnroll, logout, logoutAll,
+    [user, initialising, mustChangePassword, mfaToken, enrollmentRequired, mfaMethod, emailHint, login,
+      cancelPendingLogin, sessionExpired, verifyMfa, enrollMfa, confirmMfaEnroll, resendEmailCode, logout, logoutAll,
       refreshUser, hasPermission, hasAnyPermission],
   );
 

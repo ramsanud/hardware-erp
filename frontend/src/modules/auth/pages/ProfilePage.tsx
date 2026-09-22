@@ -68,7 +68,7 @@ export function ProfilePage() {
   }, [groups, user]);
 
   const { avatarVersion, bumpAvatarVersion } = useAppChrome();
-  const avatarSrc = useAuthenticatedImage(avatarService.url, avatarVersion);
+  const avatarSrc = useAuthenticatedImage(user?.hasAvatar ? avatarService.url : null, avatarVersion);
 
   if (!user) return null;
 
@@ -125,10 +125,14 @@ export function ProfilePage() {
               fallback={<span className="text-lg font-semibold text-muted-foreground">{initials(user.fullName)}</span>}
               onUpload={async (file) => {
                 await avatarService.upload(file);
+                // hasAvatar on /me is what gates the request now (BUG-FE-039), so
+                // refresh it before bumping the version that re-fetches the image.
+                await refreshUser();
                 bumpAvatarVersion();
               }}
               onRemove={async () => {
                 await avatarService.remove();
+                await refreshUser();
                 bumpAvatarVersion();
               }}
             />

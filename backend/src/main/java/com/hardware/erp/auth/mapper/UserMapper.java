@@ -21,6 +21,11 @@ import java.util.stream.Collectors;
 public class UserMapper {
 
     public UserResponse toUserResponse(User user) {
+        return toUserResponse(user, false);
+    }
+
+    /** BUG-FE-039 - the current-user shape, which knows whether an avatar exists so the client stops asking for one that 404s. */
+    public UserResponse toUserResponse(User user, boolean hasAvatar) {
         Role role = user.getRole();
         return new UserResponse(
                 user.getId(),
@@ -34,6 +39,9 @@ public class UserMapper {
                 role.permissionCodes(),
                 user.getStatus(),
                 user.isMustChangePassword(),
+                hasAvatar,
+                user.isMfaEnabled(),
+                user.getEmailVerifiedAt() != null,
                 user.getLastLoginAt(),
                 user.getCreatedAt());
     }

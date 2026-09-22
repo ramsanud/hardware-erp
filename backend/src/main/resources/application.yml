@@ -155,6 +155,14 @@ app:
     # somebody wrote down, never the result of a forgotten variable, and the
     # startup banner says "mfa: DISABLED" on every boot while it is off.
     mfa-required: ${MFA_REQUIRED:true}
+    # CR-078 - a user with no authenticator app gets a sign-in code by email
+    # instead of being forced to enroll TOTP first. false restores the
+    # CR-058 enroll-or-nothing behaviour.
+    mfa-email-fallback: ${MFA_EMAIL_FALLBACK:true}
+    # CR-078 - registering a shop requires a code sent to the owner's email
+    # first. Never turn this off in production: an unverified address is a
+    # password reset that can never arrive.
+    registration-email-verification: ${REGISTRATION_EMAIL_VERIFICATION:true}
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
 
   # Cloudflare Turnstile on the sign-in page. Off by default and treated as
@@ -196,6 +204,12 @@ app:
     # keystroke pause; still low enough that scripted enumeration of the
     # identifier space is impractical from one address.
     registration-availability-per-ip-per-minute: 20
+    # CR-078. A signup sends a code to whatever address was typed; ten an
+    # hour covers a typo or two and stops one address using this to spam.
+    registration-code-per-ip-per-hour: 10
+    # BUG-SEC-007. Ten guesses a minute at a six-digit code is 100 minutes
+    # per 0.1% chance - a real person mistypes a TOTP two or three times.
+    mfa-verify-per-ip-per-minute: 10
 
   password-reset:
     token-validity-minutes: 30
@@ -291,6 +305,15 @@ app:
         auth-token: ${TWILIO_AUTH_TOKEN:}
         from-number: ${TWILIO_FROM_NUMBER:}
         messaging-service-sid: ${TWILIO_MESSAGING_SERVICE_SID:}
+    # CR-085 - delivery-status callbacks from the app-wide providers.
+    # public-base-url is the address Twilio can reach this application at
+    # (https://erp.example.in); blank means Twilio is never asked to call
+    # back and SMS rows stay SENT, exactly as before CR-085. The SendGrid
+    # key is the base64 verification key shown when its Signed Event Webhook
+    # is enabled; blank means every SendGrid event is refused (fail closed).
+    webhooks:
+      public-base-url: ${APP_PUBLIC_BASE_URL:}
+      sendgrid-public-key: ${SENDGRID_WEBHOOK_PUBLIC_KEY:}
     # WhatsApp (CR-056): app-wide config only - every tenant's own access
     # token/phone number id live in tenant_whatsapp_connection, connected
     # from Settings > WhatsApp Business, never here. app-secret/

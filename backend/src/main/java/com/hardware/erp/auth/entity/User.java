@@ -109,6 +109,10 @@ public class User extends BaseEntity {
     @Column(name = "mfa_enrolled_at")
     private LocalDateTime mfaEnrolledAt;
 
+    /** CR-078 - when a code sent to the current email was first entered correctly. Null until then, and again after the address changes. */
+    @Column(name = "email_verified_at")
+    private LocalDateTime emailVerifiedAt;
+
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 

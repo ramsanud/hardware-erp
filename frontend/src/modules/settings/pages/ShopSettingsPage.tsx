@@ -43,6 +43,7 @@ import { BankAccountsCard } from '../components/BankAccountsCard';
 import { DataResetCard } from '../components/DataResetCard';
 import { DiscoverySharingCard } from '@/modules/discovery/components/DiscoverySharingCard';
 import { BackupsCard } from '../components/BackupsCard';
+import { MessagingDiagnosticsCard } from '../components/MessagingDiagnosticsCard';
 import type { InvoiceTheme, SubscriptionTier, TenantSettingsResponse, UsageSummaryResponse } from '../types';
 
 const SETTINGS_FORM_ID = 'shop-settings-form';
@@ -100,6 +101,7 @@ export function ShopSettingsPage() {
   // never the enforcement point, which is @PreAuthorize on DATA_RESET.
   const { hasPermission } = useAuth();
   const canResetData = hasPermission(PERMISSIONS.DATA_RESET);
+  const canManage = hasPermission(PERMISSIONS.SETTINGS_MANAGE);
   const { refreshBrand } = useAppChrome();
   // CR-059. A self-hosted installation has no subscription to buy, so the
   // purchase paths are hidden rather than left to fail - the server refuses
@@ -520,6 +522,7 @@ export function ShopSettingsPage() {
           <AdditionalSettingsCard settings={settings} onChange={changeAdditionalSettings} />
           <TdsTcsCard settings={settings} onChange={changeTdsTcs} />
           <WhatsAppBusinessCard />
+          {canManage ? <MessagingDiagnosticsCard /> : null}
           <AppearanceCard />
 
           <Card>
@@ -629,6 +632,7 @@ export function ShopSettingsPage() {
         <AdditionalSettingsCard settings={settings} onChange={changeAdditionalSettings} />
         <TdsTcsCard settings={settings} onChange={changeTdsTcs} />
         <WhatsAppBusinessCard />
+        {canManage ? <MessagingDiagnosticsCard /> : null}
       </div>
 
       <form id={SETTINGS_FORM_ID} onSubmit={submit} noValidate className="max-w-2xl space-y-5">

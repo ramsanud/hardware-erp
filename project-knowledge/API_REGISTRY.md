@@ -12,7 +12,7 @@ Envelope (error): `{ "success": false, "message": ..., "code": ..., "timestamp":
 | POST | `/v1/auth/refresh` | public | LOCKED | refresh token from cookie or body |
 | POST | `/v1/auth/logout` | authenticated | LOCKED | this device only |
 | POST | `/v1/auth/logout-all` | authenticated | LOCKED | all devices, bumps token_version |
-| GET | `/v1/auth/me` | authenticated | LOCKED | identity from SecurityContext, never from a body field |
+| GET | `/v1/auth/me` | authenticated | LOCKED | identity from SecurityContext, never from a body field. `UserResponse.hasAvatar` (BUG-FE-039) says whether `/me/avatar` would answer 200, so the shell only fetches an image that exists |
 | PUT | `/v1/auth/me` | authenticated | LOCKED | own name/email only |
 | POST | `/v1/auth/change-password` | authenticated | LOCKED | |
 | POST | `/v1/auth/forgot-password` | public | LOCKED | always 200, never reveals existence |
@@ -377,6 +377,7 @@ rule that automatically covers permissions added later.
 | GET | `/v1/auth/captcha-config` | public (permitAll) | Whether the sign-in page must render a challenge, plus the Turnstile **site** key. The secret never leaves the server. Public because the login page needs this before anyone has signed in. |
 | POST | `/v1/auth/login` | public (permitAll) | Gained an optional `captchaToken`. Verified server-side against Cloudflare **before** authentication, so the endpoint cannot be used to probe passwords while failing the challenge. |
 | POST | `/v1/settings/mail/test?toEmail=` | `SETTINGS_MANAGE` | Sends one test email and returns SENT / LOGGED_ONLY / FAILED with the mail server's own rejection text. Exists so outgoing email can be proven to work before Email OTP is built on it. |
+| POST | `/v1/settings/sms/test?toMobileNo=` | `SETTINGS_MANAGE` | CR-085. Sends one test SMS through the real provider and returns SENT / LOGGED_ONLY / FAILED with Twilio's own error text. LOGGED_ONLY names which of `SMS_ENABLED=false` or missing `TWILIO_*` is the reason. The counterpart of `mail/test`; until CR-085 neither had a button on screen. |
 
 `captchaToken` is optional in the DTO on purpose: whether it is required is a
 runtime decision (`app.captcha.enabled` plus both keys present), not a
@@ -578,6 +579,8 @@ Tenant-side endpoints resolve the tenant from `SecurityUtils.requireCurrentTenan
 | POST | `/v1/billing/verify` | `SETTINGS_MANAGE` | Body: `razorpayOrderId`/`razorpayPaymentId`/`razorpaySignature` - Razorpay Checkout's own callback shape. Applies the tier upgrade only on a genuine HMAC match against `key_secret`; `400 PAYMENT_SIGNATURE_INVALID` otherwise. |
 | GET | `/v1/billing/history` | `SETTINGS_VIEW` | Current tier + this tenant's own payment history only. |
 | POST | `/v1/webhooks/razorpay` | public, self-verified | Inbound Razorpay webhook - authenticity is the `X-Razorpay-Signature` HMAC against the webhook secret inside `SubscriptionBillingService`, not Spring Security (same pattern as `/v1/webhooks/whatsapp`). Idempotent via `UNIQUE(razorpay_payment_id)`. |
+| POST | `/v1/webhooks/twilio/status` | public, self-verified | CR-085. Twilio's status callback for the SMS channel (form-encoded `MessageSid`, `MessageStatus`). Authenticity is `X-Twilio-Signature` = base64(HMAC-SHA1(auth token, configured public URL + sorted form fields)); refused outright while `APP_PUBLIC_BASE_URL` or the auth token is blank. `delivered` / `read` / `failed` / `undelivered` advance the `notification_log` row through `DeliveryStatusService` (forward-only, shared with the Meta webhook). Sends carry `StatusCallback` only when the public base URL is configured. |
+| POST | `/v1/webhooks/sendgrid/events` | public, self-verified | CR-085. SendGrid's Event Webhook (JSON array). Authenticity is the Signed Event Webhook: ECDSA P-256 over timestamp + raw body against `SENDGRID_WEBHOOK_PUBLIC_KEY`; refused while the key is blank. `sg_message_id` is matched to the row by the `X-Message-Id` prefix before the first dot. `delivered` → DELIVERED, `open` → READ, `bounce` / `dropped` → FAILED. |
 | GET | `/v1/platform-admin/billing/overview` | `BILLING_VIEW` | Cross-tenant revenue chart data - last 12 months, aggregated server-side, never raw payment rows. |
 | GET | `/v1/platform-admin/billing/tenants/{tenantId}` | `BILLING_VIEW` | One tenant's current plan + payment history, for the Tenant Detail page. |
 

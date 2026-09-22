@@ -309,7 +309,7 @@ class UserServiceImplTest {
     @DisplayName("own-profile edit cannot touch role or status")
     void profileEditIsLimited() {
         UserResponse response = userService.updateOwnProfile(5L,
-                new UpdateProfileRequest("Karthik Raja S", "karthik.new@sarahardware.in"));
+                new UpdateProfileRequest("Karthik Raja S", "karthik.new@sarahardware.in", null));
 
         assertThat(response.fullName()).isEqualTo("Karthik Raja S");
         assertThat(staff.getRole().getCode()).isEqualTo("STAFF");
