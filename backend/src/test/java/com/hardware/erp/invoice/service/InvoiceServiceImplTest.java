@@ -69,8 +69,12 @@ class InvoiceServiceImplTest {
     @Mock private StockService stockService;
     @Mock private InvoicePdfService invoicePdfService;
     @Mock private NotificationService notificationService;
+    @Mock private com.hardware.erp.customer.ledger.CustomerLedgerService customerLedgerService;
+    @Mock private com.hardware.erp.inventory.repository.StockRepository stockRepository;
 
     @Spy private InvoiceMapper invoiceMapper = new InvoiceMapper();
+
+    @Mock private com.hardware.erp.branch.service.BranchContext branchContext;
 
     @InjectMocks private InvoiceServiceImpl invoiceService;
 
@@ -89,6 +93,7 @@ class InvoiceServiceImplTest {
                 .status(ProductStatus.ACTIVE).build();
 
         when(tenantRepository.getReferenceById(1L)).thenReturn(tenant);
+        when(tenantRepository.findById(1L)).thenReturn(java.util.Optional.of(tenant));
         when(productRepository.findByIdAndTenantId(2L, 1L)).thenReturn(Optional.of(product));
         when(documentSequenceService.next(DocumentType.INVOICE, 1L)).thenReturn("INV-000001");
         when(invoiceRepository.save(any(Invoice.class))).thenAnswer(i -> {
@@ -223,7 +228,7 @@ class InvoiceServiceImplTest {
                 .subtotalPaise(30000L).gstAmountPaise(5400L).totalPaise(35400L)
                 .paidPaise(10000L).balancePaise(25400L).status(InvoiceStatus.PARTIALLY_PAID)
                 .build();
-        when(invoiceRepository.findByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(invoice));
+        when(invoiceRepository.lockByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(invoice));
 
         InvoiceResponse response = invoiceService.addPayment(1L,
                 new PaymentRequest(25400L, com.hardware.erp.invoice.entity.PaymentMethod.UPI, null));
@@ -240,7 +245,7 @@ class InvoiceServiceImplTest {
                 .subtotalPaise(30000L).gstAmountPaise(5400L).totalPaise(35400L)
                 .paidPaise(10000L).balancePaise(25400L).status(InvoiceStatus.PARTIALLY_PAID)
                 .build();
-        when(invoiceRepository.findByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(invoice));
+        when(invoiceRepository.lockByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(invoice));
 
         assertThatThrownBy(() -> invoiceService.addPayment(1L,
                 new PaymentRequest(30000L, com.hardware.erp.invoice.entity.PaymentMethod.CASH, null)))
@@ -264,7 +269,7 @@ class InvoiceServiceImplTest {
                 .items(new java.util.ArrayList<>(List.of(item))).build();
         when(invoiceRepository.findByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(invoice));
 
-        InvoiceResponse response = invoiceService.cancel(1L);
+        InvoiceResponse response = invoiceService.cancel(1L, new com.hardware.erp.invoice.dto.InvoiceCancelRequest("Test cancellation"));
 
         assertThat(response.status()).isEqualTo(InvoiceStatus.CANCELLED);
         verify(stockService).applyMovement(eq(2L), eq(new BigDecimal("2")),
@@ -281,7 +286,7 @@ class InvoiceServiceImplTest {
                 .build();
         when(invoiceRepository.findByIdAndTenantId(1L, 1L)).thenReturn(Optional.of(invoice));
 
-        assertThatThrownBy(() -> invoiceService.cancel(1L))
+        assertThatThrownBy(() -> invoiceService.cancel(1L, new com.hardware.erp.invoice.dto.InvoiceCancelRequest("Test cancellation")))
                 .isInstanceOf(BusinessException.class);
     }
 

@@ -96,7 +96,8 @@ class WhatsAppLinkServiceTest {
     private InvoiceResponse invoice(InvoiceStatus status, String mobile, List<PaymentResponse> payments) {
         return new InvoiceResponse(1024L, "INV-1024", 5L, "Ravi Kumar", mobile, LocalDate.of(2026, 8, 26),
                 "10,550.00", "1,900.00", "12,450.00", null, "0.00", "0.00", "5,000.00", "7,450.00",
-                status, null, null, null, null, List.of(), payments, LocalDateTime.now(), null, null, null);
+                status, null, null, null, null, List.of(), payments, LocalDateTime.now(), null, null, null,
+                null, null, null, null, null, null, null);
     }
 
     @Test

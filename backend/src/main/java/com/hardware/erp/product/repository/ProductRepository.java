@@ -73,6 +73,65 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
                          Pageable pageable);
 
 
+    /**
+     * CR-097. The typo-tolerant fallback for {@link #search} when the
+     * substring match found nothing. Native because pg_trgm's operators have
+     * no JPQL spelling.
+     *
+     * {@code :q <% column} is word_similarity: the share of the query's
+     * trigrams found in the best-matching stretch of the column. It is the
+     * right measure for a catalogue - "hammr" against "Stanley Claw Hammer
+     * 450g" scores 0.67 by word_similarity and 0.15 by plain similarity,
+     * because plain similarity is diluted by every trigram of the long name
+     * the user did not type. The operator form (not the function) is what
+     * lets PostgreSQL use idx_product_name_trgm / idx_product_code_trgm.
+     *
+     * The threshold behind {@code <%} is the session GUC
+     * pg_trgm.word_similarity_threshold, which ProductServiceImpl sets with
+     * SET LOCAL inside the same read-only transaction - transaction-scoped,
+     * so it can never leak through Hikari or Supabase's session pooler to the
+     * next request on the same connection.
+     *
+     * tenant_id first, always (CR-016). deleted_at IS NULL is spelled out
+     * because a native query bypasses Product's @SQLRestriction (BUG-SUP-006)
+     * and because the partial indexes are defined on exactly that predicate.
+     * Nullable filters are cast so pgjdbc can type a null bind (the same
+     * trap as BUG-SUP-004, in native dress).
+     *
+     * Pass an unsorted Pageable: the caller's sort is a column of the list,
+     * and a fuzzy page sorted by anything but its score is a random page.
+     */
+    @Query(value = """
+           select p.product_id as "productId",
+                  greatest(word_similarity(cast(:q as text), p.product_name),
+                           word_similarity(cast(:q as text), p.product_code)) as "score"
+           from product p
+           where p.tenant_id = :tenantId
+             and p.deleted_at is null
+             and (cast(:q as text) <% p.product_name or cast(:q as text) <% p.product_code)
+             and (cast(:status as varchar) is null or p.status = cast(:status as varchar))
+             and (cast(:categoryId as bigint) is null or p.category_id = cast(:categoryId as bigint))
+             and (cast(:brandId as bigint) is null or p.brand_id = cast(:brandId as bigint))
+           order by "score" desc, p.product_name asc, p.product_id asc
+           """,
+           countQuery = """
+           select count(*)
+           from product p
+           where p.tenant_id = :tenantId
+             and p.deleted_at is null
+             and (cast(:q as text) <% p.product_name or cast(:q as text) <% p.product_code)
+             and (cast(:status as varchar) is null or p.status = cast(:status as varchar))
+             and (cast(:categoryId as bigint) is null or p.category_id = cast(:categoryId as bigint))
+             and (cast(:brandId as bigint) is null or p.brand_id = cast(:brandId as bigint))
+           """,
+           nativeQuery = true)
+    Page<ProductFuzzyMatch> fuzzySearch(@Param("tenantId") Long tenantId,
+                                        @Param("q") String q,
+                                        @Param("status") String status,
+                                        @Param("categoryId") Long categoryId,
+                                        @Param("brandId") Long brandId,
+                                        Pageable pageable);
+
     long countByStatusAndTenantId(ProductStatus status, Long tenantId);
 
     /** Platform Admin tenant usage summary. */
@@ -106,4 +165,53 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
            where product_id = :id and tenant_id = :tenantId and deleted_at is not null
            """, nativeQuery = true)
     int restoreDeleted(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
+    /**
+     * CR-089 §22. The candidate pool for substitute scoring - narrowed in
+     * SQL before anything is scored in Java, so a shop with 10,000 products
+     * never scores 10,000 rows for one out-of-stock item.
+     *
+     * The filters are the ones §8 calls non-negotiable: never the requested
+     * product itself, never an inactive or (via @SQLRestriction) deleted
+     * product, and never something with no sellable stock. Category is the
+     * primary narrowing - a substitute for a tower bolt is another door
+     * fitting, not a paint tin - with productType as an alternative route in
+     * for shops that have not categorised their catalogue but did fill in
+     * the attribute.
+     */
+    @Query("""
+           SELECT p FROM Product p
+           LEFT JOIN Stock s ON s.product = p AND s.tenant.id = :tenantId
+           WHERE p.tenant.id = :tenantId
+             AND p.id <> :excludeProductId
+             AND p.status = com.hardware.erp.product.entity.ProductStatus.ACTIVE
+             AND COALESCE(s.quantityOnHand, 0) >= :minimumQuantity
+             AND ( (:categoryId IS NOT NULL AND p.category.id = :categoryId)
+                OR (:productType IS NOT NULL AND lower(p.productType) = lower(:productType)) )
+           """)
+    List<Product> findSubstituteCandidates(@Param("tenantId") Long tenantId,
+                                           @Param("excludeProductId") Long excludeProductId,
+                                           @Param("categoryId") Long categoryId,
+                                           @Param("productType") String productType,
+                                           @Param("minimumQuantity") java.math.BigDecimal minimumQuantity);
+
+    /**
+     * CR-089 §10. Typo-tolerant lookup ("towr bolt" -> "Tower Bolt") over
+     * the pg_trgm GIN index added in V60. Deliberately a separate method
+     * from search(): the counter's exact code/barcode lookup must stay
+     * exact and fast, this one is for "the customer described it roughly".
+     */
+    @Query(value = """
+           select * from product
+           where tenant_id = :tenantId
+             and deleted_at is null
+             and status = 'ACTIVE'
+             and similarity(product_name, :query) > :threshold
+           order by similarity(product_name, :query) desc, product_name
+           limit :maxResults
+           """, nativeQuery = true)
+    List<Product> findByNameSimilarity(@Param("tenantId") Long tenantId,
+                                       @Param("query") String query,
+                                       @Param("threshold") double threshold,
+                                       @Param("maxResults") int maxResults);
 }

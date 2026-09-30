@@ -330,4 +330,33 @@ public class AnalyticsServiceImpl implements AnalyticsService {
 
         return new ActivityMatrix(period, cells, peak, summary);
     }
+
+    // ---------------------------------------------------------------- CR-091 Phase 6: profit
+
+    @Override
+    public ProfitResponse profit(LocalDate from, LocalDate to) {
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        Period period = validate(from, to, "day");
+
+        var row = repository.profitFigures(tenantId, from, to);
+        long revenue = row.getRevenuePaise() == null ? 0L : row.getRevenuePaise();
+        long salesReturn = row.getSalesReturnPaise() == null ? 0L : row.getSalesReturnPaise();
+        long cogs = row.getCogsPaise() == null ? 0L : row.getCogsPaise();
+        long returnedCogs = row.getReturnedCogsPaise() == null ? 0L : row.getReturnedCogsPaise();
+        long expenses = repository.expensesInRange(tenantId, from, to);
+
+        long netRevenue = revenue - salesReturn;
+        long netCogs = cogs - returnedCogs;
+        long grossProfit = netRevenue - netCogs;
+        long netProfit = grossProfit - expenses;
+
+        return new ProfitResponse(period,
+                revenue, rupees(revenue),
+                salesReturn, rupees(salesReturn),
+                netRevenue, rupees(netRevenue),
+                netCogs, rupees(netCogs),
+                grossProfit, rupees(grossProfit),
+                expenses, rupees(expenses),
+                netProfit, rupees(netProfit));
+    }
 }

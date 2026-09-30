@@ -1,10 +1,19 @@
 import { apiGet, apiPost } from '@/services/apiClient';
-import type { TenantRegistrationRequest, TenantRegistrationResponse } from '../types';
+import type { OtpSentResponse } from '@/modules/auth/types';
+import type { RegistrationCodeRequest, TenantRegistrationRequest, TenantRegistrationResponse } from '../types';
 
 /** Backend: tenant/controller/TenantRegistrationController.java - public, unauthenticated, rate-limited. */
 export const tenantRegistrationService = {
   register: (body: TenantRegistrationRequest) =>
     apiPost<TenantRegistrationResponse>('/v1/tenants/register', body),
+
+  /**
+   * CR-078. Step one of signup: proves the owner's address before anything
+   * is created. 409 for an address already registered; 429 inside the
+   * 60-second resend cooldown.
+   */
+  sendVerificationCode: (body: RegistrationCodeRequest) =>
+    apiPost<OtpSentResponse>('/v1/tenants/register/send-code', body),
 
   slugAvailable: (slug: string) =>
     apiGet<{ available: boolean }>('/v1/tenants/register/slug-available', { params: { slug } }),

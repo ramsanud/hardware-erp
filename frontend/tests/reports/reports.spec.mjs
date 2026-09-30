@@ -104,7 +104,11 @@ export default async function run() {
     requests.length = 0;
     await page.click('[data-range-preset="today"]');
     await page.waitForTimeout(400);
-    const today = new Date().toISOString().slice(0, 10);
+    // BUG-FE-041: the page builds "today" from the browser's LOCAL date (a shop in
+    // India means IST), so the expectation must too - toISOString() is UTC and
+    // disagrees with it between 00:00 and 05:30 IST, which is when this failed.
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const dayReq = requests.find((r) => r.startsWith('/api/v1/reports/day-book'));
     s.check('"Today" preset requests from=to=today', !!dayReq && dayReq.includes(`from=${today}`) && dayReq.includes(`to=${today}`), dayReq ?? 'no request');
 

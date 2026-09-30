@@ -1,5 +1,6 @@
 package com.hardware.erp.auth.service.impl;
 
+import com.hardware.erp.auth.repository.EmailOtpRepository;
 import com.hardware.erp.auth.repository.PasswordResetTokenRepository;
 import com.hardware.erp.auth.repository.RefreshTokenRepository;
 import com.hardware.erp.auth.repository.SecurityAuditLogRepository;
@@ -22,6 +23,7 @@ public class TokenCleanupJob {
 
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordResetTokenRepository resetTokenRepository;
+    private final EmailOtpRepository emailOtpRepository;
     private final SecurityAuditLogRepository auditLogRepository;
     private final JobExecutionTracker jobExecutionTracker;
 
@@ -45,6 +47,10 @@ public class TokenCleanupJob {
             LocalDateTime cutoff = LocalDateTime.now().minusDays(graceDays);
             int refreshTokens = refreshTokenRepository.deleteExpiredBefore(cutoff);
             int resetTokens = resetTokenRepository.deleteExpiredBefore(cutoff);
+            // CR-078 - a ten-minute code has no value a week later, but the row
+            // still says a code was sent; the same grace period keeps it around
+            // for exactly as long as a reset token.
+            int emailOtps = emailOtpRepository.deleteExpiredBefore(cutoff);
 
             int auditRows = 0;
             if (auditRetentionDays > 0) {
@@ -52,12 +58,12 @@ public class TokenCleanupJob {
                         LocalDateTime.now().minusDays(auditRetentionDays));
             }
 
-            if (refreshTokens > 0 || resetTokens > 0 || auditRows > 0) {
-                log.info("Cleanup removed {} refresh tokens, {} reset tokens, {} audit rows",
-                        refreshTokens, resetTokens, auditRows);
+            if (refreshTokens > 0 || resetTokens > 0 || emailOtps > 0 || auditRows > 0) {
+                log.info("Cleanup removed {} refresh tokens, {} reset tokens, {} email codes, {} audit rows",
+                        refreshTokens, resetTokens, emailOtps, auditRows);
             }
-            jobExecutionTracker.success(runId, "%d refresh tokens, %d reset tokens, %d audit rows removed"
-                    .formatted(refreshTokens, resetTokens, auditRows));
+            jobExecutionTracker.success(runId, "%d refresh tokens, %d reset tokens, %d email codes, %d audit rows removed"
+                    .formatted(refreshTokens, resetTokens, emailOtps, auditRows));
         } catch (Exception ex) {
             jobExecutionTracker.failure(runId, ex.getMessage());
             throw ex;

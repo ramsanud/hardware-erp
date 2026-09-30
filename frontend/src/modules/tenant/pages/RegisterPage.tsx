@@ -4,7 +4,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-  ArrowLeft, ArrowRight, Building2, Check, Eye, EyeOff, Lock, Mail, Phone, User,
+  ArrowLeft, ArrowRight, Building2, Check, Eye, EyeOff, Lock, Mail, Phone, ShieldCheck, User,
 } from 'lucide-react';
 import { enterAdvances } from '@/shared/hooks/useEnterAdvances';
 import { Button } from '@/shared/components/ui/button';
@@ -35,6 +35,10 @@ const registerSchema = z.object({
   email: z.string().trim().email('Enter a valid email address'),
   password: z.string().min(8, 'At least 8 characters').max(72)
     .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, 'Add at least one letter and one number'),
+  // CR-078. Format-checked only; the real check is server-side at Create
+  // account, since that is the one place a code can actually be verified
+  // (there is no separate "verify" call during registration).
+  emailCode: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code from your email'),
   subscriptionTier: z.enum(['FREE', 'PRO', 'MAX']),
 });
 // Consent is held outside the schema because part of it - whether each
@@ -46,7 +50,7 @@ const STEPS = ['Your shop', 'Sign-in details', 'Plan & agreement'] as const;
 
 const STEP_FIELDS: Record<number, (keyof RegisterValues)[]> = {
   0: ['shopName', 'ownerFullName'],
-  1: ['mobileNo', 'email', 'password'],
+  1: ['mobileNo', 'email', 'password', 'emailCode'],
 };
 
 /**
@@ -61,14 +65,62 @@ export function RegisterPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const {
-    register, control, handleSubmit, trigger, watch, getValues, setError,
+    register, control, handleSubmit, trigger, watch, getValues, setError, setValue, clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
-      shopName: '', ownerFullName: '', mobileNo: '', email: '', password: '', subscriptionTier: 'FREE',
+      shopName: '', ownerFullName: '', mobileNo: '', email: '', password: '', emailCode: '', subscriptionTier: 'FREE',
     },
   });
+
+  // CR-078. The owner's address must receive a code before an account is
+  // created. codeSentTo tracks WHICH address the live code belongs to, not
+  // just whether one was ever sent - editing the email after sending must
+  // invalidate a code that was never sent to the new address.
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [sendingCode, setSendingCode] = useState(false);
+  const [emailHint, setEmailHint] = useState<string | null>(null);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const emailValue = watch('email');
+
+  useEffect(() => {
+    if (codeSentTo && emailValue.trim().toLowerCase() !== codeSentTo) {
+      setCodeSentTo(null);
+      setEmailHint(null);
+      setValue('emailCode', '');
+    }
+  }, [emailValue, codeSentTo, setValue]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => setResendCooldown((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
+  const sendCode = async () => {
+    const emailOk = await trigger('email');
+    if (!emailOk) return;
+    const email = getValues('email').trim();
+    setSendingCode(true);
+    clearErrors('emailCode');
+    try {
+      const result = await tenantRegistrationService.sendVerificationCode({ email });
+      setCodeSentTo(email.toLowerCase());
+      setEmailHint(result.emailHint);
+      setResendCooldown(result.resendAfterSeconds);
+      setValue('emailCode', '');
+    } catch (caught) {
+      // A 409 here means the identifierAvailable check on Next will also
+      // catch it and explain it against the email field - so no separate
+      // message is needed for that case, only for anything else (rate limit).
+      if (caught instanceof ApiError && caught.status !== 409) {
+        setError('email', { message: caught.message });
+      }
+    } finally {
+      setSendingCode(false);
+    }
+  };
 
   const [consent, setConsent] = useState<ConsentState>(EMPTY_CONSENT);
   const [consentError, setConsentError] = useState<string | null>(null);
@@ -136,7 +188,13 @@ export function RegisterPage() {
   const goNext = async () => {
     const fields = STEP_FIELDS[step];
     if (fields && !(await trigger(fields))) return;
-    if (step === 1 && !(await identifiersAreFree())) return;
+    if (step === 1) {
+      if (!codeSentTo) {
+        setError('emailCode', { message: 'Send a code to this address first.' });
+        return;
+      }
+      if (!(await identifiersAreFree())) return;
+    }
     setDirection('forward');
     setStep((current) => Math.min(current + 1, STEPS.length - 1));
   };
@@ -180,13 +238,23 @@ export function RegisterPage() {
     } catch (caught) {
       if (caught instanceof ApiError) {
         setFormError(caught.message);
+        // Jumping back to an earlier step is backward travel, so the panel
+        // must slide that way too.
+        setDirection('back');
+        // CR-078. The code lived this long (a resend cooldown, a slow plan
+        // pick) and is now wrong or expired - sent it back as dead rather
+        // than let a doomed resubmit retry the same code.
+        if (caught.code === 'INVALID_OTP') {
+          setCodeSentTo(null);
+          setEmailHint(null);
+          setValue('emailCode', '');
+          setStep(1);
+          return;
+        }
         // A duplicate mobile/email/shop-name error was raised against a
         // field on an earlier step - send the owner back to it rather than
         // leaving them stuck on the consent step with no visible cause.
         const lower = caught.message.toLowerCase();
-        // Jumping back to an earlier step is backward travel, so the panel
-        // must slide that way too.
-        setDirection('back');
         if (lower.includes('mobile') || lower.includes('email')) setStep(1);
         else if (lower.includes('shop')) setStep(0);
         return;
@@ -283,9 +351,31 @@ export function RegisterPage() {
                            {...register('mobileNo')} />
               </FormField>
 
-              <FormField id="email" label="Email address" error={errors.email?.message} required>
-                <IconInput icon={Mail} id="email" type="email" inputMode="email" autoComplete="email"
-                           placeholder="you@yourshop.com" {...register('email')} />
+              <FormField id="email" label="Email address" error={errors.email?.message} required
+                         hint="We will send a 6-digit code here to confirm it is yours.">
+                <div className="flex gap-2">
+                  <IconInput icon={Mail} id="email" type="email" inputMode="email" autoComplete="email"
+                             placeholder="you@yourshop.com" className="flex-1" {...register('email')} />
+                  <Button type="button" variant="outline" onClick={() => void sendCode()}
+                          loading={sendingCode} disabled={resendCooldown > 0}>
+                    {codeSentTo ? (resendCooldown > 0 ? `Resend (${resendCooldown}s)` : 'Resend') : 'Send code'}
+                  </Button>
+                </div>
+              </FormField>
+
+              {/*
+                CR-078. Rendered unconditionally (only disabled, never
+                unmounted) so react-hook-form's registration is stable from
+                the moment the step mounts - a field that appears and
+                disappears with codeSentTo would otherwise register and
+                unregister on every send, exactly the trap BUG-FE-007 found
+                in a conditionally-rendered Radix Select.
+              */}
+              <FormField id="emailCode" label="Verification code" error={errors.emailCode?.message} required
+                         hint={codeSentTo ? `Code sent to ${emailHint}` : 'Enter your email above and press Send code.'}>
+                <IconInput icon={ShieldCheck} id="emailCode" inputMode="numeric" maxLength={6}
+                           placeholder="6-digit code" disabled={!codeSentTo}
+                           {...register('emailCode')} />
               </FormField>
 
               <FormField id="password" label="Password" error={errors.password?.message} required

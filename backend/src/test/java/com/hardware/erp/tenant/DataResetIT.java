@@ -180,7 +180,7 @@ class DataResetIT extends AbstractIntegrationTest {
 
         TenantRegistrationResponse registered = registrationService.register(new TenantRegistrationRequest(
                 name, "Reset Test Owner", mobile, email, "Reset@2026",
-                null, true, "1.0", "1.0", false));
+                null, true, "1.0", "1.0", false, null));
 
         Long tenantId = registered.tenantId();
         Long ownerId = jdbc.queryForObject(

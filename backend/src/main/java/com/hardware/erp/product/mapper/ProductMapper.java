@@ -44,10 +44,22 @@ public class ProductMapper {
                 product.getUpdatedAt(),
                 hasImage,
                 product.getAltUnitLabel(),
-                product.getAltUnitConversionFactor());
+                product.getAltUnitConversionFactor(),
+                product.getSubcategory(),
+                product.getSizeLabel(),
+                product.getMaterial(),
+                product.getColorFinish(),
+                product.getShape(),
+                product.getUsageType(),
+                product.getProductType());
     }
 
     public ProductSummaryResponse toSummary(Product product, boolean hasImage) {
+        return toSummary(product, hasImage, null);
+    }
+
+    /** CR-097. The fuzzy-search page carries its score; every other list page passes null. */
+    public ProductSummaryResponse toSummary(Product product, boolean hasImage, Double matchScore) {
         return new ProductSummaryResponse(
                 product.getId(),
                 product.getProductCode(),
@@ -63,7 +75,8 @@ public class ProductMapper {
                 product.getModelNo(),
                 product.getBarcode(),
                 product.getHsnCode(),
-                rupees(product.getMrpPaise()));
+                rupees(product.getMrpPaise()),
+                matchScore);
     }
 
     /** CR-058 recycle bin. Identification and the deletion date only - no prices. */

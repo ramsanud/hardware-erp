@@ -35,6 +35,8 @@
         <bucket4j.version>8.10.1</bucket4j.version>
         <testcontainers.version>1.21.3</testcontainers.version>
         <openhtmltopdf.version>1.0.10</openhtmltopdf.version>
+        <!-- The exact PDFBox version openhtmltopdf-pdfbox 1.0.10 already pulls in - keep in step with it. -->
+        <pdfbox.version>2.0.24</pdfbox.version>
         <zxing.version>3.5.3</zxing.version>
         <poi.version>5.3.0</poi.version>
         <commons-csv.version>1.11.0</commons-csv.version>
@@ -129,6 +131,19 @@
             <groupId>com.openhtmltopdf</groupId>
             <artifactId>openhtmltopdf-pdfbox</artifactId>
             <version>${openhtmltopdf.version}</version>
+        </dependency>
+
+        <!-- CR-101. DocumentImageRenderer rasterizes the PDF openhtmltopdf-pdfbox
+             already builds into PNG/JPEG - PDFRenderer/PDDocument are PDFBox's
+             own classes, already on the classpath transitively via
+             openhtmltopdf-pdfbox above. Declared explicitly, pinned to the same
+             version, because this module calls PDFBox directly rather than only
+             through openhtmltopdf - an undeclared transitive dependency is one
+             openhtmltopdf version bump away from silently changing underneath it. -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>${pdfbox.version}</version>
         </dependency>
 
         <!-- UPI payment QR code on the invoice PDF. -->

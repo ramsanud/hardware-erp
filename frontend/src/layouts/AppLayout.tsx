@@ -10,6 +10,8 @@ import {
 } from '@/shared/components/ui/dropdown-menu';
 import { Badge } from '@/shared/components/ui/badge';
 import { GlobalSearch } from '@/shared/components/GlobalSearch';
+import { OfflineBanner } from '@/shared/components/OfflineBanner';
+import { RouteErrorBoundary } from '@/shared/components/ErrorBoundary';
 import { ModeToggle } from '@/theme/ModeToggle';
 import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { AUTH_ROUTES } from '@/modules/auth/constants';
@@ -26,10 +28,13 @@ import { AppChromeProvider, useAppChrome } from './AppChromeProvider';
 import { MobileMoreMenu } from './MobileMoreMenu';
 import { MobileTabBar } from './MobileTabBar';
 import { SidebarBrand, SidebarFooter, SidebarNav } from './Sidebar';
+import { OutboxAutoSync } from '@/modules/sync/components/OutboxAutoSync';
 
 export function AppLayout() {
   return (
     <AppChromeProvider>
+      {/* CR-091 Phase 9 - pushes queued offline invoices the moment the browser is back online. */}
+      <OutboxAutoSync />
       <AppLayoutInner />
     </AppChromeProvider>
   );
@@ -41,7 +46,9 @@ function AppLayoutInner() {
   const tour = useOnboardingTour();
   const pageTips = usePageTips();
   const { avatarVersion, brandName } = useAppChrome();
-  const avatarSrc = useAuthenticatedImage(avatarService.url, avatarVersion);
+  // BUG-FE-039: only ask for the image when /me says one exists - every page
+  // load used to fire a GET that 404ed for the majority of accounts.
+  const avatarSrc = useAuthenticatedImage(user?.hasAvatar ? avatarService.url : null, avatarVersion);
   const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -209,6 +216,12 @@ function AppLayoutInner() {
           </div>
         </header>
 
+        {/* CR-100: says "offline" before a save fails, not after. Sticks just
+            under the app bar so it is visible however far the page is scrolled.
+            The bar grows into the notch by padding (.app-bar, CR-061), so the
+            offset carries the same inset or the banner slides under it. */}
+        <OfflineBanner className="sticky z-30 top-[calc(3.5rem+env(safe-area-inset-top))] lg:top-[calc(4rem+env(safe-area-inset-top))]" />
+
         {/*
           Bottom padding is clearance for fixed furniture, not spacing - the
           tab bar below lg plus its safe-area inset, and the floating
@@ -220,7 +233,10 @@ function AppLayoutInner() {
             {/* CR-075: a one-time tip for the first visit to each screen. In
                 the flow, above the page, so it never covers what it explains. */}
             <PageTip tips={pageTips} />
-            <Outlet />
+            {/* CR-100: a page that throws loses the page, not the shell. */}
+            <RouteErrorBoundary>
+              <Outlet />
+            </RouteErrorBoundary>
           </div>
         </main>
       </div>

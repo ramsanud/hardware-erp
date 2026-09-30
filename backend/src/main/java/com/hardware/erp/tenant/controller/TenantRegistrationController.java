@@ -1,7 +1,9 @@
 package com.hardware.erp.tenant.controller;
 
 import com.hardware.erp.common.dto.ApiResponse;
+import com.hardware.erp.auth.dto.OtpSentResponse;
 import com.hardware.erp.tenant.dto.IdentifierAvailabilityResponse;
+import com.hardware.erp.tenant.dto.RegistrationCodeRequest;
 import com.hardware.erp.tenant.dto.TenantRegistrationRequest;
 import com.hardware.erp.tenant.dto.TenantRegistrationResponse;
 import com.hardware.erp.tenant.service.TenantRegistrationService;
@@ -30,6 +32,17 @@ public class TenantRegistrationController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<TenantRegistrationResponse> register(@Valid @RequestBody TenantRegistrationRequest request) {
         return ApiResponse.ok(tenantRegistrationService.register(request));
+    }
+
+    /**
+     * CR-078. Step one of signup: prove the address before anything is
+     * created. 409 for an address already registered - the same fact
+     * identifier-available discloses - and 429 OTP_COOLDOWN within a minute
+     * of the last send. Rate limited separately (REGISTRATION_CODE_PER_IP).
+     */
+    @PostMapping("/register/send-code")
+    public ApiResponse<OtpSentResponse> sendVerificationCode(@Valid @RequestBody RegistrationCodeRequest request) {
+        return ApiResponse.ok(tenantRegistrationService.sendVerificationCode(request.email()));
     }
 
     @GetMapping("/register/slug-available")

@@ -334,7 +334,7 @@ class AuthControllerIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(APPLICATION_JSON)
                         .content(json(new UpdateProfileRequest(
-                                "Karthik Raja S", "karthik@sarahardware.in"))))
+                                "Karthik Raja S", "karthik@sarahardware.in", null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.fullName").value("Karthik Raja S"))
                 .andExpect(jsonPath("$.data.mobileNo").value(STAFF_MOBILE));

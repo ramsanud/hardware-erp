@@ -32,7 +32,8 @@ class ProductControllerIT extends AbstractIntegrationTest {
     private ProductRequest product(String code, String name) {
         return new ProductRequest(code, name, null, null, null, null, null, "PCS",
                 null, "8301", new BigDecimal("18.00"), 10_000L, 15_000L, 18_000L,
-                BigDecimal.ZERO, BigDecimal.ZERO, ProductStatus.ACTIVE, null, null);
+                BigDecimal.ZERO, BigDecimal.ZERO, ProductStatus.ACTIVE, null, null,
+                null, null, null, null, null, null, null);
     }
 
     @Test
@@ -183,7 +184,8 @@ class ProductControllerIT extends AbstractIntegrationTest {
                 "CPT-900", null, "8901234567890", "PCS",
                 "Hardened steel body, 5 levers", "8301",
                 new BigDecimal("18.00"), 10_000L, 15_000L, 18_000L,
-                BigDecimal.ZERO, BigDecimal.ZERO, ProductStatus.ACTIVE, null, null);
+                BigDecimal.ZERO, BigDecimal.ZERO, ProductStatus.ACTIVE, null, null,
+                null, null, null, null, null, null, null);
 
         mockMvc.perform(post("/v1/products").header("Authorization", owner())
                         .contentType(APPLICATION_JSON)

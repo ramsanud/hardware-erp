@@ -62,7 +62,12 @@ export type ApiErrorCode =
   | 'BUSINESS_RULE_VIOLATION'
   | 'LAST_OWNER_PROTECTED'
   | 'RATE_LIMIT_EXCEEDED'
-  | 'INTERNAL_ERROR';
+  | 'INTERNAL_ERROR'
+  /** CR-088 - 403, carries featureKey/currentPlanCode/requiredPlanCode in `errors`. */
+  | 'FEATURE_NOT_AVAILABLE'
+  /** CR-088 - 429, a metered channel's plan-included count is used up this month. */
+  | 'USAGE_LIMIT_REACHED'
+  | 'UPGRADE_REQUIRES_CHECKOUT';
 
 /** Normalised shape every service throws, so pages never touch axios types. */
 export class ApiError extends Error {

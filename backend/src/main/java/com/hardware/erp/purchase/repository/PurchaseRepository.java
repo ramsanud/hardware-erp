@@ -4,7 +4,9 @@ import com.hardware.erp.purchase.entity.Purchase;
 import com.hardware.erp.purchase.entity.PurchaseStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,6 +15,20 @@ import java.util.List;
 import java.util.Optional;
 
 public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
+
+    /**
+     * BUG-BE-010. addPayment takes the purchase row FOR UPDATE first, so
+     * concurrent payments against one purchase serialise on it. Without this,
+     * each payment INSERT took a share lock on the purchase (its FK) and the
+     * following UPDATE needed the exclusive one - two such transactions
+     * deadlocked and PostgreSQL killed one with a 500. Now the second waits,
+     * re-reads the paid total and gets the honest 422 PAYMENT_EXCEEDS_TOTAL
+     * (or succeeds if it still fits).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from Purchase i where i.id = :id and i.tenant.id = :tenantId")
+    Optional<Purchase> lockByIdAndTenantId(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
 
     Optional<Purchase> findByIdAndTenantId(Long id, Long tenantId);
 

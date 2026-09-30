@@ -26,6 +26,16 @@ public record UserResponse(
         Set<String> permissions,
         @Schema(example = "ACTIVE") UserStatus status,
         @Schema(example = "false") boolean mustChangePassword,
+        /**
+         * BUG-FE-039. Whether /me/avatar would answer 200. Only the current-user
+         * paths (login, refresh, /me) compute it; a user list says false rather
+         * than paying one query per row for a picture it never draws.
+         */
+        @Schema(example = "false") boolean hasAvatar,
+        /** CR-078. Whether an authenticator app is enrolled - the profile offers "set one up" when false. */
+        @Schema(example = "true") boolean mfaEnabled,
+        /** CR-078. Whether a code sent to `email` was ever entered correctly. */
+        @Schema(example = "true") boolean emailVerified,
         @Schema(example = "2026-08-13T09:14:22.331") LocalDateTime lastLoginAt,
         @Schema(example = "2026-07-02T11:00:00.000") LocalDateTime createdAt
 ) {}

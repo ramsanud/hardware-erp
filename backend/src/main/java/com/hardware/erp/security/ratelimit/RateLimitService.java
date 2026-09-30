@@ -80,6 +80,8 @@ public class RateLimitService {
             case REGISTER_PER_IP -> properties.registerPerIpPerHour();
             case PLATFORM_ADMIN_LOGIN_PER_IP -> properties.platformAdminLoginPerIpPerMinute();
             case REGISTRATION_AVAILABILITY_PER_IP -> properties.registrationAvailabilityPerIpPerMinute();
+            case REGISTRATION_CODE_PER_IP -> properties.registrationCodePerIpPerHour();
+            case MFA_VERIFY_PER_IP -> properties.mfaVerifyPerIpPerMinute();
         };
     }
 

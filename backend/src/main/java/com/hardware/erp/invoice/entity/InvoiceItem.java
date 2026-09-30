@@ -101,6 +101,29 @@ public class InvoiceItem {
     @Column(name = "line_gst_paise", nullable = false)
     private Long lineGstPaise;
 
+    /** CR-091 Phase 1. GstSplit of lineGstPaise, frozen at creation. Sum to lineGstPaise exactly. */
+    @Column(name = "cgst_paise", nullable = false)
+    @Builder.Default
+    private Long cgstPaise = 0L;
+
+    @Column(name = "sgst_paise", nullable = false)
+    @Builder.Default
+    private Long sgstPaise = 0L;
+
+    @Column(name = "igst_paise", nullable = false)
+    @Builder.Default
+    private Long igstPaise = 0L;
+
+    /**
+     * CR-091 Phase 6. The stock row's weighted-average cost per unit at the
+     * moment of sale, frozen here - COGS and gross profit are computed from
+     * this, so a later purchase at a different price never rewrites an old
+     * sale's margin (the brief's "historical purchase-price change" case).
+     */
+    @Column(name = "cost_price_paise", nullable = false)
+    @Builder.Default
+    private Long costPricePaise = 0L;
+
     @Column(name = "line_total_paise", nullable = false)
     private Long lineTotalPaise;
 }

@@ -58,6 +58,27 @@ public record SecurityProperties(
          */
         Boolean mfaRequired,
 
+        /**
+         * CR-078. When MFA is required and a user has no authenticator app,
+         * whether a code sent to their email may stand in as the second
+         * factor (true, the default) or whether they must enroll TOTP before
+         * ever getting a session (false - the CR-058 behaviour).
+         *
+         * Defaults to true because it is what the owner chose for this
+         * product: counter staff with a shop phone and no authenticator app
+         * still get a second factor. A user with no email address at all
+         * falls back to TOTP enrollment regardless.
+         */
+        Boolean mfaEmailFallback,
+
+        /**
+         * CR-078. Whether POST /v1/tenants/register demands a code sent to
+         * the owner's email before the shop is created. True by default; the
+         * dev/test profiles may turn it off, production never should - an
+         * unverified address means password reset can never reach its owner.
+         */
+        Boolean registrationEmailVerification,
+
         List<String> allowedOrigins
 ) {
     public SecurityProperties {
@@ -75,6 +96,12 @@ public record SecurityProperties(
         }
         if (mfaRequired == null) {
             mfaRequired = Boolean.TRUE;
+        }
+        if (mfaEmailFallback == null) {
+            mfaEmailFallback = Boolean.TRUE;
+        }
+        if (registrationEmailVerification == null) {
+            registrationEmailVerification = Boolean.TRUE;
         }
         if (allowedOrigins == null) {
             allowedOrigins = List.of();

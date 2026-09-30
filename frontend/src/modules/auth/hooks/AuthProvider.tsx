@@ -7,7 +7,7 @@ import { tokenStorage } from '@/services/tokenStorage';
 import { setThemeScope } from '@/theme/themeScope';
 import { authService } from '../services/authService';
 import type {
-  LoginRequest, LoginResponse, MfaEnrollResponse, UserResponse,
+  LoginRequest, LoginResponse, MfaEnrollResponse, OtpSentResponse, UserResponse,
 } from '../types';
 
 interface AuthContextValue {
@@ -22,6 +22,10 @@ interface AuthContextValue {
    */
   mfaToken: string | null;
   enrollmentRequired: boolean;
+  /** CR-078. How the pending challenge is verified - null while enrolling or before a login attempt. */
+  mfaMethod: 'TOTP' | 'EMAIL' | null;
+  /** CR-078. The masked address a sign-in code went to. Null unless mfaMethod is EMAIL. */
+  emailHint: string | null;
   /**
    * `signedIn` is true only when the server has MFA disabled (CR-060) and the
    * session is already live, so the caller must go straight to the app instead
@@ -37,9 +41,17 @@ interface AuthContextValue {
    * which is the only correct answer once the flow has been abandoned.
    */
   cancelPendingLogin: () => void;
+  /**
+   * CR-100. True when the last session ended because the server refused to
+   * refresh it - not because the user signed out. The sign-in page reads it
+   * to explain the bounce; a completed sign-in clears it.
+   */
+  sessionExpired: boolean;
   verifyMfa: (code: string) => Promise<UserResponse>;
   enrollMfa: () => Promise<MfaEnrollResponse>;
   confirmMfaEnroll: (code: string) => Promise<{ user: UserResponse; backupCodes: string[] }>;
+  /** CR-078 - another code to the same address the current challenge already went to. */
+  resendEmailCode: () => Promise<OtpSentResponse>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -55,7 +67,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [enrollmentRequired, setEnrollmentRequired] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [mfaMethod, setMfaMethod] = useState<'TOTP' | 'EMAIL' | null>(null);
+  const [emailHint, setEmailHint] = useState<string | null>(null);
   const bootstrapped = useRef(false);
+  // Read inside the expiry handler, which is registered once and must not
+  // capture a stale `user`. Written from an effect, never during render; the
+  // handler only ever runs from a network callback, which is after commit.
+  const signedIn = useRef(false);
+  useEffect(() => { signedIn.current = user !== null; }, [user]);
 
   const clearSession = useCallback(() => {
     tokenStorage.clear();
@@ -63,6 +83,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMustChangePassword(false);
     setMfaToken(null);
     setEnrollmentRequired(false);
+    setMfaMethod(null);
+    setEmailHint(null);
     // CR-034: theme/appearance prefs are scoped per user id (see theme/themeScope.ts) - drop back to the shared "guest" scope so the next sign-in on this browser never inherits this user's look.
     setThemeScope(null);
   }, []);
@@ -93,16 +115,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession]);
 
   // A refresh failure mid-session must drop the user back to the login screen.
-  useEffect(() => setSessionExpiredHandler(clearSession), [clearSession]);
+  // CR-100: and tell them why, but only if there was a session to lose - the
+  // startup refresh on a first visit fails the same way and is not an expiry.
+  useEffect(() => setSessionExpiredHandler(() => {
+    if (signedIn.current) setSessionExpired(true);
+    clearSession();
+  }), [clearSession]);
 
   /** Applies a completed session. Shared by verifyMfa and confirmMfaEnroll. */
   const applySession = useCallback((session: LoginResponse) => {
+    setSessionExpired(false);
     tokenStorage.set(session.accessToken);
     setUser(session.user);
     setMustChangePassword(session.mustChangePassword);
     setThemeScope(session.user.id);
     setMfaToken(null);
     setEnrollmentRequired(false);
+    setMfaMethod(null);
+    setEmailHint(null);
     return session.user;
   }, []);
 
@@ -125,12 +155,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setMfaToken(challenge.mfaToken);
     setEnrollmentRequired(challenge.enrollmentRequired);
+    setMfaMethod(challenge.mfaMethod);
+    setEmailHint(challenge.emailHint);
     return { enrollmentRequired: challenge.enrollmentRequired, signedIn: false };
   }, [applySession]);
 
   const cancelPendingLogin = useCallback(() => {
     setMfaToken(null);
     setEnrollmentRequired(false);
+    setMfaMethod(null);
+    setEmailHint(null);
   }, []);
 
   const verifyMfa = useCallback(async (code: string) => {
@@ -148,6 +182,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await authService.confirmMfaEnroll(mfaToken, code);
     return { user: applySession(result.session), backupCodes: result.backupCodes };
   }, [mfaToken, applySession]);
+
+  const resendEmailCode = useCallback(async () => {
+    if (!mfaToken) throw new Error('No verification in progress. Please sign in again.');
+    return authService.resendEmailCode(mfaToken);
+  }, [mfaToken]);
 
   /**
    * Never rejects. Local state clears even if the call fails, so the user is
@@ -167,7 +206,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.warn('[auth] Sign-out call failed; clearing the local session anyway.', error);
     } finally {
+      // A deliberate sign-out is never an expiry, even when the call itself
+      // was refused with a 401 on the way out (CR-100).
       clearSession();
+      setSessionExpired(false);
     }
   }, [clearSession]);
 
@@ -178,7 +220,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.warn('[auth] Sign-out-everywhere call failed; clearing the local session anyway.', error);
     } finally {
+      // A deliberate sign-out is never an expiry, even when the call itself
+      // was refused with a 401 on the way out (CR-100).
       clearSession();
+      setSessionExpired(false);
     }
   }, [clearSession]);
 
@@ -206,19 +251,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mustChangePassword,
       mfaToken,
       enrollmentRequired,
+      mfaMethod,
+      emailHint,
       login,
       cancelPendingLogin,
+      sessionExpired,
       verifyMfa,
       enrollMfa,
       confirmMfaEnroll,
+      resendEmailCode,
       logout,
       logoutAll,
       refreshUser,
       hasPermission,
       hasAnyPermission,
     }),
-    [user, initialising, mustChangePassword, mfaToken, enrollmentRequired, login,
-      cancelPendingLogin, verifyMfa, enrollMfa, confirmMfaEnroll, logout, logoutAll,
+    [user, initialising, mustChangePassword, mfaToken, enrollmentRequired, mfaMethod, emailHint, login,
+      cancelPendingLogin, sessionExpired, verifyMfa, enrollMfa, confirmMfaEnroll, resendEmailCode, logout, logoutAll,
       refreshUser, hasPermission, hasAnyPermission],
   );
 

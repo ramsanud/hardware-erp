@@ -114,4 +114,24 @@ public final class AnalyticsDtos {
     ) {}
 
     public record ActivityMatrix(Period period, List<ActivityCell> cells, long peakInvoiceCount, String summary) {}
+
+    /**
+     * CR-091 Phase 6. Revenue and COGS from real recorded rows only - never
+     * fabricated (hard rule 12). COGS is the SUM of invoice_item
+     * .cost_price_paise (the weighted-average cost frozen at sale), not
+     * "selling price minus today's purchase price" - a later price change
+     * never rewrites an old sale's margin. Sales returns reduce both revenue
+     * and COGS by the returned lines' own frozen figures; cancelled invoices
+     * are excluded entirely, matching every other analytics query.
+     */
+    public record ProfitResponse(
+            Period period,
+            long revenuePaise, String revenueDisplay,
+            long salesReturnPaise, String salesReturnDisplay,
+            long netRevenuePaise, String netRevenueDisplay,
+            long cogsPaise, String cogsDisplay,
+            long grossProfitPaise, String grossProfitDisplay,
+            long expensePaise, String expenseDisplay,
+            long netProfitPaise, String netProfitDisplay
+    ) {}
 }

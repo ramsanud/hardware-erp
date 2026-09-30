@@ -65,6 +65,8 @@ public class PurchaseServiceImpl implements PurchaseService {
     private final TenantRepository tenantRepository;
     private final PurchaseMapper purchaseMapper;
     private final ActivityLogService activityLog;
+    private final com.hardware.erp.branch.service.BranchContext branchContext;
+    private final com.hardware.erp.common.idempotency.IdempotencyService idempotencyService;
 
     @Override
     @Transactional
@@ -76,6 +78,7 @@ public class PurchaseServiceImpl implements PurchaseService {
 
         Purchase purchase = Purchase.builder()
                 .tenant(tenantRepository.getReferenceById(tenantId))
+                .branchId(branchContext.actingBranchId(tenantId))
                 .purchaseNumber(nextPurchaseNumber(tenantId))
                 .supplier(supplier)
                 .supplierBillNumber(blankToNull(request.supplierBillNumber()))
@@ -116,8 +119,11 @@ public class PurchaseServiceImpl implements PurchaseService {
         // Stock arrives after the purchase has an id, so the movement's
         // reference_id points at a row that already exists.
         for (PurchaseItem item : saved.getItems()) {
-            stockService.applyMovement(item.getProduct().getId(), item.getQuantity(),
-                    MovementType.PURCHASE_RECEIPT, "PURCHASE", saved.getId(), null);
+            // CR-091 Phase 6 - the weighted-average cost that COGS is
+            // computed from moves here, not by cloning applyMovement's
+            // PURCHASE_RECEIPT call.
+            stockService.applyPurchaseReceipt(item.getProduct().getId(), item.getQuantity(),
+                    item.getUnitPricePaise(), "PURCHASE", saved.getId(), null);
             if (request.updateProductCost()) {
                 Product product = item.getProduct();
                 product.setPurchasePricePaise(item.getUnitPricePaise());
@@ -178,11 +184,38 @@ public class PurchaseServiceImpl implements PurchaseService {
                 purchaseMapper::toSummary);
     }
 
+
+    @Override
+    @Transactional
+    public PurchaseResponse create(PurchaseRequest request, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return create(request);
+        }
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        return idempotencyService.execute(tenantId, "purchase.create", idempotencyKey, request,
+                PurchaseResponse.class, () -> create(request));
+    }
+
+    @Override
+    @Transactional
+    public PurchaseResponse addPayment(Long purchaseId, RecordPurchasePaymentRequest request, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return addPayment(purchaseId, request);
+        }
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        return idempotencyService.execute(tenantId, "purchase.payment", idempotencyKey, new IdempotencyPayload(purchaseId, request),
+                PurchaseResponse.class, () -> addPayment(purchaseId, request));
+    }
+
+    private record IdempotencyPayload(Long documentId, Object request) {}
+
     @Override
     @Transactional
     public PurchaseResponse addPayment(Long purchaseId, RecordPurchasePaymentRequest request) {
         Long tenantId = SecurityUtils.requireCurrentTenantId();
-        Purchase purchase = require(purchaseId, tenantId);
+        // BUG-BE-010 - row lock first; see PurchaseRepository.lockByIdAndTenantId.
+        Purchase purchase = purchaseRepository.lockByIdAndTenantId(purchaseId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Purchase", purchaseId));
 
         if (purchase.getStatus() == PurchaseStatus.CANCELLED) {
             throw new BusinessException("A cancelled purchase cannot take a payment");

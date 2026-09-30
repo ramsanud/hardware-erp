@@ -35,7 +35,7 @@ class PlatformAdminRefreshTokenCookieServiceTest {
                                                                SecurityProperties.RefreshTokenTransport transport) {
         when(jwtService.refreshTokenDays()).thenReturn(7L);
         SecurityProperties properties = new SecurityProperties(
-                transport, "erp_refresh_token", secure, Boolean.TRUE, List.of());
+                transport, "erp_refresh_token", secure, Boolean.TRUE, Boolean.TRUE, Boolean.TRUE, List.of());
         return new PlatformAdminRefreshTokenCookieService(properties, jwtService);
     }
 

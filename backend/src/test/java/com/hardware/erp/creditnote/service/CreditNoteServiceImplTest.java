@@ -15,6 +15,7 @@ import com.hardware.erp.creditnote.repository.CreditNoteItemRepository;
 import com.hardware.erp.creditnote.repository.CreditNoteRepository;
 import com.hardware.erp.creditnote.service.impl.CreditNoteServiceImpl;
 import com.hardware.erp.customer.entity.Customer;
+import com.hardware.erp.customer.ledger.CustomerLedgerService;
 import com.hardware.erp.inventory.entity.MovementType;
 import com.hardware.erp.inventory.entity.StockMovement;
 import com.hardware.erp.inventory.service.StockService;
@@ -69,6 +70,7 @@ class CreditNoteServiceImplTest {
     @Mock private ActivityLogService activityLog;
     @Mock private StockService stockService;
     @Mock private IdempotencyService idempotencyService;
+    @Mock private CustomerLedgerService customerLedgerService;
 
     @Spy private CreditNoteMapper creditNoteMapper = new CreditNoteMapper();
 

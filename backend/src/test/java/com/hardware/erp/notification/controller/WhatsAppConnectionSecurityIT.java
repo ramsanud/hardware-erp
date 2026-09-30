@@ -80,7 +80,7 @@ class WhatsAppConnectionSecurityIT extends AbstractIntegrationTest {
     private String registerSecondTenantOwner(String mobile, String email) throws Exception {
         TenantRegistrationRequest request = new TenantRegistrationRequest(
                 "Second Test Hardware", "Second Owner", mobile, email,
-                "Second@2026", null, true, "1.0", "1.0", false);
+                "Second@2026", null, true, "1.0", "1.0", false, null);
         mockMvc.perform(post("/v1/tenants/register").contentType(APPLICATION_JSON).content(json(request)))
                 .andExpect(status().isCreated());
         return bearer(mobile, "Second@2026");

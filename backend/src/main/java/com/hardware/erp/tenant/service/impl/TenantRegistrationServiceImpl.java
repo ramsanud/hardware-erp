@@ -1,5 +1,7 @@
 package com.hardware.erp.tenant.service.impl;
 
+import com.hardware.erp.auth.dto.OtpSentResponse;
+import com.hardware.erp.auth.entity.EmailOtpPurpose;
 import com.hardware.erp.auth.entity.Permission;
 import com.hardware.erp.auth.entity.Role;
 import com.hardware.erp.auth.entity.RoleStatus;
@@ -8,12 +10,14 @@ import com.hardware.erp.auth.entity.UserStatus;
 import com.hardware.erp.auth.repository.PermissionRepository;
 import com.hardware.erp.auth.repository.RoleRepository;
 import com.hardware.erp.auth.repository.UserRepository;
+import com.hardware.erp.auth.service.EmailOtpService;
 import com.hardware.erp.common.exception.BusinessException;
 import com.hardware.erp.common.exception.DuplicateResourceException;
 import com.hardware.erp.legal.LegalDocumentVersions;
 import com.hardware.erp.legal.entity.ConsentType;
 import com.hardware.erp.legal.entity.UserConsent;
 import com.hardware.erp.legal.repository.UserConsentRepository;
+import com.hardware.erp.subscription.service.SubscriptionLifecycleService;
 import org.springframework.http.HttpStatus;
 import com.hardware.erp.tenant.dto.IdentifierAvailabilityResponse;
 import com.hardware.erp.tenant.dto.TenantRegistrationRequest;
@@ -22,6 +26,7 @@ import com.hardware.erp.tenant.entity.SubscriptionTier;
 import com.hardware.erp.tenant.entity.Tenant;
 import com.hardware.erp.tenant.entity.TenantStatus;
 import com.hardware.erp.tenant.repository.TenantRepository;
+import com.hardware.erp.security.SecurityProperties;
 import com.hardware.erp.tenant.service.TenantRegistrationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -105,7 +110,10 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 "LABOUR_VIEW", "LABOUR_MANAGE",
                 "SALES_ORDER_VIEW", "SALES_ORDER_MANAGE",
                 "DELIVERY_CHALLAN_VIEW", "DELIVERY_CHALLAN_MANAGE",
-                "CREDIT_NOTE_VIEW", "CREDIT_NOTE_MANAGE"));
+                "CREDIT_NOTE_VIEW", "CREDIT_NOTE_MANAGE",
+                "PRODUCT_REQUEST_VIEW", "PRODUCT_REQUEST_MANAGE",
+                // CR-092 - moves stock between the branches it runs; creating a branch stays with the owner.
+                "BRANCH_VIEW", "STOCK_TRANSFER_MANAGE"));
         ROLE_PERMISSIONS.put("ACCOUNTANT", Set.of(
                 "CUSTOMER_VIEW", "CUSTOMER_MANAGE", "SUPPLIER_VIEW",
                 "PRODUCT_VIEW", "PRODUCT_VIEW_COST", "PRODUCT_VIEW_STOCK",
@@ -121,7 +129,11 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 "SALES_ORDER_VIEW", "DELIVERY_CHALLAN_VIEW",
                 // A credit note is a financial document, same footing as
                 // INVOICE_CREATE.
-                "CREDIT_NOTE_VIEW", "CREDIT_NOTE_MANAGE"));
+                "CREDIT_NOTE_VIEW", "CREDIT_NOTE_MANAGE",
+                // Sees the queue for billing/reporting context but does not
+                // run the counter - same reasoning as SALES_ORDER_VIEW above.
+                "PRODUCT_REQUEST_VIEW",
+                "BRANCH_VIEW"));
         // STAFF deliberately excludes PRODUCT_VIEW_COST - counter staff must
         // not see purchase cost or margin, enforced server-side (see V1's
         // identical comment on the seed data this mirrors).
@@ -133,9 +145,13 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 "PAYMENT_VIEW", "INVENTORY_VIEW",
                 "COUPON_VIEW",
                 "PROJECT_VIEW",
+                // Counter staff is exactly who hits an out-of-stock item and
+                // needs an alternative - same footing as raising an invoice.
+                "PRODUCT_REQUEST_VIEW", "PRODUCT_REQUEST_MANAGE",
                 // Counter staff takes orders the same way it raises
                 // quotations and invoices.
-                "SALES_ORDER_VIEW", "SALES_ORDER_MANAGE"));
+                "SALES_ORDER_VIEW", "SALES_ORDER_MANAGE",
+                "BRANCH_VIEW"));
     }
 
     private final TenantRepository tenantRepository;
@@ -144,6 +160,9 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
     private final UserConsentRepository userConsentRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SubscriptionLifecycleService subscriptionLifecycleService;
+    private final EmailOtpService emailOtpService;
+    private final SecurityProperties securityProperties;
 
     @Override
     @Transactional
@@ -159,12 +178,37 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
             throw new DuplicateResourceException("Email", request.email());
         }
 
+        // CR-078 - the address must have received a code before anything is
+        // created. Checked after the duplicate checks so a taken email is
+        // reported as taken, not as "wrong code". The switch exists for the
+        // dev/test profiles; production leaves it on.
+        if (securityProperties.registrationEmailVerification()) {
+            if (request.emailCode() == null
+                    || !emailOtpService.verify(request.email(), EmailOtpPurpose.EMAIL_VERIFY, request.emailCode())) {
+                throw new BusinessException("The email verification code is invalid or has expired. Request a new one.",
+                        HttpStatus.BAD_REQUEST, "INVALID_OTP");
+            }
+        }
+
         Tenant tenant = tenantRepository.save(Tenant.builder()
                 .slug(uniqueSlug(request.shopName()))
                 .name(request.shopName().trim())
                 .status(TenantStatus.ACTIVE)
                 .subscriptionTier(request.subscriptionTier() != null ? request.subscriptionTier() : SubscriptionTier.FREE)
                 .build());
+
+        // CR-088. subscriptionTier on the request is the legacy self-declared
+        // choice (CR-027, predates the plan catalogue) - honoured as an
+        // immediate ACTIVE plan with no trial. Every other new shop gets the
+        // configured trial policy (app.subscription.trial-days/-tier). Either
+        // way this call joins THIS transaction rather than starting its own -
+        // see SubscriptionLifecycleService.startForNewTenant()'s own note on
+        // why: tenant is not committed yet.
+        if (request.subscriptionTier() != null) {
+            subscriptionLifecycleService.startForNewTenant(tenant.getId(), request.subscriptionTier());
+        } else {
+            subscriptionLifecycleService.startForNewTenant(tenant.getId());
+        }
 
         // "OWNER gets every permission that exists" - except the DEVELOPER
         // module, which is not an ERP capability (CR-045). Without this
@@ -199,6 +243,8 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
                 .tokenVersion(0)
                 .failedLoginAttempts(0)
                 .passwordChangedAt(LocalDateTime.now())
+                // CR-078 - proven by the code above; null when the check is switched off.
+                .emailVerifiedAt(securityProperties.registrationEmailVerification() ? LocalDateTime.now() : null)
                 .build());
 
         recordConsent(tenant, owner, ConsentType.TERMS, request.termsVersion(), true);
@@ -262,6 +308,35 @@ public class TenantRegistrationServiceImpl implements TenantRegistrationService 
         boolean emailFree = email == null || email.isBlank()
                 || !userRepository.existsByEmailIgnoreCase(email.trim());
         return new IdentifierAvailabilityResponse(mobileFree, emailFree);
+    }
+
+    @Override
+    @Transactional
+    public OtpSentResponse sendVerificationCode(String email) {
+        String address = email.trim();
+        if (userRepository.existsByEmailIgnoreCase(address)) {
+            throw new DuplicateResourceException("Email", address);
+        }
+        EmailOtpService.IssueResult result = emailOtpService.issue(address, null, EmailOtpPurpose.EMAIL_VERIFY, null);
+        if (result == EmailOtpService.IssueResult.COOLDOWN) {
+            throw new BusinessException("Please wait a minute before requesting another code",
+                    HttpStatus.TOO_MANY_REQUESTS, "OTP_COOLDOWN");
+        }
+        return new OtpSentResponse(maskEmail(address), EmailOtpService.RESEND_COOLDOWN_SECONDS);
+    }
+
+    /** Same masking as AuthServiceImpl - one shape of hint across the sign-in and signup screens. */
+    private static String maskEmail(String email) {
+        int at = email.indexOf('@');
+        if (at <= 0) {
+            return "***";
+        }
+        String local = email.substring(0, at);
+        String domain = email.substring(at);
+        if (local.length() <= 2) {
+            return local.charAt(0) + "***" + domain;
+        }
+        return local.charAt(0) + "***" + local.charAt(local.length() - 1) + domain;
     }
 
     @Override

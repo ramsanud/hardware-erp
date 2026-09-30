@@ -117,15 +117,22 @@ public class SecurityConfig {
                             "/v1/auth/refresh",
                             "/v1/auth/forgot-password",
                             "/v1/auth/reset-password",
+                            // CR-078 - the code path of the same reset email.
+                            "/v1/auth/reset-password/code",
                             // CR-058 - carry the MFA challenge token from
                             // login in the body; there is no session yet.
                             "/v1/auth/mfa/enroll",
                             "/v1/auth/mfa/enroll/confirm",
                             "/v1/auth/mfa/verify",
+                            // CR-078 - resend the emailed sign-in code; the
+                            // challenge token in the body is the only credential.
+                            "/v1/auth/mfa/email/resend",
                             "/v1/tenants/register",
                             "/v1/tenants/register/slug-available",
                             // CR-062 - same public signup wizard, rate-limited alongside it.
                             "/v1/tenants/register/identifier-available",
+                            // CR-078 - the email code the signup wizard asks for.
+                            "/v1/tenants/register/send-code",
                             // Meta calls this with no JWT of ours - authenticity is
                             // enforced inside WhatsAppWebhookController itself (the
                             // GET handshake's hub.verify_token, the POST's
@@ -134,7 +141,17 @@ public class SecurityConfig {
                             // Razorpay calls this with no JWT of ours either -
                             // authenticity is the X-Razorpay-Signature HMAC check
                             // inside SubscriptionBillingService.handleWebhook().
-                            "/v1/webhooks/razorpay").permitAll()
+                            "/v1/webhooks/razorpay",
+                            // CR-088. The pricing page is shown before login.
+                            // Prices, names and feature lists only, no tenant
+                            // data. Every other /v1/subscriptions/* and
+                            // /v1/features/* path still requires auth.
+                            "/v1/subscriptions/plans",
+                            // CR-085 - Twilio and SendGrid delivery callbacks; each
+                            // verifies the provider's own signature and refuses
+                            // everything while its secret is unconfigured.
+                            "/v1/webhooks/twilio/status",
+                            "/v1/webhooks/sendgrid/events").permitAll()
                     // /actuator/health is the hosting platform's liveness probe
                     // and must answer before anyone signs in. The API browser is
                     // public only where it is served at all - application-prod.yml

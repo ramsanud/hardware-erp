@@ -19,6 +19,17 @@ public enum RateLimitRule {
      * budget the size of REGISTER_PER_IP's would lock them out mid-form.
      */
     REGISTRATION_AVAILABILITY_PER_IP(Duration.ofMinutes(1)),
+    /** CR-078. Sending a signup verification code. Hourly: a code is an email to an address the caller chose. */
+    REGISTRATION_CODE_PER_IP(Duration.ofHours(1)),
+    /**
+     * BUG-SEC-007 (found under CR-078). /mfa/verify had no rate limit at all,
+     * so a six-digit TOTP or email code could be guessed at wire speed for
+     * the whole ten-minute life of a challenge token. Email codes die after
+     * five wrong guesses on their own; TOTP has no such counter, so this
+     * bucket is the only thing between a stolen password and a brute-forced
+     * second factor.
+     */
+    MFA_VERIFY_PER_IP(Duration.ofMinutes(1)),
 
     /** Platform Admin Console login - a far smaller, far higher-value account pool than tenant logins. */
     PLATFORM_ADMIN_LOGIN_PER_IP(Duration.ofMinutes(1));

@@ -70,6 +70,7 @@ class SubscriptionBillingServiceImplTest {
     @Mock private PlatformSubscriptionOrderRepository orderRepository;
     @Mock private PlatformSubscriptionPaymentRepository paymentRepository;
     @Mock private TenantRepository tenantRepository;
+    @Mock private com.hardware.erp.subscription.service.SubscriptionLifecycleService subscriptionLifecycleService;
 
     private Tenant tenant;
 
@@ -107,7 +108,8 @@ class SubscriptionBillingServiceImplTest {
     private SubscriptionBillingServiceImpl serviceWith(EffectiveRazorpayConfig config, DeploymentProperties deployment) {
         when(configResolver.resolve()).thenReturn(config);
         return new SubscriptionBillingServiceImpl(
-                deployment, configResolver, razorpayOrderClient, orderRepository, paymentRepository, tenantRepository);
+                deployment, configResolver, razorpayOrderClient, orderRepository, paymentRepository, tenantRepository,
+                subscriptionLifecycleService);
     }
 
     /** CR-059 - the hosted deployment, where billing applies. What every pre-CR-059 test assumed. */

@@ -97,6 +97,15 @@ export interface InvoiceResponse {
   bankAccountId?: number | null;
   bankAccountLabel?: string | null;
   bankAccountQrId?: number | null;
+  /** CR-091 Phase 1. INTRA = CGST+SGST, INTER = IGST. Absent on rows the V62 backfill could not resolve. */
+  supplyType?: 'INTRA' | 'INTER' | null;
+  placeOfSupplyStateCode?: string | null;
+  cgstDisplay?: string;
+  sgstDisplay?: string;
+  igstDisplay?: string;
+  /** CR-091 Phase 3. Present only when status is CANCELLED. */
+  cancelledAt?: string | null;
+  cancellationReason?: string | null;
 }
 
 export interface InvoiceSummaryResponse {

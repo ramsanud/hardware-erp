@@ -38,6 +38,10 @@ import com.hardware.erp.tenant.repository.TenantRepository;
 import com.hardware.erp.tenant.repository.TenantLogoRepository;
 import com.hardware.erp.tenant.repository.TenantSignatureRepository;
 import com.hardware.erp.tenant.repository.TenantUpiQrRepository;
+import com.hardware.erp.common.util.GstSplit;
+import com.hardware.erp.customer.ledger.CustomerLedgerService;
+import com.hardware.erp.inventory.repository.StockRepository;
+import com.hardware.erp.invoice.dto.InvoiceCancelRequest;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
 import org.springframework.data.domain.Pageable;
@@ -89,6 +93,10 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final CouponRepository couponRepository;
     private final TenantBankAccountRepository tenantBankAccountRepository;
     private final TenantBankAccountQrRepository tenantBankAccountQrRepository;
+    private final CustomerLedgerService customerLedgerService;
+    private final com.hardware.erp.branch.service.BranchContext branchContext;
+    private final com.hardware.erp.common.idempotency.IdempotencyService idempotencyService;
+    private final StockRepository stockRepository;
 
     @Override
     @Transactional
@@ -104,6 +112,7 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         Invoice invoice = Invoice.builder()
                 .tenant(tenantRepository.getReferenceById(tenantId))
+                .branchId(branchContext.actingBranchId(tenantId))
                 .invoiceNumber(nextInvoiceNumber(tenantId))
                 .customer(customer)
                 .invoiceDate(LocalDate.now())
@@ -150,6 +159,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         invoice.setDiscountPaise(discountPaise);
         invoice.setPaidPaise(0L);
         invoice.recalculate();
+        applyGstSplitAndCost(invoice, customer, tenantId);
 
         Invoice saved = invoiceRepository.save(invoice);
 
@@ -160,6 +170,11 @@ public class InvoiceServiceImpl implements InvoiceService {
         if (saved.getCoupon() != null) {
             couponService.recordUsage(saved.getCoupon().getId());
         }
+
+        // CR-091 Phase 4 - the receivable, in the same transaction as the
+        // invoice, so the two commit or roll back together (CR-021's stock rule).
+        customerLedgerService.postInvoice(tenantId, customer.getId(), saved.getId(), saved.getInvoiceNumber(),
+                saved.getTotalPaise(), LocalDateTime.now());
 
         // Stock leaves after the invoice has an id, so the movement's
         // reference_id points at a row that already exists. Free units leave
@@ -182,6 +197,8 @@ public class InvoiceServiceImpl implements InvoiceService {
                     .build());
             payments = List.of(payment);
             saved.setPaidPaise(initialPayment);
+            customerLedgerService.postPayment(tenantId, customer.getId(), payment.getId(), saved.getInvoiceNumber(),
+                    initialPayment, payment.getPaymentDate());
             saved.recalculate();
             saved = invoiceRepository.save(saved);
         }
@@ -281,11 +298,39 @@ public class InvoiceServiceImpl implements InvoiceService {
         return qr;
     }
 
+
+    @Override
+    @Transactional
+    public InvoiceResponse create(InvoiceRequest request, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return create(request);
+        }
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        return idempotencyService.execute(tenantId, "invoice.create", idempotencyKey, request,
+                InvoiceResponse.class, () -> create(request));
+    }
+
+    @Override
+    @Transactional
+    public InvoiceResponse addPayment(Long invoiceId, PaymentRequest request, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return addPayment(invoiceId, request);
+        }
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        return idempotencyService.execute(tenantId, "invoice.payment", idempotencyKey, new IdempotencyPayload(invoiceId, request),
+                InvoiceResponse.class, () -> addPayment(invoiceId, request));
+    }
+
+    /** The key is scoped to one invoice: the same key against another invoice is a different request, not a replay. */
+    private record IdempotencyPayload(Long documentId, Object request) {}
+
     @Override
     @Transactional
     public InvoiceResponse addPayment(Long invoiceId, PaymentRequest request) {
         Long tenantId = SecurityUtils.requireCurrentTenantId();
-        Invoice invoice = require(invoiceId, tenantId);
+        // BUG-BE-010 - row lock first; see InvoiceRepository.lockByIdAndTenantId.
+        Invoice invoice = invoiceRepository.lockByIdAndTenantId(invoiceId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Invoice", invoiceId));
 
         if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
             throw new BusinessException("A cancelled invoice cannot take a payment");
@@ -309,6 +354,8 @@ public class InvoiceServiceImpl implements InvoiceService {
         invoice.setPaidPaise(newPaid);
         invoice.recalculate();
         Invoice saved = invoiceRepository.save(invoice);
+        customerLedgerService.postPayment(tenantId, invoice.getCustomer().getId(), payment.getId(),
+                saved.getInvoiceNumber(), request.amountPaise(), payment.getPaymentDate());
 
         activityLog.action(MODULE, "PAYMENT", payment.getId(), saved.getInvoiceNumber(),
                 com.hardware.erp.common.activity.ActivityAction.CREATE,
@@ -404,8 +451,10 @@ public class InvoiceServiceImpl implements InvoiceService {
         invoice.setGstAmountPaise(gstTotal);
         invoice.setTotalPaise(subtotal + gstTotal);
         invoice.recalculate();
+        applyGstSplitAndCost(invoice, customer, tenantId);
 
         Invoice saved = invoiceRepository.save(invoice);
+        customerLedgerService.amendInvoice(tenantId, customer.getId(), saved.getId(), saved.getTotalPaise());
 
         // One movement per product that actually changed. A positive delta means
         // more is being sold, so stock leaves; a negative delta returns it.
@@ -436,14 +485,27 @@ public class InvoiceServiceImpl implements InvoiceService {
         return invoiceMapper.toResponse(saved, List.of());
     }
 
+    /**
+     * CR-091 Phase 3. Cancellation, never deletion - the row, its lines, its
+     * number and every payment against it stay exactly as issued. What
+     * changes: status, who/when/why, stock comes back (SALE_REVERSAL), and
+     * the customer ledger gets a credit for the full total. Any payment
+     * already taken is NOT reversed: the customer is then in advance, which
+     * the ledger shows honestly rather than a refund the shop may not have
+     * made. A refund, if one happens, is recorded as its own event.
+     */
     @Override
     @Transactional
-    public InvoiceResponse cancel(Long id) {
+    public InvoiceResponse cancel(Long id, InvoiceCancelRequest request) {
         Long tenantId = SecurityUtils.requireCurrentTenantId();
         Invoice invoice = require(id, tenantId);
 
         if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
             throw new BusinessException("This invoice is already cancelled");
+        }
+        String reason = request == null || request.reason() == null ? "" : request.reason().trim();
+        if (reason.isEmpty()) {
+            throw new BusinessException("A reason is required to cancel an invoice.");
         }
 
         for (InvoiceItem item : invoice.getItems()) {
@@ -452,11 +514,18 @@ public class InvoiceServiceImpl implements InvoiceService {
                     "Invoice " + invoice.getInvoiceNumber() + " cancelled");
         }
 
+        LocalDateTime now = LocalDateTime.now();
         invoice.setStatus(InvoiceStatus.CANCELLED);
+        invoice.setCancelledAt(now);
+        invoice.setCancelledBy(SecurityUtils.currentUserId().orElse(null));
+        invoice.setCancellationReason(reason);
         Invoice saved = invoiceRepository.save(invoice);
 
+        customerLedgerService.postInvoiceCancellation(tenantId, saved.getCustomer().getId(), saved.getId(),
+                saved.getInvoiceNumber(), saved.getTotalPaise(), now, reason);
+
         activityLog.deleted(MODULE, ENTITY, saved.getId(), saved.getInvoiceNumber(),
-                "Invoice cancelled, stock restored");
+                "Invoice cancelled, stock restored. Reason: " + reason);
 
         return invoiceMapper.toResponse(saved,
                 paymentRepository.findByInvoiceIdOrderByPaymentDateAsc(id));
@@ -503,6 +572,54 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         invoice.setCoupon(couponRepository.getReferenceById(result.couponId()));
         return result;
+    }
+
+    /**
+     * CR-091 Phases 1 and 6, in one pass over the lines so nothing can be
+     * frozen for one and not the other.
+     *
+     * GST: the supply type and place of supply are decided ONCE from the
+     * shop and customer as they are right now (GstSplit - the same rule the
+     * PDF prints and the GSTR-1 export files), then every line's already-
+     * computed lineGstPaise is split. The sum of the three columns equals
+     * lineGstPaise to the paisa, and the invoice totals are the sums of the
+     * lines - never an independent recomputation that could drift.
+     *
+     * Cost: each line freezes the stock row's weighted-average cost per unit
+     * at this moment. A product with no stock row yet (BUG-BE-003's normal
+     * case) falls back to its master purchase price - the same number V62
+     * backfilled with. COGS is computed from this column forever; a later
+     * purchase at a new price never rewrites an old sale's margin.
+     */
+    private void applyGstSplitAndCost(Invoice invoice, Customer customer, Long tenantId) {
+        Tenant tenant = tenantRepository.findById(tenantId).orElseThrow();
+        String placeOfSupply = GstSplit.placeOfSupply(customer.getStateCode(), customer.getGstNo(), tenant.getStateCode());
+        GstSplit.SupplyType supplyType = GstSplit.supplyType(tenant.getStateCode(), placeOfSupply);
+        invoice.setSupplyType(supplyType);
+        invoice.setPlaceOfSupplyStateCode(placeOfSupply);
+
+        long cgst = 0L;
+        long sgst = 0L;
+        long igst = 0L;
+        for (InvoiceItem item : invoice.getItems()) {
+            GstSplit.Split split = GstSplit.split(item.getLineGstPaise(), supplyType);
+            item.setCgstPaise(split.cgstPaise());
+            item.setSgstPaise(split.sgstPaise());
+            item.setIgstPaise(split.igstPaise());
+            cgst += split.cgstPaise();
+            sgst += split.sgstPaise();
+            igst += split.igstPaise();
+
+            Long productId = item.getProduct().getId();
+            long cost = stockRepository.findByTenantIdAndProductId(tenantId, productId)
+                    .map(stock -> stock.getAverageCostPaise() == null ? 0L : stock.getAverageCostPaise())
+                    .filter(average -> average > 0)
+                    .orElse(item.getProduct().getPurchasePricePaise() == null ? 0L : item.getProduct().getPurchasePricePaise());
+            item.setCostPricePaise(cost);
+        }
+        invoice.setCgstPaise(cgst);
+        invoice.setSgstPaise(sgst);
+        invoice.setIgstPaise(igst);
     }
 
     private InvoiceItem buildLine(InvoiceItemRequest request, Long tenantId) {

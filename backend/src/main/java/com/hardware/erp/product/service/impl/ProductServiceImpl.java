@@ -9,7 +9,6 @@ import com.hardware.erp.common.dto.PageResponse;
 import com.hardware.erp.common.exception.BusinessException;
 import com.hardware.erp.common.exception.DuplicateResourceException;
 import com.hardware.erp.common.exception.ResourceNotFoundException;
-import com.hardware.erp.invoice.entity.InvoiceStatus;
 import com.hardware.erp.product.dto.ProductDeletedResponse;
 import com.hardware.erp.product.dto.ProductPriceHistoryResponse;
 import com.hardware.erp.product.dto.ProductRequest;
@@ -22,13 +21,18 @@ import com.hardware.erp.product.entity.ProductStatus;
 import com.hardware.erp.product.mapper.ProductMapper;
 import com.hardware.erp.product.repository.BrandRepository;
 import com.hardware.erp.product.repository.CategoryRepository;
+import com.hardware.erp.product.repository.ProductFuzzyMatch;
 import com.hardware.erp.product.repository.ProductImageRepository;
 import com.hardware.erp.product.repository.ProductRepository;
+import com.hardware.erp.product.service.ProductSaleHistoryProvider;
 import com.hardware.erp.product.service.ProductService;
 import com.hardware.erp.security.SecurityUtils;
 import com.hardware.erp.tenant.repository.TenantRepository;
 import com.hardware.erp.tenant.service.EntitlementService;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -58,6 +62,9 @@ public class ProductServiceImpl implements ProductService {
     private static final String MODULE = "PRODUCT";
     private static final String ENTITY = "PRODUCT";
     private static final int PRICE_HISTORY_LIMIT = 20;
+    /** CR-097. A trigram needs three characters; shorter input has nothing to match on. */
+    private static final int FUZZY_TERM_MIN_LENGTH = 3;
+    private static final int FUZZY_TERM_MAX_LENGTH = 100;
 
     private final ProductRepository productRepository;
     private final DocumentSequenceService documentSequenceService;
@@ -68,7 +75,23 @@ public class ProductServiceImpl implements ProductService {
     private final ActivityLogService activityLog;
     private final TenantRepository tenantRepository;
     private final EntitlementService entitlementService;
-    private final com.hardware.erp.invoice.repository.InvoiceItemRepository invoiceItemRepository;
+    /** BUG-BE-008 - implemented by the invoice module; product never imports it. */
+    private final ProductSaleHistoryProvider saleHistoryProvider;
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    /**
+     * CR-097. pg_trgm.word_similarity_threshold for the fuzzy fallback: the
+     * share of the typed term's trigrams that must appear in a product's name
+     * or code for it to count as a close match. PostgreSQL's own default is
+     * 0.6; 0.5 admits one more wrong letter in a five-letter word ("hammr" ->
+     * "Hammer" is 0.67, "hamer" is 0.5) without letting "bolt" match "belt"
+     * (0.25). Validated on the way in by PostgreSQL itself - an out-of-range
+     * value fails the SET, never silently widens the search.
+     */
+    @Value("${app.search.fuzzy-word-similarity-threshold:0.5}")
+    private double fuzzyThreshold;
 
     @Override
     @Transactional
@@ -111,6 +134,13 @@ public class ProductServiceImpl implements ProductService {
                 .status(request.status())
                 .altUnitLabel(blankToNull(request.altUnitLabel()))
                 .altUnitConversionFactor(request.altUnitConversionFactor())
+                .subcategory(blankToNull(request.subcategory()))
+                .sizeLabel(blankToNull(request.sizeLabel()))
+                .material(blankToNull(request.material()))
+                .colorFinish(blankToNull(request.colorFinish()))
+                .shape(blankToNull(request.shape()))
+                .usageType(blankToNull(request.usageType()))
+                .productType(blankToNull(request.productType()))
                 .build();
 
         Product saved = productRepository.save(product);
@@ -188,16 +218,7 @@ public class ProductServiceImpl implements ProductService {
     public List<ProductPriceHistoryResponse> priceHistory(Long id) {
         Long tenantId = SecurityUtils.requireCurrentTenantId();
         require(id, tenantId);
-        return invoiceItemRepository.findRecentForProduct(id, tenantId, InvoiceStatus.CANCELLED,
-                        PageRequest.of(0, PRICE_HISTORY_LIMIT))
-                .stream()
-                .map(item -> new ProductPriceHistoryResponse(
-                        item.getInvoice().getInvoiceDate(),
-                        item.getInvoice().getInvoiceNumber(),
-                        item.getInvoice().getCustomer().getCustomerName(),
-                        item.getQuantity(),
-                        productMapper.rupees(item.getUnitPricePaise())))
-                .toList();
+        return saleHistoryProvider.recentSales(id, tenantId, PRICE_HISTORY_LIMIT);
     }
 
     @Override
@@ -205,11 +226,75 @@ public class ProductServiceImpl implements ProductService {
     public PageResponse<ProductSummaryResponse> search(String search, ProductStatus status,
                                                         Long categoryId, Long brandId,
                                                         Pageable pageable) {
-        Page<Product> page = productRepository.search(SecurityUtils.requireCurrentTenantId(),
-                blankToNull(search), status, categoryId, brandId, pageable);
+        Long tenantId = SecurityUtils.requireCurrentTenantId();
+        String term = blankToNull(search);
+        Page<Product> page = productRepository.search(tenantId, term, status, categoryId, brandId, pageable);
+
+        // CR-097. Exact (substring) matches always win; the trigram search
+        // only runs when there are none at all, so a page of real matches is
+        // never diluted with look-alikes and a page of look-alikes is never
+        // mistaken for real ones (matchScore says which it is).
+        if (page.getTotalElements() == 0 && term != null) {
+            String fuzzyTerm = fuzzyTerm(term);
+            if (fuzzyTerm != null) {
+                return fuzzySearch(tenantId, fuzzyTerm, status, categoryId, brandId, pageable);
+            }
+        }
+
         Set<Long> withImage = Set.copyOf(productImageRepository.findProductIdsWithImage(
                 page.getContent().stream().map(Product::getId).collect(Collectors.toSet())));
         return PageResponse.from(page, product -> productMapper.toSummary(product, withImage.contains(product.getId())));
+    }
+
+    /**
+     * CR-097. pg_trgm's closest matches for a term the substring search could
+     * not place, in the caller's tenant only.
+     *
+     * The threshold is set with SET LOCAL rather than SET or set_limit():
+     * both of those are session state, and a session is exactly what Hikari
+     * and Supabase's session pooler hand from one request to the next. LOCAL
+     * dies with this transaction, which is why this method must run inside
+     * search()'s read-only transaction and not in one of its own. The value
+     * is interpolated, not bound - SET takes no bind parameters - and comes
+     * from configuration, never from the request.
+     *
+     * The ids come back in score order and the entities are then loaded by
+     * id through the tenant-guarded batch read, so the summary is built by
+     * the very same mapper as an ordinary page: same columns, same absence of
+     * purchase price.
+     */
+    private PageResponse<ProductSummaryResponse> fuzzySearch(Long tenantId, String term, ProductStatus status,
+                                                             Long categoryId, Long brandId, Pageable pageable) {
+        entityManager.createNativeQuery("set local pg_trgm.word_similarity_threshold = " + fuzzyThreshold)
+                .executeUpdate();
+        Page<ProductFuzzyMatch> matches = productRepository.fuzzySearch(tenantId, term,
+                status == null ? null : status.name(), categoryId, brandId,
+                PageRequest.of(pageable.getPageNumber(), pageable.getPageSize()));
+
+        List<Long> ids = matches.getContent().stream().map(ProductFuzzyMatch::getProductId).toList();
+        Map<Long, Product> byId = productRepository.findAllByIdInAndTenantId(ids, tenantId).stream()
+                .collect(Collectors.toMap(Product::getId, product -> product));
+        Set<Long> withImage = Set.copyOf(productImageRepository.findProductIdsWithImage(Set.copyOf(ids)));
+        return PageResponse.from(matches, match -> productMapper.toSummary(
+                byId.get(match.getProductId()), withImage.contains(match.getProductId()), match.getScore()));
+    }
+
+    /**
+     * What the trigram search is given. Whitespace is collapsed because
+     * pg_trgm pads each word and a double space would manufacture trigrams
+     * that match nothing; the cap keeps a pasted paragraph from being trigram-
+     * decomposed on every keystroke of a debounced search box; and below
+     * three characters there is no trigram to match, so the fallback stays
+     * out of the way and the empty page stands. The term is always a bind
+     * parameter - nothing here is defending against injection, only against
+     * noise.
+     */
+    static String fuzzyTerm(String term) {
+        String collapsed = term.trim().replaceAll("\\s+", " ");
+        if (collapsed.length() > FUZZY_TERM_MAX_LENGTH) {
+            collapsed = collapsed.substring(0, FUZZY_TERM_MAX_LENGTH);
+        }
+        return collapsed.length() < FUZZY_TERM_MIN_LENGTH ? null : collapsed;
     }
 
     @Override

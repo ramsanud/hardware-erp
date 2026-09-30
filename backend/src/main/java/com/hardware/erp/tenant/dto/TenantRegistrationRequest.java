@@ -41,5 +41,13 @@ public record TenantRegistrationRequest(
         @Size(max = 20) String privacyVersion,
 
         /** Optional and revocable. Null is treated as "not granted" - never as consent. */
-        Boolean marketingConsent
+        Boolean marketingConsent,
+        /**
+         * CR-078. The six-digit code sent to `email` by /register/send-code.
+         * Nullable at the binding layer only so the dev/test profiles can turn
+         * the check off; with app.security.registration-email-verification on
+         * (the default) a missing or wrong code is 400 INVALID_OTP.
+         */
+        @Pattern(regexp = "^\\d{6}$", message = "Enter the 6-digit code from the email")
+        String emailCode
 ) {}

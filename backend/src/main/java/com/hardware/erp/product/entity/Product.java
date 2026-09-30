@@ -78,6 +78,34 @@ public class Product extends BaseEntity {
     private String hsnCode;
 
     /**
+     * CR-089 (Smart Substitute). Structured attributes for substitute
+     * matching - every one nullable, hardware products vary too much to
+     * make any of them mandatory. sizeLabel is free text ("4 Inch") rather
+     * than a parsed number - hardware sizes are not one unit system.
+     * usageType avoids the reserved-sounding "usage".
+     */
+    @Column(name = "subcategory", length = 100)
+    private String subcategory;
+
+    @Column(name = "size_label", length = 50)
+    private String sizeLabel;
+
+    @Column(name = "material", length = 100)
+    private String material;
+
+    @Column(name = "color_finish", length = 100)
+    private String colorFinish;
+
+    @Column(name = "shape", length = 50)
+    private String shape;
+
+    @Column(name = "usage_type", length = 100)
+    private String usageType;
+
+    @Column(name = "product_type", length = 100)
+    private String productType;
+
+    /**
      * CR-053 backlog item 1. A secondary unit of measure, e.g. label="BOX",
      * conversionFactor=12.0000 meaning 1 BOX = 12 of this product's own
      * `unit`. Both null together for a product with no alternate unit -

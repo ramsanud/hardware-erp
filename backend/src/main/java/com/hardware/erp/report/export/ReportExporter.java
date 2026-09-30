@@ -3,6 +3,8 @@ package com.hardware.erp.report.export;
 import com.hardware.erp.report.export.ReportDocument.Column;
 import com.hardware.erp.report.export.ReportDocument.Table;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVPrinter;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -15,8 +17,10 @@ import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -200,5 +204,43 @@ public class ReportExporter {
         String cleaned = heading.replaceAll("[\\[\\]:*?/\\\\]", " ").trim();
         if (cleaned.length() > 28) cleaned = cleaned.substring(0, 28).trim();
         return index == 0 ? cleaned : cleaned + " " + (index + 1);
+    }
+
+    /**
+     * CR-101. A workbook has sheets; a CSV file does not, so a document with
+     * more than one table is written as one sheet's worth of rows per table,
+     * separated by a blank line and its own heading - the same shape
+     * TenantAnalyticsExportServiceImpl already uses for its two-section CSV.
+     * UTF-8 with a BOM: without it Excel misreads the Rupee sign and any
+     * Tamil text in a party name as a different codepage entirely.
+     */
+    public byte[] toCsv(ReportDocument document) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            out.write(0xEF); out.write(0xBB); out.write(0xBF);
+            try (CSVPrinter printer = new CSVPrinter(
+                    new OutputStreamWriter(out, StandardCharsets.UTF_8), CSVFormat.DEFAULT)) {
+                printer.printRecord(document.title());
+                for (String caption : document.captions()) {
+                    printer.printRecord(caption);
+                }
+                for (Table table : document.tables()) {
+                    printer.println();
+                    if (table.heading() != null) {
+                        printer.printRecord(table.heading());
+                    }
+                    printer.printRecord(table.columns().stream().map(Column::header).toList());
+                    for (List<String> row : table.rows()) {
+                        printer.printRecord(row);
+                    }
+                    if (table.totals() != null) {
+                        printer.printRecord(table.totals());
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to build the report CSV", e);
+        }
+        return out.toByteArray();
     }
 }

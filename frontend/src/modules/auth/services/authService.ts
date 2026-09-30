@@ -2,8 +2,8 @@ import { apiDelete, apiGet, apiPost, apiPut } from '@/services/apiClient';
 import type {
   CaptchaConfigResponse,
   ChangePasswordRequest, ForgotPasswordRequest, LoginChallengeResponse, LoginRequest,
-  LoginResponse, MfaConfirmResponse, MfaEnrollResponse,
-  ResetPasswordRequest, SessionResponse, UpdateProfileRequest, UserResponse,
+  LoginResponse, MfaConfirmResponse, MfaEnrollResponse, OtpSentResponse,
+  ResetPasswordRequest, SessionResponse, StepUpResponse, UpdateProfileRequest, UserResponse,
 } from '../types';
 
 /** Backend: auth/controller/AuthController.java */
@@ -18,9 +18,13 @@ export const authService = {
   confirmMfaEnroll: (mfaToken: string, code: string) =>
     apiPost<MfaConfirmResponse>('/v1/auth/mfa/enroll/confirm', { mfaToken, code }),
 
-  /** Completes sign-in with an authenticator code or a one-time backup code. */
+  /** Completes sign-in with an authenticator code, a backup code, or - when the challenge is EMAIL - the code sent there. */
   verifyMfa: (mfaToken: string, code: string) =>
     apiPost<LoginResponse>('/v1/auth/mfa/verify', { mfaToken, code }),
+
+  /** CR-078 - another sign-in code to the same address; refused with 429 inside the 60-second cooldown. */
+  resendEmailCode: (mfaToken: string) =>
+    apiPost<OtpSentResponse>('/v1/auth/mfa/email/resend', { mfaToken }),
 
   /** Public - the sign-in page needs this before anyone has signed in. */
   captchaConfig: () => apiGet<CaptchaConfigResponse>('/v1/auth/captcha-config'),
@@ -45,6 +49,22 @@ export const authService = {
 
   resetPassword: (body: ResetPasswordRequest) =>
     apiPost<void>('/v1/auth/reset-password', body),
+
+  /** CR-078 - the code path of forgot-password, for a phone where the emailed link opens the wrong browser. */
+  resetPasswordWithCode: (body: { identifier: string; code: string; newPassword: string }) =>
+    apiPost<void>('/v1/auth/reset-password/code', body),
+
+  /** CR-078 - sends a code to the signed-in user's CURRENT verified email, ahead of a sensitive change. */
+  sendStepUpCode: () => apiPost<OtpSentResponse>('/v1/auth/step-up/send', {}),
+
+  /** CR-078 - exchanges a correct step-up code for a short-lived stepUpToken. */
+  verifyStepUp: (code: string) => apiPost<StepUpResponse>('/v1/auth/step-up/verify', { code }),
+
+  /** CR-078 - adds an authenticator app to an account that has been signing in with email codes. */
+  beginMfaSetup: () => apiPost<MfaEnrollResponse>('/v1/auth/mfa/setup', {}),
+
+  /** CR-078 - confirms beginMfaSetup and returns ten backup codes, shown exactly once. */
+  confirmMfaSetup: (code: string) => apiPost<string[]>('/v1/auth/mfa/setup/confirm', { code }),
 
   sessions: () => apiGet<SessionResponse[]>('/v1/auth/sessions'),
 

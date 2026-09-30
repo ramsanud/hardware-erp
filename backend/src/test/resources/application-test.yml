@@ -35,6 +35,14 @@ app:
     cookie-name: erp_refresh_token
     cookie-secure: false
     allowed-origins: http://localhost:5173
+    # CR-078 - both email-code switches are OFF for the suite as a whole.
+    # Every seeded account has an email, so with the fallback on the shared
+    # login() helper would be sent a code instead of the TOTP enrollment it
+    # completes, and every registration IT would need a code it never asked
+    # for. EmailOtpFlowIT turns both back on for itself and captures the
+    # codes through mocked mail senders.
+    mfa-email-fallback: false
+    registration-email-verification: false
 
   rate-limit:
     # Off by default. RateLimitIT switches it on with @TestPropertySource so

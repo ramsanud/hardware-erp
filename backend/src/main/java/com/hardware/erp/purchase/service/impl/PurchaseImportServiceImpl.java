@@ -72,6 +72,7 @@ public class PurchaseImportServiceImpl implements PurchaseImportService {
     private final TenantRepository tenantRepository;
     private final PurchaseMapper purchaseMapper;
     private final ActivityLogService activityLog;
+    private final com.hardware.erp.branch.service.BranchContext branchContext;
 
     @Override
     @Transactional(readOnly = true)
@@ -207,6 +208,7 @@ public class PurchaseImportServiceImpl implements PurchaseImportService {
 
         Purchase purchase = Purchase.builder()
                 .tenant(tenantRepository.getReferenceById(tenantId))
+                .branchId(branchContext.actingBranchId(tenantId))
                 .purchaseNumber(nextPurchaseNumber(tenantId))
                 .supplier(supplier)
                 .supplierBillNumber(blankToNull(request.supplierBillNumber()))
@@ -298,8 +300,10 @@ public class PurchaseImportServiceImpl implements PurchaseImportService {
         Purchase saved = purchaseRepository.save(purchase);
 
         for (PurchaseItem item : saved.getItems()) {
-            stockService.applyMovement(item.getProduct().getId(), item.getQuantity(),
-                    MovementType.PURCHASE_RECEIPT, "PURCHASE", saved.getId(),
+            // CR-091 Phase 6 - same weighted-average cost update as the
+            // manual purchase path.
+            stockService.applyPurchaseReceipt(item.getProduct().getId(), item.getQuantity(),
+                    item.getUnitPricePaise(), "PURCHASE", saved.getId(),
                     "Imported from " + file.getOriginalFilename());
         }
 
@@ -344,7 +348,8 @@ public class PurchaseImportServiceImpl implements PurchaseImportService {
                 row.newProductSku(), row.newProductName(), row.newProductCategoryId(), row.newProductBrandId(),
                 null, null, null, row.newProductUnit(), null, null,
                 row.gstRatePercent(), row.unitPricePaise(), row.unitPricePaise(), row.unitPricePaise(),
-                BigDecimal.ZERO, BigDecimal.ZERO, ProductStatus.ACTIVE, null, null);
+                BigDecimal.ZERO, BigDecimal.ZERO, ProductStatus.ACTIVE, null, null,
+                null, null, null, null, null, null, null);
         var created = productService.create(request);
         return productRepository.findByIdAndTenantId(created.id(), tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", created.id()));

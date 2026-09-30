@@ -403,6 +403,16 @@ export function ProductListPage() {
         </Select>
       </div>
 
+      {/* CR-097. The server serves pg_trgm's closest matches when the typed
+          term matches nothing outright; matchScore is set only on that kind of
+          page. Say so, or "towr bolt" quietly showing Tower Bolt reads as the
+          search having ignored what was typed. */}
+      {!deletedMode && !loading && debouncedSearch && data?.content.some((row) => row.matchScore != null) ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          No exact matches for <span className="font-medium text-foreground">&ldquo;{debouncedSearch}&rdquo;</span> &mdash; showing the closest product names and codes.
+        </p>
+      ) : null}
+
       {deletedMode ? (
         <Card>
           {deletedError ? (

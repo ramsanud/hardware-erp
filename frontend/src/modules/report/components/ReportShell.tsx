@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { FileDown, FileSpreadsheet, Inbox } from 'lucide-react';
+import { FileDown, FileSpreadsheet, Inbox, Share2 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { DatePicker } from '@/shared/components/ui/date-picker';
 import { Alert, AlertDescription } from '@/shared/components/ui/alert';
@@ -14,6 +14,7 @@ import { ErrorState } from '@/shared/components/ErrorState';
 import { FormField } from '@/shared/components/FormField';
 import { ApiError } from '@/shared/types/api';
 import { cn, downloadBlob } from '@/shared/lib/utils';
+import { DocumentShareModal } from '@/modules/document/components/DocumentShareModal';
 import { reportService } from '../services/reportService';
 import type { ReportFormat } from '../types';
 
@@ -120,6 +121,7 @@ interface DownloadButtonsProps {
 export function DownloadButtons({ report, params, fileName, disabled }: DownloadButtonsProps) {
   const [busy, setBusy] = useState<ReportFormat | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const download = async (format: ReportFormat) => {
     setError(null);
@@ -144,7 +146,17 @@ export function DownloadButtons({ report, params, fileName, disabled }: Download
         <FileSpreadsheet className="h-4 w-4" aria-hidden />
         Excel
       </Button>
+      {/* CR-101 - the background queue: PDF, image or Excel, then WhatsApp / email / download. */}
+      <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => setShareOpen(true)} data-report-share>
+        <Share2 className="h-4 w-4" aria-hidden />
+        Share
+      </Button>
       {error ? <span className="text-xs text-destructive" role="alert">{error}</span> : null}
+      <DocumentShareModal
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        source={{ reportType: report.toUpperCase().replace(/-/g, '_'), params, label: fileName }}
+      />
     </div>
   );
 }

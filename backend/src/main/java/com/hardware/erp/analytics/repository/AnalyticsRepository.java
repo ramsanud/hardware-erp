@@ -257,4 +257,56 @@ public interface AnalyticsRepository extends JpaRepository<Invoice, Long> {
     List<ActivityRow> salesActivity(@Param("tenantId") Long tenantId,
                                     @Param("from") LocalDate from,
                                     @Param("to") LocalDate to);
+
+    // ---------------------------------------------------------------- CR-091 Phase 6: profit
+
+    interface ProfitRow {
+        Long getRevenuePaise();
+        Long getSalesReturnPaise();
+        Long getCogsPaise();
+        Long getReturnedCogsPaise();
+    }
+
+    /**
+     * Revenue: non-cancelled invoice totals in range. COGS: SUM(cost_price_paise
+     * * (quantity + free_quantity)) over those same invoices' lines - the
+     * frozen per-unit cost from the moment of sale, never today's price.
+     * Sales returns: credit note totals against those invoices, and their
+     * proportional COGS (returned units at the ORIGINAL line's frozen unit
+     * cost) - both netted out of revenue and COGS so a returned sale is not
+     * still counted as profit.
+     */
+    @Query(value = """
+           select coalesce((select sum(total_paise) from invoice
+                             where tenant_id = :tenantId and status <> 'CANCELLED'
+                               and invoice_date between :from and :to), 0)                    as "revenuePaise",
+                  coalesce((select sum(cn.total_paise) from credit_note cn
+                             join invoice i on i.invoice_id = cn.invoice_id
+                            where cn.tenant_id = :tenantId and cn.status = 'ISSUED'
+                              and i.status <> 'CANCELLED' and i.invoice_date between :from and :to), 0)
+                                                                                                as "salesReturnPaise",
+                  coalesce((select sum(ii.cost_price_paise * (ii.quantity + ii.free_quantity))
+                              from invoice_item ii join invoice i on i.invoice_id = ii.invoice_id
+                             where i.tenant_id = :tenantId and i.status <> 'CANCELLED'
+                               and i.invoice_date between :from and :to), 0)                   as "cogsPaise",
+                  coalesce((select sum(cni.quantity * ii.cost_price_paise)
+                              from credit_note_item cni
+                              join credit_note cn on cn.credit_note_id = cni.credit_note_id
+                              join invoice_item ii on ii.invoice_item_id = cni.invoice_item_id
+                              join invoice i on i.invoice_id = cn.invoice_id
+                             where cn.tenant_id = :tenantId and cn.status = 'ISSUED'
+                               and i.status <> 'CANCELLED' and i.invoice_date between :from and :to), 0)
+                                                                                                as "returnedCogsPaise"
+           """, nativeQuery = true)
+    ProfitRow profitFigures(@Param("tenantId") Long tenantId,
+                            @Param("from") LocalDate from,
+                            @Param("to") LocalDate to);
+
+    /** business_expense in range - "relevant direct costs" for net profit. */
+    @Query(value = """
+           select coalesce(sum(amount_paise), 0)
+           from business_expense
+           where tenant_id = :tenantId and expense_date between :from and :to
+           """, nativeQuery = true)
+    long expensesInRange(@Param("tenantId") Long tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to);
 }

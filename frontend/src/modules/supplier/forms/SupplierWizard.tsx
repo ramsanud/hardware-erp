@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { enterAdvances } from '@/shared/hooks/useEnterAdvances';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
 import { NumberInput } from '@/shared/components/ui/number-input';
@@ -370,7 +370,6 @@ export function SupplierWizard({ supplier, onSubmit, onCancel }: SupplierWizardP
           </Button>
         ) : (
           <Button type="button" onClick={submit} loading={submitting}>
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {isEdit ? 'Save changes' : 'Save Supplier'}
           </Button>
         )}

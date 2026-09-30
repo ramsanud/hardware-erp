@@ -56,6 +56,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
      */
     private static final String SLUG_AVAILABLE = "/v1/tenants/register/slug-available";
     private static final String IDENTIFIER_AVAILABLE = "/v1/tenants/register/identifier-available";
+    // CR-078 - the code path of the reset shares RESET's budget; the signup
+    // code send gets its own; and the three MFA verifiers get one they never
+    // had (BUG-SEC-007).
+    private static final String RESET_CODE = "/v1/auth/reset-password/code";
+    private static final String REGISTER_SEND_CODE = "/v1/tenants/register/send-code";
+    private static final String MFA_VERIFY = "/v1/auth/mfa/verify";
+    private static final String MFA_ENROLL_CONFIRM = "/v1/auth/mfa/enroll/confirm";
+    private static final String MFA_EMAIL_RESEND = "/v1/auth/mfa/email/resend";
 
     private final RateLimitService rateLimitService;
     private final ObjectMapper objectMapper;
@@ -91,8 +99,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 identifierOf(forwarded).ifPresent(id -> decisions.add(
                         rateLimitService.check(RateLimitRule.FORGOT_PASSWORD_PER_IDENTIFIER, id)));
             }
-            case RESET -> decisions.add(
+            case RESET, RESET_CODE -> decisions.add(
                     rateLimitService.check(RateLimitRule.RESET_PASSWORD_PER_IP, ip));
+            case REGISTER_SEND_CODE -> decisions.add(
+                    rateLimitService.check(RateLimitRule.REGISTRATION_CODE_PER_IP, ip));
+            case MFA_VERIFY, MFA_ENROLL_CONFIRM, MFA_EMAIL_RESEND -> decisions.add(
+                    rateLimitService.check(RateLimitRule.MFA_VERIFY_PER_IP, ip));
             case REFRESH -> decisions.add(
                     rateLimitService.check(RateLimitRule.REFRESH_PER_IP, ip));
             case REGISTER -> decisions.add(

@@ -66,7 +66,7 @@ export function SalesTrendChart() {
 
   return (
     <Card>
-      <CardHeader className="flex-row items-start justify-between gap-4 space-y-0 pb-2">
+      <CardHeader className="flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 space-y-0 pb-2">
         <div>
           <CardTitle className="text-base">Sales Growth</CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">Revenue from invoices raised</p>

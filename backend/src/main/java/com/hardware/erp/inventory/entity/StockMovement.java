@@ -63,6 +63,10 @@ public class StockMovement {
     @Column(name = "notes", length = 255)
     private String notes;
 
+    /** CR-092. The branch this movement happened at - the acting user's, else MAIN. Never client-supplied. */
+    @Column(name = "branch_id", nullable = false)
+    private Long branchId;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

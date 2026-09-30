@@ -46,5 +46,13 @@ public record ProductResponse(
         boolean hasImage,
 
         @Schema(description = "CR-053 backlog item 1", example = "BOX") String altUnitLabel,
-        @Schema(example = "12") BigDecimal altUnitConversionFactor
+        @Schema(example = "12") BigDecimal altUnitConversionFactor,
+
+        @Schema(description = "CR-089. All optional - structured attributes for Smart Substitute matching.", example = "Door Bolts") String subcategory,
+        @Schema(example = "4 Inch") String sizeLabel,
+        @Schema(example = "Stainless Steel") String material,
+        @Schema(example = "Matte Black") String colorFinish,
+        @Schema(example = "Straight") String shape,
+        @Schema(example = "Door Security") String usageType,
+        @Schema(example = "Tower Bolt") String productType
 ) {}

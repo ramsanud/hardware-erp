@@ -13,6 +13,14 @@ public interface PurchaseService {
 
     PurchaseResponse create(PurchaseRequest request);
 
+    /**
+     * CR-102. Same as the one-argument form, run exactly once per
+     * {@code Idempotency-Key}: a retry after a lost response returns the
+     * stored result instead of a second purchase. A null or blank key means
+     * "no key" and the call simply runs. See IdempotencyService.
+     */
+    PurchaseResponse create(PurchaseRequest request, String idempotencyKey);
+
     /** The original uploaded bill file, tenant-scoped - never by document id alone. */
     PurchaseDocument getDocument(Long purchaseId);
 
@@ -21,6 +29,14 @@ public interface PurchaseService {
     PageResponse<PurchaseSummaryResponse> search(String search, PurchaseStatus status, Pageable pageable);
 
     PurchaseResponse addPayment(Long purchaseId, RecordPurchasePaymentRequest request);
+
+    /**
+     * CR-102. Same as the one-argument form, run exactly once per
+     * {@code Idempotency-Key}: a retry after a lost response returns the
+     * stored result instead of a second payment. A null or blank key means
+     * "no key" and the call simply runs. See IdempotencyService.
+     */
+    PurchaseResponse addPayment(Long purchaseId, RecordPurchasePaymentRequest request, String idempotencyKey);
 
     PurchaseResponse cancel(Long id);
 }

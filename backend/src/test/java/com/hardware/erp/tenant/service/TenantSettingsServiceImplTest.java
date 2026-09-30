@@ -9,6 +9,7 @@ import com.hardware.erp.billing.service.RazorpayConfigResolver;
 import com.hardware.erp.common.activity.ActivityLogService;
 import com.hardware.erp.common.exception.BusinessException;
 import com.hardware.erp.security.AppUserDetails;
+import com.hardware.erp.subscription.service.SubscriptionLifecycleService;
 import com.hardware.erp.tenant.dto.TenantSettingsRequest;
 import com.hardware.erp.tenant.entity.SubscriptionTier;
 import com.hardware.erp.tenant.entity.Tenant;
@@ -55,6 +56,7 @@ class TenantSettingsServiceImplTest {
     @Mock private ActivityLogService activityLog;
     @Mock private SubscriptionService subscriptionService;
     @Mock private RazorpayConfigResolver razorpayConfigResolver;
+    @Mock private SubscriptionLifecycleService subscriptionLifecycleService;
 
     private Tenant tenant;
 
@@ -86,7 +88,7 @@ class TenantSettingsServiceImplTest {
         when(razorpayConfigResolver.resolve()).thenReturn(config);
         return new TenantSettingsServiceImpl(
                 tenantRepository, logoRepository, signatureRepository, upiQrRepository,
-                activityLog, subscriptionService, razorpayConfigResolver);
+                activityLog, subscriptionService, razorpayConfigResolver, subscriptionLifecycleService);
     }
 
     private TenantSettingsRequest requestWithTier(SubscriptionTier tier) {

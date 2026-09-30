@@ -28,7 +28,7 @@ class SecurityPropertiesTest {
     private SecurityProperties bind(Map<String, Object> properties) {
         return new Binder(new MapConfigurationPropertySource(properties))
                 .bind("app.security", SecurityProperties.class)
-                .orElseGet(() -> new SecurityProperties(null, null, null, null, null));
+                .orElseGet(() -> new SecurityProperties(null, null, null, null, null, null, null));
     }
 
     /** What an env file line like "MFA_REQUIRED=" or a blank dashboard box produces. */
@@ -38,6 +38,8 @@ class SecurityPropertiesTest {
         map.put("app.security.cookie-name", "");
         map.put("app.security.cookie-secure", "");
         map.put("app.security.mfa-required", "");
+        map.put("app.security.mfa-email-fallback", "");
+        map.put("app.security.registration-email-verification", "");
         map.put("app.security.allowed-origins", "");
         return map;
     }
@@ -52,6 +54,16 @@ class SecurityPropertiesTest {
                 .isEqualTo(SecurityProperties.RefreshTokenTransport.COOKIE);
         assertThat(properties.cookieName()).isEqualTo("erp_refresh_token");
         assertThat(properties.allowedOrigins()).isEmpty();
+    }
+
+    /** CR-078 - the two email-code switches default the secure way too: a blank never removes a check. */
+    @Test
+    @DisplayName("blank CR-078 switches keep registration verification on and email fallback on")
+    void blankEmailOtpSwitchesDefaultSecurely() {
+        SecurityProperties properties = bind(allBlank());
+
+        assertThat(properties.registrationEmailVerification()).isTrue();
+        assertThat(properties.mfaEmailFallback()).isTrue();
     }
 
     @Test

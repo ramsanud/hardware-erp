@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { AppLayout } from '@/layouts/AppLayout';
@@ -35,11 +36,25 @@ import { PurchaseListPage } from '@/modules/purchase/pages/PurchaseListPage';
 import { PurchaseDetailPage } from '@/modules/purchase/pages/PurchaseDetailPage';
 import { PurchaseCreatePage } from '@/modules/purchase/pages/PurchaseCreatePage';
 import { DashboardPage } from '@/modules/dashboard/pages/DashboardPage';
+import { ProfitReportPage } from '@/modules/report/pages/ProfitReportPage';
+import { SyncPage } from '@/modules/sync/pages/SyncPage';
+import { BranchesPage } from '@/modules/branch/pages/BranchesPage';
+import { BRANCH_ROUTES } from '@/modules/branch/constants';
+import { InsightsPage } from '@/modules/insights/pages/InsightsPage';
+import { INSIGHTS_ROUTES } from '@/modules/insights/constants';
+import { SYNC_ROUTES } from '@/modules/sync/constants';
 import { SETTINGS_ROUTES } from '@/modules/settings/constants';
 import { ShopSettingsPage } from '@/modules/settings/pages/ShopSettingsPage';
 import { WhatsAppSettingsPage } from '@/modules/settings/pages/WhatsAppSettingsPage';
 import { NotificationHistoryPage } from '@/modules/notification/pages/NotificationHistoryPage';
 import { AppearancePage } from '@/modules/settings/pages/AppearancePage';
+import { SUBSCRIPTION_ROUTES } from '@/modules/subscription/constants';
+import { SubscriptionPage } from '@/modules/subscription/pages/SubscriptionPage';
+import { SUBSTITUTE_ROUTES } from '@/modules/substitute/constants';
+import { ProductRequestListPage } from '@/modules/substitute/pages/ProductRequestListPage';
+import { ProductRequestDetailPage } from '@/modules/substitute/pages/ProductRequestDetailPage';
+import { DISCOVERY_ROUTES } from '@/modules/discovery/constants';
+import { NotificationsPage } from '@/modules/discovery/pages/NotificationsPage';
 import { QUOTATION_ROUTES } from '@/modules/quotation/constants';
 import { QuotationListPage } from '@/modules/quotation/pages/QuotationListPage';
 import { QuotationDetailPage } from '@/modules/quotation/pages/QuotationDetailPage';
@@ -71,6 +86,9 @@ import { TallyExportPage } from '@/modules/tools/pages/TallyExportPage';
 import { REPORT_ROUTES } from '@/modules/report/constants';
 import { ReportsPage } from '@/modules/report/pages/ReportsPage';
 import { NotFoundPage } from '@/shared/components/NotFoundPage';
+import { LoadingState } from '@/shared/components/LoadingState';
+import { LANDING_ROUTES } from '@/modules/landing/constants';
+import { useAuth } from '@/modules/auth/hooks/AuthProvider';
 import { PlatformAdminAuthProvider } from '@/modules/platform-admin/hooks/PlatformAdminAuthProvider';
 import { PlatformAdminLoginPage } from '@/modules/platform-admin/pages/PlatformAdminLoginPage';
 import { PlatformAdminMfaVerifyPage } from '@/modules/platform-admin/pages/PlatformAdminMfaVerifyPage';
@@ -96,6 +114,30 @@ import { PlatformAdminProtectedRoute } from '@/modules/platform-admin/routes/Pla
 import { ProtectedRoute } from './ProtectedRoute';
 import { RequirePermission } from './RequirePermission';
 
+/*
+ * CR-100. The landing page is the only lazy route: it pulls in `motion` for
+ * the integrations visual, and a signed-in user opening the app should not
+ * pay for a page they are redirected away from.
+ */
+const LandingPage = lazy(() => import('@/modules/landing/pages/LandingPage'));
+
+/**
+ * CR-100. `/` is the front door for a visitor and the dashboard for a user.
+ * Waiting on `initialising` matters: the startup refresh is in flight for a
+ * moment after a reload, and rendering the landing page in that gap would
+ * flash marketing at someone who is already signed in.
+ */
+function LandingRoute() {
+  const { isAuthenticated, initialising } = useAuth();
+  if (initialising) return <LoadingState variant="page" />;
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  return (
+    <Suspense fallback={<LoadingState variant="page" />}>
+      <LandingPage />
+    </Suspense>
+  );
+}
+
 /**
  * Routes are declared per module. Modules 2-12 add their own block here and
  * nothing else in this file changes.
@@ -103,6 +145,9 @@ import { RequirePermission } from './RequirePermission';
 export function AppRoutes() {
   return (
     <Routes>
+      {/* Public front door (CR-100). Above ProtectedRoute on purpose. */}
+      <Route path={LANDING_ROUTES.home} element={<LandingRoute />} />
+
       {/*
         Platform Admin Console (CR-054) - deliberately outside AuthLayout/
         AppLayout and the tenant AuthProvider entirely. Its own provider
@@ -208,12 +253,22 @@ export function AppRoutes() {
             <Route path="/products/:id" element={<ProductDetailPage />} />
           </Route>
 
+          {/* CR-089. Permission gate here is UX only - the plan gate
+              (Premium) is enforced server-side and surfaces as the
+              upgrade dialog on the page itself. */}
+          <Route element={<RequirePermission permission={PERMISSIONS.PRODUCT_REQUEST_VIEW} />}>
+            <Route path={SUBSTITUTE_ROUTES.list} element={<ProductRequestListPage />} />
+            <Route path="/product-requests/:id" element={<ProductRequestDetailPage />} />
+          </Route>
+
           <Route element={<RequirePermission permission={PERMISSIONS.INVOICE_VIEW} />}>
             <Route path={INVOICE_ROUTES.list} element={<InvoiceListPage />} />
             <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
           </Route>
           <Route element={<RequirePermission permission={PERMISSIONS.INVOICE_CREATE} />}>
             <Route path={INVOICE_ROUTES.create} element={<InvoiceCreatePage />} />
+            {/* CR-091 Phase 9 - syncing an offline invoice is exactly the authority to create one. */}
+            <Route path={SYNC_ROUTES.outbox} element={<SyncPage />} />
           </Route>
 
           <Route element={<RequirePermission permission={PERMISSIONS.INVENTORY_VIEW} />}>
@@ -272,6 +327,7 @@ export function AppRoutes() {
             <Route path={SETTINGS_ROUTES.shop} element={<ShopSettingsPage />} />
             <Route path={SETTINGS_ROUTES.whatsapp} element={<WhatsAppSettingsPage />} />
             <Route path={SETTINGS_ROUTES.whatsappHistory} element={<NotificationHistoryPage />} />
+            <Route path={SUBSCRIPTION_ROUTES.pricing} element={<SubscriptionPage />} />
           </Route>
 
           {/* Developer inspection (CR-045). This gate is convenience only:
@@ -285,8 +341,21 @@ export function AppRoutes() {
               its sidebar entry: pure client-side arithmetic, no tenant data. */}
           <Route path={TOOLS_ROUTES.gstCalculator} element={<GstCalculatorPage />} />
 
+          {/* CR-090 - the shop's own notifications; any signed-in user, tenant-scoped server-side. */}
+          <Route path={DISCOVERY_ROUTES.notifications} element={<NotificationsPage />} />
+
+          {/* CR-092 - branches (every role sees them; managing is owner-only inside the page) and insights (a report). */}
+          <Route element={<RequirePermission permission={PERMISSIONS.BRANCH_VIEW} />}>
+            <Route path={BRANCH_ROUTES.list} element={<BranchesPage />} />
+          </Route>
+          <Route element={<RequirePermission permission={PERMISSIONS.REPORT_VIEW} />}>
+            <Route path={INSIGHTS_ROUTES.overview} element={<InsightsPage />} />
+          </Route>
+
           <Route element={<RequirePermission permission={PERMISSIONS.REPORT_FINANCIAL} />}>
             <Route path={TOOLS_ROUTES.tallyExport} element={<TallyExportPage />} />
+            {/* CR-091 Phase 6 - profit is owner/accountant information, same gate as the Tally export. */}
+            <Route path={REPORT_ROUTES.profit} element={<ProfitReportPage />} />
           </Route>
 
           {/* CR-086 / CR-087 - the report is in the URL; GSTR-1 is gated again inside the page. */}
@@ -298,8 +367,7 @@ export function AppRoutes() {
           {/* Every role can reach the dashboard - it only renders the cards
               a role actually has permission to see. */}
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          {/* `/` itself is the landing route above; a signed-in user is sent on to the dashboard from there. */}
         </Route>
       </Route>
 

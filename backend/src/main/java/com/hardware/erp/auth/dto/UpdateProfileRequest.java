@@ -20,5 +20,17 @@ public record UpdateProfileRequest(
         @Schema(example = "karthik@sarahardware.in")
         @Email(message = "Enter a valid email address")
         @Size(max = 255, message = "Email is too long")
-        String email
+        String email,
+
+        /**
+         * CR-078. Required only when `email` differs from the current address
+         * and that address has been verified: the login email is where
+         * password resets and sign-in codes go, so changing it is a takeover
+         * step and the present owner must re-confirm first. Obtained from
+         * /step-up/send + /step-up/verify. Ignored when the email is not
+         * changing, and not demanded when there is no verified address to
+         * send a code to.
+         */
+        @Schema(description = "From /v1/auth/step-up/verify. Required when changing a verified email.")
+        String stepUpToken
 ) {}

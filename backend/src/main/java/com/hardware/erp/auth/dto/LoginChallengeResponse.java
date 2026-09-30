@@ -16,6 +16,11 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * carries the finished session; mfaToken is null and enrollmentRequired is
  * false.
  *
+ * CR-078 added {@link #mfaMethod} and {@link #emailHint}: a user with no
+ * authenticator app is challenged with a code sent to their email instead of
+ * being sent to enrollment, and the verify screen needs to say where the
+ * code went without revealing the whole address.
+ *
  * The two are mutually exclusive and exactly one is always present, which is
  * why this stayed a single response type rather than becoming two endpoints:
  * the frontend asks "did I get a session or a challenge?" in one place, and
@@ -23,28 +28,36 @@ import io.swagger.v3.oas.annotations.media.Schema;
  */
 @Schema(name = "LoginChallengeResponse")
 public record LoginChallengeResponse(
-
         @Schema(description = "Short-lived token identifying this half-finished sign-in. Null when MFA is disabled.")
         String mfaToken,
-
         @Schema(description = "True when the account has no authenticator yet and must enroll before it can sign in.")
         boolean enrollmentRequired,
-
         @Schema(description = "Lifetime of mfaToken. 0 when MFA is disabled.")
         long expiresInSeconds,
-
+        @Schema(description = "CR-078. How the second factor is collected: TOTP (authenticator app or backup code) "
+                + "or EMAIL (a code sent to emailHint). Null when enrolling or when MFA is disabled.")
+        MfaMethod mfaMethod,
+        @Schema(description = "CR-078. The masked address a sign-in code went to, e.g. o***r@sarahardware.in. Null unless mfaMethod is EMAIL.")
+        String emailHint,
         @Schema(description = "The completed session. Populated ONLY when MFA is disabled (CR-060); null otherwise.")
         LoginResponse session
 ) {
+    public enum MfaMethod { TOTP, EMAIL }
 
     /** The CR-058 shape: a challenge, no session. */
     public static LoginChallengeResponse challenge(String mfaToken, boolean enrollmentRequired, long expiresInSeconds) {
-        return new LoginChallengeResponse(mfaToken, enrollmentRequired, expiresInSeconds, null);
+        return new LoginChallengeResponse(mfaToken, enrollmentRequired, expiresInSeconds,
+                enrollmentRequired ? null : MfaMethod.TOTP, null, null);
+    }
+
+    /** CR-078 - the code went by email; the verify screen shows where. */
+    public static LoginChallengeResponse emailChallenge(String mfaToken, long expiresInSeconds, String emailHint) {
+        return new LoginChallengeResponse(mfaToken, false, expiresInSeconds, MfaMethod.EMAIL, emailHint, null);
     }
 
     /** CR-060 - MFA switched off, so the password alone completed sign-in. */
     public static LoginChallengeResponse signedIn(LoginResponse session) {
-        return new LoginChallengeResponse(null, false, 0L, session);
+        return new LoginChallengeResponse(null, false, 0L, null, null, session);
     }
 
     /** True when this response carries a finished session rather than a challenge. */

@@ -1,3 +1,4 @@
+import { useIdempotencyKey } from '@/shared/hooks/useIdempotencyKey';
 import { useCallback, useEffect, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
@@ -72,6 +73,7 @@ export function PurchaseDetailPage() {
   const id = Number(params.id);
   const toast = useToast();
   const [payDialogOpen, setPayDialogOpen] = useState(false);
+  const paymentKey = useIdempotencyKey();
   const [cancelling, setCancelling] = useState(false);
   const { tdsEnabled, tdsRatePercent } = useAppChrome();
 
@@ -92,7 +94,8 @@ export function PurchaseDetailPage() {
         amountPaise: Math.round(Number(values.amountRupees) * 100),
         paymentMethod: values.paymentMethod,
         notes: values.notes || null,
-      });
+      }, paymentKey.current());
+      paymentKey.renew();
       toast.success('Payment recorded.');
       setPayDialogOpen(false);
       reset();
@@ -250,7 +253,7 @@ export function PurchaseDetailPage() {
         </div>
       </div>
 
-      <Dialog open={payDialogOpen} onOpenChange={(open) => { setPayDialogOpen(open); if (!open) reset(); }}>
+      <Dialog open={payDialogOpen} onOpenChange={(open) => { setPayDialogOpen(open); if (!open) { reset(); paymentKey.renew(); } }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle>Record a payment</DialogTitle></DialogHeader>
           <form onSubmit={submitPayment} className="space-y-4" noValidate>

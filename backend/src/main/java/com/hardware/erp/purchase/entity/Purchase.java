@@ -72,6 +72,10 @@ public class Purchase extends BaseEntity {
     @Column(name = "remarks", length = 500)
     private String remarks;
 
+    /** CR-092. The branch that received this purchase - the acting user's, else MAIN. Server-side, never from the request. */
+    @Column(name = "branch_id", nullable = false)
+    private Long branchId;
+
     @Column(name = "imported_at")
     private LocalDateTime importedAt;
 

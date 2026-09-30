@@ -50,6 +50,7 @@ class SubscriptionCouponServiceImplTest {
     @Mock private SubscriptionCouponRepository couponRepository;
     @Mock private TenantRepository tenantRepository;
     @Mock private ActivityLogService activityLog;
+    @Mock private com.hardware.erp.subscription.service.SubscriptionLifecycleService subscriptionLifecycleService;
 
     @InjectMocks private SubscriptionCouponServiceImpl service;
 

@@ -59,7 +59,8 @@ class StockReadWithoutRowIT extends AbstractIntegrationTest {
                 new BigDecimal("5"),
                 new BigDecimal("10"),
                 ProductStatus.ACTIVE,
-                null, null);
+                null, null,
+                null, null, null, null, null, null, null);
     }
 
     /** Creates a product, which by definition has no stock row yet. */

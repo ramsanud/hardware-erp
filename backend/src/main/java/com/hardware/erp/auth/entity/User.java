@@ -109,11 +109,19 @@ public class User extends BaseEntity {
     @Column(name = "mfa_enrolled_at")
     private LocalDateTime mfaEnrolledAt;
 
+    /** CR-078 - when a code sent to the current email was first entered correctly. Null until then, and again after the address changes. */
+    @Column(name = "email_verified_at")
+    private LocalDateTime emailVerifiedAt;
+
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
     @Column(name = "deleted_by")
     private Long deletedBy;
+
+    /** CR-092. The branch this user works at; null = not restricted to one (the owner). A plain id - the hot paths that stamp it on a document need nothing more. */
+    @Column(name = "branch_id")
+    private Long branchId;
 
     @Version
     @Column(name = "version", nullable = false)

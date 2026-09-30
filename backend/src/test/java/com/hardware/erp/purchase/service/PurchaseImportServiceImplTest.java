@@ -74,6 +74,7 @@ class PurchaseImportServiceImplTest {
     @Mock private TenantRepository tenantRepository;
     @Mock private PurchaseMapper purchaseMapper;
     @Mock private ActivityLogService activityLog;
+    @Mock private com.hardware.erp.branch.service.BranchContext branchContext;
 
     private PurchaseImportServiceImpl importService;
 
@@ -87,7 +88,8 @@ class PurchaseImportServiceImplTest {
                 List.<DocumentExtractionService>of(), productRepository, brandRepository, categoryRepository,
                 supplierRepository, stockRepository, purchaseRepository, documentSequenceService,
                 purchaseDocumentRepository,
-                productService, stockService, tenantRepository, purchaseMapper, activityLog);
+                productService, stockService, tenantRepository, purchaseMapper, activityLog, branchContext);
+        when(branchContext.actingBranchId(any())).thenReturn(1L);
 
         tenant = Tenant.builder().id(1L).slug("default").name("Default")
                 .status(TenantStatus.ACTIVE).build();

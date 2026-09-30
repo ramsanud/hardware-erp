@@ -81,5 +81,14 @@ public record ProductRequest(
         @Schema(description = "How many of `unit` make one `altUnitLabel`, e.g. 12 for \"1 BOX = 12 PCS\". Must be set together with altUnitLabel or not at all.",
                 example = "12")
         @DecimalMin(value = "0.0001", message = "Alternate unit conversion factor must be greater than zero")
-        BigDecimal altUnitConversionFactor
+        BigDecimal altUnitConversionFactor,
+
+        @Schema(description = "CR-089. Structured attributes for Smart Substitute matching - all optional, none mandatory.", example = "Door Bolts")
+        @Size(max = 100) String subcategory,
+        @Schema(example = "4 Inch") @Size(max = 50) String sizeLabel,
+        @Schema(example = "Stainless Steel") @Size(max = 100) String material,
+        @Schema(example = "Matte Black") @Size(max = 100) String colorFinish,
+        @Schema(example = "Straight") @Size(max = 50) String shape,
+        @Schema(example = "Door Security") @Size(max = 100) String usageType,
+        @Schema(example = "Tower Bolt") @Size(max = 100) String productType
 ) {}

@@ -1,5 +1,563 @@
 # RESUME POINT
 
+**Updated:** 2026-09-22 (**Consolidation + enterprise audit: every feature branch merged into `develop`, audit fixes applied, `develop` merged into `main` and pushed.**) Worktree `E:/Project/hardware-erp-develop` on `develop`.
+
+## Consolidation (2026-09-22)
+
+`develop` now carries, in this order: CR-088→092 (b9e190a) · `main`'s CR-100 ·
+BUG-FE-042 (auth-page scrollbar, preserved from the cr-086 working tree) ·
+CR-101 document engine (**V62 → V65**, CR-091 held V62) · CR-078 email OTP
+backend **+ the frontend half preserved as b6c6bc6** and CR-085 channel
+testing (**V57**; its BUG-BE-006 → **BUG-BE-008**, CR-091 held 006) ·
+CR-097 pg_trgm search (**V64**, preserved from an uncommitted worktree,
+renumbered from CR-096 which is the keep-alive; its proposal is CR-098).
+The `hardware-erp-auth` worktree's 44 uncommitted files were a strict
+predecessor of CR-078 and are kept as a named stash there, not deleted.
+Migrations now run V1–V57, V59–V65 with no gaps that matter: production is
+at V56, so everything new applies in order; dev/local have `out-of-order`.
+
+## Audit findings fixed (all with tests)
+
+- **CR-102** financial idempotency: `Idempotency-Key` on invoice, invoice
+  payment, purchase and purchase payment (frontend always sends one).
+  `FinancialIdempotencyIT`.
+- **BUG-BE-009** concurrent first-time invoices for one new customer raced
+  `uk_customer_mobile` → advisory lock in `findOrCreate`. **BUG-BE-010**
+  concurrent payments deadlocked (FK share lock vs UPDATE) → `addPayment`
+  locks the document row. `ConcurrentStockIT` (8 threads, real PostgreSQL).
+- **BUG-FE-043** dashboard overflowed 75px at 1024–1279px → chart headers
+  wrap. `tests/responsive/viewports.spec.mjs`: 18 viewports × 15 screens,
+  270/270, in `tests/run.mjs`.
+- **BUG-FE-041** reports spec used the UTC date. `ProductAdversarialIT`
+  proves the validation table.
+
+## Verified on the final tree
+
+`mvn clean verify` **696 unit + 318 integration, BUILD SUCCESS**; `tsc -b
+--force` clean; `vite build` clean; `tests/run.mjs` **612/612**.
+`static_check.py` not executed (no python3).
+
+## Still pending, by scope (not bugs)
+
+Stock reservation · branch-keyed availability · offline sync beyond
+INVOICE / service worker · Users-page user↔branch control (API exists) ·
+FEATURE_REGISTRY mirror · N+1 profiling was not performed in this pass.
+
+## Production
+
+Render `hardware-erp-api` deploys from `main` (`render.yaml`, health
+`/api/actuator/health`); Vercel `hardware-erp-gilt.vercel.app` rewrites
+`/api` to it. Both answered 200 before the push. After the push the deploy
+must be watched: Flyway applies V57, V59–V65 on first boot, including
+`CREATE EXTENSION IF NOT EXISTS pg_trgm` (V60) - on Supabase this is
+expected to be a no-op, but it is the one migration step that depends on
+the hosted database's privileges.
+
+---
+
+## CR-097 — pg_trgm product search, and CR-098 infra proposal (2026-09-16)
+
+Branch `feature/cr-096-pg-trgm-search` in worktree
+`E:/Project/hardware-erp-search`, off `develop` (`7ec05e0`). `SCOPE: BOTH`.
+
+**Asked**: a "Principal Cloud Architect" brief — Redis, RabbitMQ, Kafka,
+MinIO/S3, Prometheus/Grafana/OTel/Jaeger, a seven-service compose file, a
+GHCR-publishing workflow, plus `pg_trgm` fuzzy search as a `V5` migration on
+`products(shop_id…)`. **Decided with the user**: build the search now, write
+the rest up as a proposal.
+
+**Built (CR-097)**: `V64__pg_trgm_product_search.sql` (extension + two
+partial GIN trigram indexes on `product_name` / `product_code`, `WHERE
+deleted_at IS NULL`); `ProductRepository.fuzzySearch` (native, `<%`
+word-similarity, `tenant_id` first, nullable filters cast, unsorted
+Pageable) with the `ProductFuzzyMatch` projection;
+`ProductServiceImpl.search` falls through to `fuzzySearch` only when the
+substring page is empty and the term is ≥ 3 chars, after `SET LOCAL
+pg_trgm.word_similarity_threshold` (config
+`app.search.fuzzy-word-similarity-threshold`, env
+`APP_SEARCH_FUZZY_THRESHOLD`, default 0.5); `ProductSummaryResponse.matchScore`
+(absent on an ordinary page); `ProductMapper.toSummary(product, hasImage,
+matchScore)` overload; TS type + a one-line "No exact matches … showing the
+closest" notice on `ProductListPage`.
+
+**Numbers, all in the worktree**: `ProductFuzzySearchIT` 7/7;
+`mvn -o clean verify` **579 unit (2 skipped, pre-existing) + 245 integration,
+0 failures**; frontend `tsc -b --force` clean, `vite build` clean to a
+private dist. Playwright not re-run (a conditional paragraph, no colour, no
+route). `static_check.py` not executed (no python3). V64 is deliberately
+past V57–V63 (claimed by `feature/cr-077-079-auth-stack` and
+`feature/cr-088-saas-platform`); dev databases apply it out of order.
+
+**Proposed only (CR-098)**: the infra stack, item by item against CR-059's
+two installations and the decisions each would reverse (bytea uploads,
+transactional audit log, one-box self-hosted). Recommendations: GHCR
+publish job — approve as a small CR; Prometheus endpoint behind
+`DEVELOPER_INSPECT` + `tenantId` in MDC — small CR; `@Async` +
+`notification_log` retry instead of RabbitMQ; Redis/Kafka/S3 — defer or
+decline as specified. Nothing built; each approved item gets its own CR.
+
+**Not committed.** The user has not asked for a commit. Stage by explicit
+pathspec when they do: the migration, `ProductRepository`,
+`ProductFuzzyMatch`, `ProductServiceImpl`, `ProductMapper`,
+`ProductSummaryResponse`, `application.yml`, `ProductFuzzySearchIT`,
+`frontend/src/modules/product/types/index.ts`, `ProductListPage.tsx`, the
+three registries and this file.
+
+**Other open threads from this session (unrelated to the branch)**: the
+Docker→Supabase data copy is prepared and blocked on the user running the
+`TRUNCATE`+load script themselves or approving it (backup at
+`backups/supabase_before_docker_copy_*.sql`, dump at
+`backups/docker_data_only_*.sql`, script in the session scratchpad); the
+Supabase database runs PostgreSQL 17, so `scripts/backup-db.sh` needs a
+`pg_dump` 17 on the machine (a `postgres:17-alpine` container works).
+
+
+**Updated:** 2026-09-21 (**CR-101 — document engine: image export, async export queue, sharing**). `SCOPE: BOTH`, migration **V65** (renumbered from V62 at consolidation - CR-091 holds V62). Branch `feature/cr-101-document-engine` from `main` (`2a582e4`), worktree `E:/Project/hardware-erp-doc` (frontend `node_modules` is a junction to `hardware-erp-fe`'s — the main checkout's is empty; `rmdir` it before `git worktree remove`).
+
+## CR-101 — document engine extensions (2026-09-21)
+
+Asked for as CR-091/V61 (module M0 of the billing prompt kit); both numbers
+are taken on `feature/cr-088-saas-platform`, so this is **CR-101 / V65** (V62 at the time; renumbered at consolidation).
+Built: `DocumentImageRenderer` (the report PDF → PDFBox `PDFRenderer` →
+PNG/JPEG, 1080 px), `ReportExporter.toCsv`, the `report_job` queue
+(`/v1/documents/jobs`, `@Async` worker that rebuilds the requester's
+security context, 7-day cleanup), `ShareDispatcherService` (wa.me caption /
+email attachment / download for a finished job, `WhatsAppService
+.generateChooserUrl` default method, `occasionGreeting` template), and on
+the frontend `DocumentShareModal` + `AsyncExportStatusBanner` +
+`useDocumentJob` + `shared/utils/shareImage.ts` (html2canvas, own chunk),
+wired as a `Share` button beside PDF/Excel on all five reports.
+Deliberately **not** built: a Party Statement (no such report exists — its
+own CR), and re-implementing invoice/quotation sharing (CR-036/056/080 own
+it). Registry body under CR-101 has the asked-vs-built table.
+
+Verified in this worktree (own `target/`, own `dist`):
+- Frontend: tsc 0, build clean, Playwright **341/341** on the isolated
+  build (324 + the new `document-share` suite, 17). Screenshots at 1440
+  and 390 in the session scratchpad.
+- Backend: new unit tests 45 (`DocumentImageRendererTest` 4,
+  `ReportExporterTest` +2, `ManualWhatsAppServiceTest` +3,
+  `ShareDispatcherServiceImplTest` 8, `ReportJobWorkerTest` 5,
+  `ReportJobServiceImplTest` 4) and `ReportJobControllerIT` **7/7** on a
+  real Testcontainers PostgreSQL. Full `mvn -o clean verify`:
+  **648 unit + 258 integration, 0 failures (2 skipped), BUILD SUCCESS**
+  (2026-09-21, ~14 min; that run started before the V61→V62 rename of
+  the identical migration file, so `clean verify -Dit.test=ReportJobControllerIT`
+  was re-run on V62: Flyway applied "62 - cr101 report job", 7/7).
+- `static_check.py` not executed (no python3).
+
+**Open:** merge — `git checkout main && git merge --no-ff feature/cr-101-document-engine`.
+When `feature/cr-088-saas-platform` merges, its V59/V60/V61 sit below this
+V62 with no gap problem; the next free migration for anyone is **V63**.
+Follow-ups worth their own CR: a Party Statement report (then it drops
+into the queue for free — one `case` in `StandardReportJobRenderer`),
+"Image of this screen" on the invoice/quotation pages (the modal already
+takes `captureElement`), and a job list page (the endpoint exists).
+
+---
+
+
+**Updated:** 2026-09-21 (**CR-092 — Premium growth pack, applied. CR-088 → CR-092 all applied on this branch.**). `SCOPE: BOTH`, migration **V63**. Branch `feature/cr-088-saas-platform`, worktree `hardware-erp-saas` (forked from `main`@`d676f6f`, before CR-085/086/087 landed there — this branch does not yet carry those; the main checkout is on `feature/cr-086-reports`, whose `/reports` module is not here). **Next step is the reconcile/merge, not more features.**
+
+## CR-092 done (2026-09-21)
+
+Multi-branch (`branch` with one MAIN per tenant + a tenant trigger for new
+ones; `branch_id` stamped server-side on invoice/purchase/stock_movement
+from the acting user; `branch_stock` as a measured breakdown of `stock`
+maintained by `StockServiceImpl.recordBranchDelta()` and snapshotted once
+when the second branch is created; `stock_transfer` documents with OUT/IN
+movements - the one place the breakdown is enforced; branch-wise summary),
+Smart insights (six read-only queries under `/v1/insights/*`, empty windows
+say why), daily business summary (20:30 IST job, in-app for every shop,
+owner WhatsApp/email with ADVANCED_NOTIFICATIONS through the metered
+`attempt()`), backups (`tenant_backup` with stored bytes, on-demand +
+01:30 IST job for AUTO_BACKUP shops, pruned to 7, reusing the CR-057 export
+via `TenantDataExportService.buildSnapshot()`). Permissions BRANCH_VIEW /
+BRANCH_MANAGE / STOCK_TRANSFER_MANAGE / BACKUP_MANAGE. Frontend: Branches
+page, Smart insights page, Backups & daily summary card in Shop settings.
+
+**Deliberately not done, and why:** stock availability is still the shop's
+`stock` row - every stock check in the system reads it, re-keying it by
+branch would touch all of them and change single-branch behaviour for no
+gain; `branch_stock` gives a multi-branch shop the truth about where goods
+are and transfers the tool to fix it. Own CR. Full pending list in
+`docs/PREMIUM_GROWTH_PACK.md`.
+
+**Verified on this exact tree**: `mvn clean verify` **616 unit + 279
+integration, BUILD SUCCESS**; frontend `tsc` clean, `vite build` clean
+(private `dist-cr091/`), `tests/run.mjs` 272/272. Write-ups: CR-092 body in
+`CHANGE_REQUEST_REGISTRY.md`, `docs/PREMIUM_GROWTH_PACK.md`.
+
+**Caught on the way**: `ddl-auto: validate` rejects `CHAR(n)` columns
+against `String` fields (bpchar vs varchar) - V63 uses VARCHAR like
+`tenant`. The seed V902 inserts `stock_movement` with no branch after
+V63; a `BEFORE INSERT` trigger defaults it to MAIN rather than editing an
+applied seed (rule 1).
+
+**Whole-branch state**: CR-088 (`18e4086`), CR-089 (`2901a59`), CR-090
+(`fb8a29e`), CR-091 (`eaabf73`), CR-092 (this commit). Migrations V59–V63.
+BUG-BE-006/007 fixed in CR-091. `frontend/dist-cr091/` is an untracked
+private build output - delete it.
+
+**To merge**: rebase or merge `feature/cr-088-saas-platform` onto `develop`
+after `feature/cr-086-reports` lands. Expect conflicts in
+`project-knowledge/*` (both sides appended - keep both), `routes/index.tsx`
+and `Sidebar.tsx` (both added entries), and the migration numbering is
+already disjoint (V57/V58 there, V59–V63 here). The profit report
+(`modules/report/pages/ProfitReportPage`) was moved under the CR-086
+`/reports` module in the merge to `develop`.
+
+---
+
+## BUG-FE-042 — the auth pages carried a real scrollbar (2026-09-20)
+
+Asked to start the app and look at `/login` and `/register`; both showed a
+visible vertical + horizontal scrollbar over empty space. Root cause and fix
+are in the `BUG_REGISTRY.md` body — in short, `AuthLayout`'s two decorative
+glow circles bled past `<main>`'s edge with nothing to clip them, inflating
+the *document's* scrollable area (measured: 160px vertical + 128px
+horizontal overflow at 1920×1017, with nothing behind the extra space).
+Fixed by confining just those two circles to their own
+`absolute inset-0 overflow-hidden` layer — CR-081's approved design is
+otherwise untouched, confirmed by re-screenshotting both pages. One residual
+~5px overflow remains at exactly 1366×768 (a hero-column content/breakpoint
+interaction, not the same bug) — left alone because closing it means
+touching CR-081's approved spacing/type, which needs owner approval first
+(hard rule 13), not a silent tweak.
+
+Verified: `tsc -b --force` 0, `vite build` 0, frontend suite **297/297**
+(no new regression test added for this — see the registry body for why, and
+what a real one would need to assert). No BUG_REGISTRY test was added to
+`tests/run.mjs`.
+
+**Also fixed to get the app running at all, worth recording:**
+`frontend/node_modules` was empty on this checkout — `npm install` failed
+under Git Bash because npm's lifecycle scripts (esbuild's postinstall)
+spawn `cmd.exe`, and this machine's Git-Bash session has `node` only on
+*Bash's own* `PATH`, not the real Windows PATH `cmd.exe` sees. Worked around
+by running `npm install` via `powershell.exe` with
+`C:\Program Files\nodejs` prepended to `$env:PATH`. Backend was started with
+bare `mvn spring-boot:run -Dspring-boot.run.profiles=local` (not
+`scripts/run-local.sh`), so **`.env` was not loaded this session** — mail
+env vars never reached the process, so OTP/reset emails are LOGGED_ONLY,
+not sent, for as long as this backend instance stays up.
+
+Not committed. Only file touched: `frontend/src/layouts/AuthLayout.tsx`.
+Registry files touched: `BUG_REGISTRY.md` (this entry), `RESUME_POINT.md`.
+
+---
+
+## CR-091 done (2026-09-21)
+
+GST split (`GstSplit`, per invoice and per line, backfilled), invoice
+cancellation with a mandatory reason (`cancelled_at/by/reason`), append-only
+`customer_ledger_entry` with balance/statement/ageing/adjust under
+`/v1/customers/{id}/ledger`, weighted-average cost on `stock` moved only by
+`StockService.applyPurchaseReceipt()` and frozen per line as
+`invoice_item.cost_price_paise`, `GET /v1/analytics/profit`
+(REPORT_FINANCIAL), and offline sync: `POST /v1/sync/transactions`
+(INVOICE only, client-UUID idempotent, conflicts recorded) + an IndexedDB
+outbox, `/sync` page, auto-sync on `online`, invoice create falls back to
+the queue on NETWORK_ERROR/TIMEOUT only. Frontend also: cancel dialog with
+reason, CGST/SGST/IGST rows and the cancellation note on the invoice
+detail, a Ledger tab on the customer page, Accounting → Profit & loss.
+
+**Verified on this exact tree**: `mvn clean verify` **616 unit + 271
+integration, BUILD SUCCESS**; frontend `tsc` clean, `vite build` clean
+(private `dist-cr091/`), `tests/run.mjs` 272/272. Write-ups: CR-091 body in
+`CHANGE_REQUEST_REGISTRY.md`, `docs/BUSINESS_RULES_GST_STOCK_LEDGER_PROFIT.md`,
+`docs/OFFLINE_SYNC.md`. BUG-BE-006 and BUG-BE-007 registered.
+
+**Two real bugs the ITs found, both the BUG-BE-002 species** (PROJECT_SKILLS
+20-22): (1) `UsageTrackingServiceImpl.tryConsume(tenant, key)` self-invoked
+its REQUIRES_NEW overload, so CR-088's notification metering threw inside
+`@Async notifyInvoiceCreated` and **no automatic customer notification was
+ever sent on this branch** - the "Async method … failed" line had been in
+every IT log since CR-088. (2) The sync executor's own REQUIRES_NEW was
+poisoned by `InvoiceService.create()` joining it and throwing; the CONFLICT
+row was discarded at commit and the batch returned 500. Fixed with
+`SyncInvoiceCreator` (its own REQUIRES_NEW) and a non-transactional executor.
+
+**Pending, by scope (recorded in the CR body)**: no stock reservation (nothing
+reserves stock, so nothing to subtract); sync is INVOICE only, no cached
+catalogue, no service worker; no Playwright spec that drops the network.
+
+**Remaining on this branch**: CR-092 (multi-branch + insights + daily
+summary + backup, V63) - not started. Then reconcile with `main` (CR-085/086/087,
+V57/V58 on that side) before merging.
+
+---
+
+## CR-090 done (2026-09-16)
+
+PREMIUM, opt-in, everything off by default. The one deliberately
+cross-tenant read in the system: `ShopDiscoveryRepository` is a native
+query whose SELECT list IS the consent policy (`CASE WHEN share_x THEN …
+ELSE NULL END` per field; only the AVAILABLE/LIKELY_AVAILABLE bucket ever
+selected; zero-stock shops absent; one row per shop; never the requester).
+Coordinates live on the consent row with a CHECK forbidding
+enabled-without-location. Disabling clears every sub-flag. Reciprocity: a
+shop not in the network cannot search it. The customer never crosses the
+boundary. Every consent change audited. Frontend: `DiscoverySharingCard`
+in Shop settings (explanation, five flags, geolocation, double confirm -
+list then type ENABLE), `NearbyAvailabilityPanel` on the request page
+(Call / WhatsApp, withheld fields say so), `/notifications` page.
+
+**Verified on this exact tree**: `mvn clean verify` **610 unit + 266
+integration, BUILD SUCCESS**; frontend `tsc` clean, `vite build` clean,
+`tests/run.mjs` 272/272. Write-up: CR-090 body in
+`CHANGE_REQUEST_REGISTRY.md`, `docs/NEARBY_PRODUCT_DISCOVERY.md`.
+
+**Caught by `ShopDiscoveryIT` on its first run**: `could not determine
+data type of parameter $3` - an untyped JDBC NULL in `? IS NOT NULL` for
+the nullable model/manufacturer-code parameters. `CAST(? AS VARCHAR)` at
+all four sites. Also: Jackson is `non_null`, so a withheld field is
+*absent* rather than `null` - `hasNonNull()` is the right assertion, and
+absent is the better privacy outcome anyway.
+
+**Remaining on this branch**: CR-091 (GST split / ledger / profit /
+offline sync, V62 - reuse ebafec6's split and place-of-supply rule),
+CR-092 (multi-branch + insights + backup, V63).
+
+---
+
+## CR-089 done (2026-09-16)
+
+PREMIUM feature, gated on `FeatureKey.SMART_SUBSTITUTE` inside the service.
+`RecommendationStrategy` with a manual-mapping strategy (priority 10) and a
+rule-based scorer (priority 100, weights from `app.substitute.scoring.*`,
+110 max, bands 90/75/60/40). `product_request` + `product_request_suggestion`
+persist every suggestion with score, level, reason and source; the owner's
+"select" records who chose what and touches no invoice. `pg_trgm` installed.
+Frontend: `/product-requests` list + detail (unavailable card, top 3 + show
+all, compare dialog, select, recalculate), sidebar entry under Inventory.
+
+**Verified on this exact tree**: `mvn clean verify` **610 unit + 258
+integration, BUILD SUCCESS**; frontend `tsc` clean, `vite build` clean,
+`tests/run.mjs` 272/272. Full write-up: CR-089 body in
+`CHANGE_REQUEST_REGISTRY.md`, `docs/SMART_SUBSTITUTE.md`.
+
+**A real bug `ProductRequestIT` caught on its first run**: the final sort
+was by score alone, so a 110-scoring lookalike outranked a 100-scoring
+manual mapping - the opposite of the brief's §17. Now source-rank first
+(`SuggestionSource.rank()`, shared with the strategies' `priority()`), score
+second. The nine scorer unit tests were green throughout; only the real
+orchestration run exposed it.
+
+**Small follow-ups left deliberately, not silently**: the seven product
+attribute inputs are not yet on the React product form (the API accepts and
+returns them; the substitute screens render them); a "mappings" card on the
+product detail page. Both are UI-only; the backend is complete.
+
+**Remaining on this branch**: CR-090 (Nearby Discovery, V61), CR-091
+(GST split / ledger / profit / offline sync, V62 - reuse ebafec6's
+`InvoicePdfService` split rule and `Gstr1Service` place-of-supply, do not
+write a second one), CR-092 (multi-branch + insights + backup, V63).
+
+---
+
+## CR-088 done — see `docs/IMPLEMENTATION_TASKS_CR-088_to_CR-092.md`
+
+The five-CR plan behind this branch is the `hallo.txt` brief (Nearby
+Product Discovery, Smart Substitute, SaaS Subscription Plans, Critical
+Business Logic completion). **CR-088 is fully done and verified**: plan
+catalogue, `FeatureAccessService`, usage metering, lifecycle service, the
+`/v1/subscriptions/*` + `/v1/features/*` API, the pricing page + upgrade
+dialog. `mvn clean verify` on this exact tree: **601 unit + 250
+integration, BUILD SUCCESS**; frontend `tsc -b --force` clean, `vite
+build` clean, `node tests/run.mjs` **272/272** (no dedicated Playwright
+suite yet for the new Subscription page — the existing 9 suites are
+unaffected). Full write-up: `project-knowledge/CHANGE_REQUEST_REGISTRY.md`'s
+CR-088 entry, `docs/SUBSCRIPTION_FEATURE_MATRIX.md`.
+
+**One real bug the integration test caught that the unit tests could not**:
+`TenantSubscription.plan` (lazy `@ManyToOne`) crossed a transaction/session
+boundary from `currentFor()`'s `REQUIRES_NEW` back into
+`effectivePlan()`'s own transaction and threw `LazyInitializationException`
+on the very first real HTTP call. Fixed with `JOIN FETCH` in
+`TenantSubscriptionRepository.findByTenantId`. Lesson: a plan/feature
+service this central needs at least one real `@SpringBootTest` IT, not
+only mocked-repository unit tests, before it is trusted.
+
+**Migration numbering coordination, 2026-09-15/16**: this branch forked
+before CR-086/087 (which used V57/V58 on `feature/cr-086-reports`), so
+V59-V63 are reserved for CR-088-092 here to avoid a collision at merge
+time — confirmed with the concurrent session on that branch. CR-093+ is
+free for whoever picks up CR-085's Collections/barcode/i18n items. CR-096
+(Render keep-alive) is also taken and merged to `main`, unrelated to this
+branch's numbers.
+
+**Node modules**: this worktree's `frontend/node_modules` is a symlink to
+`E:/Project/hardware-erp/frontend/node_modules` (identical `package-lock
+.json`, confirmed by diff) rather than a fresh `npm install` — faster, and
+safe as long as the lockfiles stay identical between the two checkouts.
+Re-run `npm ci` here instead if they ever diverge.
+
+**Next**: CR-089 (Smart Substitute Product Suggestion) — product attribute
+columns, `pg_trgm`, manual mappings, rule-based scoring engine, product
+requests. Then CR-090 (Nearby Discovery), CR-091 (GST split/ledger/profit/
+offline sync — reuse the existing CGST/SGST split and place-of-supply rule
+from `InvoicePdfService`/`Gstr1Service` rather than a second
+implementation, per the concurrent session's note), CR-092 (multi-branch +
+insights + backup). Each follows CR-088's shape: migration, entities,
+service, controller, unit tests, at least one real `@SpringBootTest` IT,
+frontend page, registry body, tick the task-doc checkboxes, commit.
+
+**Updated:** 2026-09-20 (**CR-100 — application states + landing page, render approved, committed as `da35a6d`, not yet merged to `main`**). `SCOPE: FRONTEND ONLY`, no migration. Branch `feature/cr-100-app-states-landing` from `main` (`de171b6`) in worktree `E:/Project/hardware-erp-fe` (node_modules is a junction to the main checkout's; `rmdir` it before `git worktree remove`).
+
+## CR-100 — states and landing (2026-09-20)
+
+Built: `ErrorBoundary` + `CrashScreen` (root and per-route), `OfflineBanner` +
+`useOnlineStatus`, code-keyed `ErrorState`, `sessionExpired` on
+`AuthProvider` with the notice on `LoginPage`, `PartialDataNotice` wired
+into the dashboard with Retry, `LoadingState`, a way out of the denied
+route; the public landing page at `/` (lazy, `motion` only in its chunk)
+with the adapted `integration-card` in `shared/components/ui`.
+Registry body under CR-100 lists every file and the reasons.
+
+Verified on the isolated build: tsc 0, build clean, Playwright **324/324**
+(297 + the new `states` suite). Screenshots at 1440 light/dark and 390 in
+the session scratchpad. Backend untouched; `mvn verify` not executed.
+
+**Open:** merge — `git checkout main && git merge --no-ff feature/cr-100-app-states-landing`
+(the branch is one commit + this docs commit on top of `de171b6`, so it is
+a clean fast-forwardable merge unless another session has moved `main`). The main checkout also has a stray untracked
+root `package.json` / `package-lock.json` with `motion` from an
+`npm install` run at the repo root — not ours, not needed; the dependency
+lives in `frontend/package.json`.
+
+---
+
+**Updated:** 2026-09-16 (**BUG-OPS-001 — production schema drift fixed and verified; `origin/main` push still pending confirmation**). `SCOPE: BACKEND ONLY`.
+
+## BUG-OPS-001 — production schema drift, and `origin/main` was 38 commits stale (2026-09-16)
+
+**Found while diagnosing a Render support request.** No deploy had failed —
+the user pasted the *application* log (not a build/deploy log), which
+showed only ordinary WARNs across repeated free-tier sleep/wake cycles, plus
+one real signal: `Schema "public" has a version (55) that is newer than the
+latest available migration (54)!`.
+
+**Root cause, confirmed by the user:** the Render service and this
+session's `.env.cloud` point at the exact same Supabase project. Earlier in
+this same conversation (see the "start the application" / "in local data
+are store in docker image or supabase?" exchange, same day), a local run
+with `SPRING_PROFILES_ACTIVE=cloud,local` was pointed at that connection and
+Flyway applied **V55** to it directly — a schema change made from a laptop,
+outside any deploy. Separately, `origin/main` on GitHub (what Render's git
+integration actually builds) had not been pushed since `4d0ae45`
+(2026-09-09); local `main`/`develop` had already been consolidated 38
+commits ahead (see the 2026-09-15 branch-consolidation audit below) but
+never pushed, so the deployed build was stale independent of the migration
+issue.
+
+**Fixed, branch `hotfix/cr-099-block-non-prod-managed-db-migrate` off local
+`main` (`de5d01f`), merged back into `main` with `--no-ff`:**
+
+1. `DeploymentModeGuard` now **refuses to start** when the active profiles
+   exclude `prod`, the datasource looks like a managed provider (Supabase/
+   Neon/RDS/Azure), and Flyway is enabled — unless
+   `APP_ALLOW_NON_PROD_MANAGED_DB_MIGRATE=true` is set explicitly. `prod`
+   deployments (Render's included) are never affected. New property
+   `app.safety.allow-non-prod-managed-db-migrate` (default false).
+2. `origin/main` needs pushing to close the version gap (see below —
+   **not done without your go-ahead**, since a push here triggers a real
+   Render redeploy).
+3. `MFA_REQUIRED=false` — left exactly as-is, per the user: this
+   installation is in testing/demo use for now. No code change; the guard
+   already treats this as deliberate (CR-060), never a refusal.
+
+Full writeup: `BUG_REGISTRY.md` → BUG-OPS-001.
+
+**Verification, all in an isolated detached worktree
+(`E:/Project/hardware-erp-verify-main`) at `de5d01f` and then the hotfix
+commit on top:**
+
+- `mvn -o clean verify` on `de5d01f` (before the guard change): **599 unit,
+  0 failures, 2 skipped** (pre-existing, `LiveMailSmokeTest` — needs live
+  mail creds). Integration: 197 run, 6 errors + 1 failure on the first pass
+  — all six were `Unable to find a @SpringBootConfiguration`, the exact
+  "shape of the error" `testing.md` names as environmental (this machine
+  had three other sessions' Maven/Docker processes running concurrently at
+  the time); the seventh was a transient 500. Re-ran those 7 classes alone:
+  **54/54 clean.** Not a regression — confirmed by isolation, not assumed.
+- `DeploymentModeGuardTest` with the new guard: **12/12** (9 pre-existing +
+  3 new — refuses `cloud,local` against Supabase; the explicit override
+  lets it through; Flyway-disabled is exempt). None of the 9 pre-existing
+  cases combine a non-`prod` profile with a managed-database URL, so none
+  were affected by the new check.
+- Frontend `tsc -b --force` and `vite build` (private outDir) on `de5d01f`:
+  both clean, unrelated to this fix (no frontend change) but re-verified
+  since local `main` had never been built in isolation before.
+- `static_check.py`: **not executed** (no python3 on this machine).
+
+**What is committed locally but NOT pushed — needs your decision:**
+
+- Local `main` is **39 commits ahead of `origin/main`** (the 38-commit
+  catch-up already sitting in local `main`, plus the BUG-OPS-001 hotfix
+  merge on top). `origin/main` is a strict ancestor — this is a
+  fast-forward, not a rewrite.
+- Pushing `origin/main` is what actually fixes the live deployment (Render
+  builds from GitHub, not from this machine) and it triggers a real
+  redeploy of the production-facing Render service. That is an outward-
+  facing, not-trivially-reversible action, so it was prepared and verified
+  but **not pushed**, pending explicit confirmation, separate from "prepare
+  the merge and verify the status," which is what was asked and is what
+  this entry is.
+- After a push, expect Render's app log to show `Schema "public" is up to
+  date. No migration necessary.` instead of the version-mismatch WARN on
+  its next boot; ask the user to paste it to confirm, since this session
+  has no authenticated access to the Render dashboard or its API (no
+  `RENDER_API_KEY` configured anywhere on this machine).
+
+**Also from that Render debugging thread, unrelated to this fix:** a script
+hammered `/v1/tenants/register/slug-available` from `152.57.203.157` —
+`RateLimitFilter` blocked it correctly; nothing to do unless it recurs.
+
+**Updated:** 2026-09-16 (**CR-096 — Render free-tier keep-alive from inside the app**). `SCOPE: BACKEND ONLY`.
+
+## CR-096 — the app pings itself so Render does not idle it out (2026-09-16)
+
+The user brought a draft `RenderKeepAliveTask` (RestTemplate, hard-coded
+URL, `@EnableScheduling` on the component) with the complaint that the
+Render service sleeps and has to be woken by hand. Built properly on
+branch `feature/cr-096-render-keep-alive` in worktree
+`E:/Project/hardware-erp-keepalive` (this checkout had been switched to
+`feature/cr-086-reports` by another session):
+
+- `config/KeepAliveProperties` + `config/RenderKeepAliveTask`: constructed
+  only when `app.keep-alive.base-url` is non-blank, which on Render is the
+  injected `RENDER_EXTERNAL_URL` and nowhere else is anything. Only a bare
+  `https` origin is accepted; the path is the constant
+  `/api/actuator/health`. 10 s connect / 30 s request timeouts, no
+  redirects, `fixedDelay` 10 min, 120 s initial delay, failures WARN and
+  swallowed. `KEEP_ALIVE_ENABLED=false` switches it off.
+- **It cannot wake a sleeping instance** — the scheduler sleeps with it.
+  UptimeRobot / `keepalive.yml` (DEPLOYMENT.md §4) remain required and, as
+  far as the 3½-minute cold start seen on 2026-09-14 shows, have never been
+  set up. That is the single most useful thing the owner can still do.
+
+**Verified**: `KeepAlivePropertiesTest` 15 + `RenderKeepAliveTaskTest` 5;
+full `mvn -o clean verify` on the branch worktree **599 unit (0 F, 2
+skipped) + 238 IT (0 F)**, BUILD SUCCESS. The jar booted under `prod,cloud`
+against PostgreSQL 16 four ways: 
+  - `RENDER_EXTERNAL_URL=https://…` → "Keep-alive self-ping active: GET …/api/actuator/health every 600s", and 120 s later the first tick: "answered HTTP 404" — Render's edge answering for a host that does not exist, i.e. the request really left over https;
+  - variable absent → no keep-alive line at all (bean not constructed);
+  - `KEEP_ALIVE_ENABLED=false` → none;
+  - `http://…` → "is not a plain https origin … No self-ping will be sent."
+
+`static_check.py` not executed (no python3).
+
+**Number allocation note**: CR-085 (erp-completion), 086/087 (reports),
+088–092 (saas-platform) and 093–095 (reserved for erp-completion by a
+cross-session message) were all taken on branches that are not on `main`;
+CR-096 was the first number free across every ref and worktree. Grep all
+of `E:/Project/hardware-erp*` before claiming the next one.
+
+---
+
+**Previous entry follows.**
+
 **Updated:** 2026-09-15 (**CR-086 Reports module + CR-087 GSTR-1 and GSTIN checksum**). `SCOPE: BOTH`, no migration. Branch `feature/cr-086-reports` (on top of the CR-084 commits, which are **still not on `main`**).
 
 ## CR-086 / CR-087 — Reports, GSTR-1, GSTIN checksum (2026-09-15)

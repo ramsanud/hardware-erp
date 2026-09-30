@@ -99,4 +99,46 @@ public class WhatsAppMessageTemplates {
 
                 How can we help you today?""".formatted(customerName, WAVE, shopName);
     }
+
+    /**
+     * CR-101 - a generic report/document share caption, used where the
+     * message is not about one customer's own invoice or quotation but a
+     * file the owner is sending someone (a rate list, a statement, a GST
+     * return). {@code summary} is one line the caller composes - e.g. "As of
+     * 15-Sep-2026, ₹12,450.00" - kept as a single parameter rather than
+     * several so this template stays usable for whatever report is added
+     * next without a signature change.
+     */
+    public String document(String shopName, String title, String summary) {
+        return """
+                Hello %s
+
+                Please find %s from %s.
+
+                %s
+
+                Thank you,
+                %s""".formatted(WAVE, title, shopName, summary, shopName);
+    }
+
+    /**
+     * CR-101 - the first entry in what M8's brief calls a "template engine
+     * for Smart Greetings": one shape, filled from an occasion label
+     * ("Diwali", "Pongal", a customer's own name for a birthday/anniversary)
+     * rather than a hardcoded festival calendar. Scheduling *when* to send
+     * one, tracking which year it was sent for, and a WhatsApp Cloud API
+     * template-message classification are out of this CR's scope (M8) -
+     * this is the wording only, reached the same manual way CR-080's other
+     * links are: the owner presses Send.
+     */
+    public String occasionGreeting(String shopName, String customerName, String occasionLabel) {
+        return """
+                Hello %s %s
+
+                Wishing you a very happy %s, from all of us at %s!
+
+                Thank you for being our valued customer.
+
+                %s""".formatted(customerName, WAVE, occasionLabel, shopName, shopName);
+    }
 }

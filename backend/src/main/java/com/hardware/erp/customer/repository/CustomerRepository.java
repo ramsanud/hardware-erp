@@ -15,6 +15,18 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     Optional<Customer> findByTenantIdAndMobileNo(Long tenantId, String mobileNo);
 
+    /**
+     * BUG-BE-009. A transaction-scoped advisory lock on (tenant, mobile),
+     * taken BEFORE the find in findOrCreate so two invoices for the same
+     * new walk-in customer serialise: the second waits here, then finds
+     * the row the first inserted, instead of both inserting and one dying
+     * on uk_customer_mobile. Released automatically at commit or rollback -
+     * the same discipline as DocumentSequenceService's row lock. Returns a
+     * value only because a native void query would need @Modifying.
+     */
+    @Query(value = "select pg_advisory_xact_lock(:key)", nativeQuery = true)
+    Object lockForFindOrCreate(@Param("key") long key);
+
     Optional<Customer> findByIdAndTenantId(Long id, Long tenantId);
 
     /** Platform Admin tenant data export (CR-057 phase 11). */

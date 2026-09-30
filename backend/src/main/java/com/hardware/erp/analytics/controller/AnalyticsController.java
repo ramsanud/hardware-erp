@@ -118,4 +118,17 @@ public class AnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return ApiResponse.ok(analyticsService.salesActivity(from, to));
     }
+
+    /**
+     * CR-091 Phase 6. REPORT_FINANCIAL, not REPORT_VIEW - margin is
+     * financial detail, the same gate Tally export already uses (STAFF
+     * holds REPORT_VIEW in some role templates but never REPORT_FINANCIAL).
+     */
+    @GetMapping("/profit")
+    @PreAuthorize("hasAuthority(T(com.hardware.erp.auth.entity.PermissionCode).REPORT_FINANCIAL)")
+    public ApiResponse<ProfitResponse> profit(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ApiResponse.ok(analyticsService.profit(from, to));
+    }
 }
