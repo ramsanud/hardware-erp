@@ -162,6 +162,11 @@ class DocumentSequenceServiceIT extends AbstractIntegrationTest {
         int highestSeeded = seededSupplierCodes.stream()
                 .filter(c -> c.matches("^SUP-[0-9]+$"))
                 .map(c -> Integer.parseInt(c.substring(4)))
+                // The container is shared and never rolled back, so other ITs (e.g.
+                // SupplierControllerIT) leave SUP-9xxx rows behind with explicit
+                // codes that bypass the sequence. Only the seeded run (SUP-000n) is
+                // what V29 backfilled from.
+                .filter(n -> n < 9000)
                 .max(Integer::compareTo)
                 .orElse(0);
 

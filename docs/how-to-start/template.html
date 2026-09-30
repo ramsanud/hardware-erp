@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hardware ERP — How to Start the App</title>
+<style>
+  :root {
+    --ink: #14231c;
+    --ink-soft: #3f5349;
+    --paper: #ffffff;
+    --paper-soft: #f4f8f6;
+    --emerald: #0f7a52;
+    --emerald-dark: #0b5c3d;
+    --emerald-pale: #e4f4ec;
+    --amber: #b5690a;
+    --amber-pale: #fdf0dd;
+    --red: #b3261e;
+    --red-pale: #fbe9e7;
+    --line: #d9e3de;
+    --terminal-bg: #12211a;
+    --terminal-text: #d7ecdf;
+    --terminal-dim: #7fa693;
+    --terminal-green: #6bd39c;
+    --terminal-amber: #f0b859;
+    --terminal-red: #ff8a80;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 16mm 16mm 18mm 16mm;
+    position: relative;
+    page-break-after: always;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  /* ---------- Cover page ---------- */
+  .cover {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 297mm;
+    background: linear-gradient(160deg, var(--emerald-dark) 0%, var(--emerald) 55%, #0e6647 100%);
+    color: #f2fbf6;
+    padding: 0 20mm;
+  }
+  .cover .badge {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: rgba(255,255,255,0.14);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; font-weight: 800; color: #fff;
+    margin-bottom: 28px;
+    border: 1px solid rgba(255,255,255,0.25);
+  }
+  .cover .kicker {
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 11.5px;
+    color: #b7ecd2;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .cover h1 {
+    font-size: 40px;
+    line-height: 1.15;
+    margin: 0 0 16px 0;
+    font-weight: 800;
+    max-width: 130mm;
+  }
+  .cover p.sub {
+    font-size: 15px;
+    color: #dff5e9;
+    max-width: 120mm;
+    margin: 0 0 40px 0;
+  }
+  .cover .meta {
+    font-size: 11.5px;
+    color: #b7ecd2;
+    border-top: 1px solid rgba(255,255,255,0.25);
+    padding-top: 14px;
+    max-width: 120mm;
+  }
+  .cover .meta div { margin-bottom: 4px; }
+  .cover .pieces {
+    position: absolute;
+    bottom: 22mm;
+    left: 20mm;
+    right: 20mm;
+    display: flex;
+    gap: 10px;
+  }
+  .cover .piece {
+    flex: 1;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 11.5px;
+    color: #eafaf1;
+  }
+  .cover .piece b { display: block; font-size: 12.5px; margin-bottom: 3px; color: #fff; }
+
+  /* ---------- Headings ---------- */
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--emerald);
+    margin: 0 0 6px 0;
+  }
+  h1.section-title {
+    font-size: 22px;
+    margin: 0 0 4px 0;
+    color: var(--ink);
+    font-weight: 800;
+  }
+  p.section-intro {
+    color: var(--ink-soft);
+    font-size: 13px;
+    margin: 0 0 18px 0;
+    max-width: 165mm;
+  }
+  h2.sub-title {
+    font-size: 15px;
+    margin: 22px 0 8px 0;
+    color: var(--ink);
+    font-weight: 700;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--emerald-pale);
+  }
+  h3.step-title {
+    font-size: 13.5px;
+    margin: 16px 0 6px 0;
+    font-weight: 700;
+    color: var(--emerald-dark);
+  }
+
+  /* ---------- Step numbering ---------- */
+  .step {
+    display: flex;
+    gap: 12px;
+    margin: 14px 0;
+    page-break-inside: avoid;
+  }
+  .step .num {
+    flex: none;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--emerald);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 13px;
+  }
+  .step .body { flex: 1; }
+  .step .body h4 {
+    margin: 2px 0 4px 0;
+    font-size: 13.5px;
+    font-weight: 700;
+  }
+  .step .body p { margin: 0 0 6px 0; color: var(--ink-soft); }
+
+  /* ---------- Terminal block ---------- */
+  .term {
+    background: var(--terminal-bg);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 8px 0 4px 0;
+    font-family: 'Consolas', 'SF Mono', Menlo, monospace;
+    font-size: 11px;
+    line-height: 1.55;
+    color: var(--terminal-text);
+    page-break-inside: avoid;
+    overflow: hidden;
+  }
+  .term .titlebar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+  }
+  .term .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .term .dot.r { background: #ff5f57; }
+  .term .dot.y { background: #febc2e; }
+  .term .dot.g { background: #28c840; }
+  .term .titlebar span.label {
+    margin-left: 6px;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 10px;
+    color: var(--terminal-dim);
+  }
+  .term .prompt { color: var(--terminal-green); }
+  .term .cmd { color: #fff; font-weight: 600; }
+  .term .out { color: var(--terminal-dim); white-space: pre-wrap; word-break: break-word; }
+  .term .ok { color: var(--terminal-green); }
+  .term .warn { color: var(--terminal-amber); }
+  .term .err { color: var(--terminal-red); }
+
+  /* ---------- Callouts ---------- */
+  .callout {
+    border-radius: 8px;
+    padding: 10px 13px;
+    margin: 10px 0;
+    font-size: 12px;
+    page-break-inside: avoid;
+  }
+  .callout .lbl { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; display: block; }
+  .callout.note { background: var(--emerald-pale); color: var(--emerald-dark); border: 1px solid #bfe6d5; }
+  .callout.warn { background: var(--amber-pale); color: #7a4400; border: 1px solid #f0d3a3; }
+  .callout.danger { background: var(--red-pale); color: #7a231d; border: 1px solid #f0c2bd; }
+
+  /* ---------- Definition / glossary chips ---------- */
+  .gloss {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 10px 0 16px 0;
+  }
+  .gloss .chip {
+    background: var(--paper-soft);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 11px;
+    font-size: 11.5px;
+    flex: 1 1 45%;
+  }
+  .gloss .chip b { color: var(--emerald-dark); display: block; margin-bottom: 2px; }
+
+  /* ---------- Tables ---------- */
+  table.check {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 6px 0;
+    font-size: 11.5px;
+  }
+  table.check th {
+    text-align: left;
+    background: var(--emerald-pale);
+    color: var(--emerald-dark);
+    padding: 7px 10px;
+    font-weight: 700;
+    border-bottom: 1px solid var(--line);
+  }
+  table.check td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink-soft);
+  }
+  table.check td.status { font-weight: 700; color: var(--emerald); white-space: nowrap; }
+
+  /* ---------- 3-box diagram ---------- */
+  .diagram {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    margin: 16px 0 20px 0;
+  }
+  .diagram .box {
+    flex: 1;
+    background: var(--paper-soft);
+    border: 1.5px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+  }
+  .diagram .box .icon {
+    width: 34px; height: 34px; border-radius: 8px;
+    background: var(--emerald);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 15px;
+    margin: 0 auto 8px auto;
+  }
+  .diagram .box h5 { margin: 0 0 4px 0; font-size: 12px; font-weight: 700; }
+  .diagram .box p { margin: 0; font-size: 10.5px; color: var(--ink-soft); }
+  .diagram .arrow {
+    flex: none;
+    align-self: center;
+    font-size: 18px;
+    color: var(--emerald);
+    font-weight: 700;
+  }
+
+  /* ---------- Screenshot frame ---------- */
+  .shot-frame {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    box-shadow: 0 6px 18px rgba(15,122,82,0.14);
+    margin: 10px 0;
+  }
+  .shot-frame img { display: block; width: 100%; }
+  .shot-caption { font-size: 11px; color: var(--ink-soft); text-align: center; margin-top: 6px; font-style: italic; }
+
+  /* ---------- Cheat sheet ---------- */
+  .cheat-box {
+    background: var(--terminal-bg);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin: 10px 0;
+    page-break-inside: avoid;
+  }
+  .cheat-box h5 {
+    color: #fff; font-size: 12px; margin: 0 0 8px 0;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .cheat-box h5 .n {
+    background: var(--emerald);
+    color: #fff;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    font-size: 10px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cheat-box .term { margin: 0; background: transparent; padding: 0; }
+
+  /* ---------- Footer / running header ---------- */
+  .running {
+    position: absolute;
+    bottom: 8mm;
+    left: 16mm;
+    right: 16mm;
+    display: flex;
+    justify-content: space-between;
+    font-size: 9.5px;
+    color: #9db3aa;
+    border-top: 1px solid var(--line);
+    padding-top: 5px;
+  }
+
+  .two-col { display: flex; gap: 14px; }
+  .two-col > div { flex: 1; }
+
+  ul.plain { margin: 4px 0 10px 0; padding-left: 18px; color: var(--ink-soft); }
+  ul.plain li { margin-bottom: 4px; }
+
+  code.inline {
+    background: var(--paper-soft);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: 'Consolas', monospace;
+    font-size: 11.5px;
+    color: var(--emerald-dark);
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="page cover">
+  <div class="badge">H</div>
+  <div class="kicker">Hardware ERP · Local Developer Guide</div>
+  <h1>How to Start the App on Your Own Computer</h1>
+  <p class="sub">A complete, no-jargon, step-by-step walkthrough — written for someone with
+  no coding background. Every command and every screen shown here was actually run and
+  captured on this machine, not written from memory.</p>
+  <div class="meta">
+    <div>Prepared for: Ram</div>
+    <div>Project folder: E:\Project\hardware-erp</div>
+    <div>Machine: Windows 11, Git Bash + PowerShell, Docker Desktop</div>
+  </div>
+  <div class="pieces">
+    <div class="piece"><b>① Database</b>PostgreSQL, runs inside Docker</div>
+    <div class="piece"><b>② Backend</b>Java server, runs directly on your PC</div>
+    <div class="piece"><b>③ Frontend</b>The website, runs directly on your PC</div>
+  </div>
+</div>
+
+<!-- ============ PAGE: BIG PICTURE ============ -->
+<div class="page">
+  <p class="eyebrow">Part 1 · Understand it first</p>
+  <h1 class="section-title">The Big Picture</h1>
+  <p class="section-intro">Before touching a single command, it helps to know what you are
+  actually starting. "The app" is not one thing — it is three separate programs that talk to
+  each other over your own computer's network. You will open three things, in this order.</p>
+
+  <div class="diagram">
+    <div class="box">
+      <div class="icon">DB</div>
+      <h5>1. Database</h5>
+      <p>Stores everything — products, bills, customers. Runs inside <b>Docker</b>, on
+      port 5433.</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box">
+      <div class="icon">API</div>
+      <h5>2. Backend</h5>
+      <p>The "brain" — a Java program that reads/writes the database. Runs on port 8080.</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box">
+      <div class="icon">UI</div>
+      <h5>3. Frontend</h5>
+      <p>The website you actually see and click. Runs on port 5173.</p>
+    </div>
+  </div>
+
+  <div class="callout note">
+    <span class="lbl">Order matters</span>
+    Always start them in this order: Database → Backend → Frontend. The backend needs the
+    database to already be awake, and the frontend needs the backend. Starting them out of
+    order is the single most common cause of "it's not working" — not a real bug, just
+    impatience.
+  </div>
+
+  <h2 class="sub-title">A few words, explained simply</h2>
+  <div class="gloss">
+    <div class="chip"><b>Terminal</b>A text window where you type commands instead of clicking
+    icons. You'll use two of them: <b>Git Bash</b> and/or <b>PowerShell</b>, both already on
+    this PC.</div>
+    <div class="chip"><b>Port</b>A numbered "door" a program listens on. Two programs can't use
+    the same door on the same computer at the same time — that's the "port already in use"
+    error you've seen.</div>
+    <div class="chip"><b>localhost</b>A special address that always means "this same computer."
+    <code class="inline">http://localhost:5173</code> means "port 5173, on this PC."</div>
+    <div class="chip"><b>Docker</b>A tool that runs a program (here, the database) inside a
+    small sealed box, so you never have to install PostgreSQL yourself or worry about it
+    conflicting with anything else on your PC.</div>
+    <div class="chip"><b>Process</b>A running program. Each terminal window you leave open is
+    keeping one process alive. Closing the window kills it.</div>
+    <div class="chip"><b>Log</b>The stream of text a program prints while it runs, telling you
+    what it's doing — and, if something's wrong, why.</div>
+  </div>
+
+  <div class="running"><span>Hardware ERP — Local Developer Guide</span><span>Part 1</span></div>
+</div>
+
+<!-- ============ PAGE: BEFORE YOU START ============ -->
+<div class="page">
+  <p class="eyebrow">Part 2 · Before you start</p>
+  <h1 class="section-title">What Needs to Be Installed</h1>
+  <p class="section-intro">Good news — this is a one-time check, and on this machine
+  every one of these was confirmed present and working while writing this guide.</p>
+
+  <table class="check">
+    <tr><th>Tool</th><th>What it's for</th><th>Confirmed on this PC</th><th></th></tr>
+    <tr><td>Java 21 (JDK)</td><td>Runs the backend</td><td>21+35-LTS</td><td class="status">✓ Installed</td></tr>
+    <tr><td>Apache Maven</td><td>Builds &amp; runs the backend</td><td>3.9.16</td><td class="status">✓ Installed</td></tr>
+    <tr><td>Node.js</td><td>Runs the frontend</td><td>v22.19.0</td><td class="status">✓ Installed</td></tr>
+    <tr><td>Docker Desktop</td><td>Runs the database</td><td>29.7.2</td><td class="status">✓ Installed</td></tr>
+    <tr><td>Git Bash</td><td>Needed for one startup script</td><td>Git 2.45.0</td><td class="status">✓ Installed</td></tr>
+  </table>
+
+  <div class="callout note">
+    <span class="lbl">You don't need to reinstall anything</span>
+    This checklist is here so that if you ever set this up on a <i>different</i> PC, you know
+    exactly what to install first. On this machine, skip straight to Part 3.
+  </div>
+
+  <h2 class="sub-title">The one file that holds your settings — <code class="inline">.env</code></h2>
+  <p style="color:var(--ink-soft)">The project keeps passwords and settings in a file called
+  <code class="inline">.env</code>, sitting in the main project folder
+  (<code class="inline">E:\Project\hardware-erp\.env</code>). It already exists on this PC and
+  is already filled in — you do not need to touch it. It is deliberately excluded from Git
+  (the version-control system) so it never gets uploaded anywhere by accident.</p>
+
+  <div class="callout warn">
+    <span class="lbl">If you ever set this up fresh</span>
+    Copy the template and fill it in yourself — never delete the real <code class="inline">.env</code>
+    once it has real values in it:
+  </div>
+  <div class="term">
+    <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">Git Bash</span></div>
+    <div><span class="prompt">$</span> <span class="cmd">cp .env.example .env</span></div>
+    <div class="out">   # then open .env in Notepad and fill in the blank values</div>
+  </div>
+
+  <div class="running"><span>Hardware ERP — Local Developer Guide</span><span>Part 2</span></div>
+</div>
+
+<!-- ============ PAGE: STEP 1 DATABASE ============ -->
+<div class="page">
+  <p class="eyebrow">Part 3 · Starting the app, step by step</p>
+  <h1 class="section-title">Step 1 — Start the Database (Docker)</h1>
+  <p class="section-intro">The database lives inside Docker Desktop. Docker Desktop itself
+  must be running before anything else will work — think of it as the power switch for the
+  whole database box.</p>
+
+  <div class="step">
+    <div class="num">1</div>
+    <div class="body">
+      <h4>Open Docker Desktop</h4>
+      <p>Click the Docker whale icon on your Desktop or in the Start menu. Look at the
+      bottom-left corner of the Docker Desktop window, or the small whale icon in the Windows
+      system tray (bottom-right of the screen, near the clock) — once it stops animating and
+      shows a steady icon, Docker is ready. This usually takes 20–60 seconds after opening it.</p>
+      <div class="callout note"><span class="lbl">How to tell it's ready without guessing</span>
+      Open a terminal and run <code class="inline">docker info</code>. If it prints a wall of
+      information about your system, Docker is ready. If it prints a connection error (shown
+      on the Troubleshooting page), it is not ready yet — wait and try again.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">2</div>
+    <div class="body">
+      <h4>Open a terminal in the project folder</h4>
+      <p>In File Explorer, go to <code class="inline">E:\Project\hardware-erp</code>, right-click
+      inside the empty space of the folder, and choose <b>"Git Bash Here"</b> (or "Open in
+      Terminal" for PowerShell). Either works for this step.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">3</div>
+    <div class="body">
+      <h4>Run the start command</h4>
+      <p>Type this and press Enter. This starts <i>only</i> the database — nothing else yet.</p>
+      <div class="term">
+        <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">Terminal — real output, captured on this PC</span></div>
+        <div><span class="prompt">$</span> <span class="cmd">docker compose up -d</span></div>
+        <div class="out"> Container hardware-erp-postgres  Starting
+ Container hardware-erp-postgres  Started</div>
+      </div>
+      <p>The <code class="inline">-d</code> means "detached" — it starts in the background and
+      gives you your terminal back immediately, instead of filling the screen with database
+      logs forever.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">4</div>
+    <div class="body">
+      <h4>Confirm it's actually healthy, not just "started"</h4>
+      <p>"Started" and "ready to accept connections" are not the same moment — Postgres takes
+      a couple of seconds to warm up. Check with:</p>
+      <div class="term">
+        <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">Terminal — real output, captured on this PC</span></div>
+        <div><span class="prompt">$</span> <span class="cmd">docker compose ps</span></div>
+        <div class="out">NAME                    IMAGE                SERVICE    STATUS
+hardware-erp-postgres   postgres:16-alpine   postgres   <span class="ok">Up 7 seconds (healthy)</span>
+                                                          0.0.0.0:5433-&gt;5432/tcp</div>
+      </div>
+      <p>The word <b class="ok" style="color:var(--emerald)">(healthy)</b> is what you're
+      looking for. If it says <code class="inline">(health: starting)</code>, wait five more
+      seconds and run the command again.</p>
+    </div>
+  </div>
+
+  <div class="running"><span>Hardware ERP — Local Developer Guide</span><span>Part 3 · Step 1 of 3</span></div>
+</div>
+
+<!-- ============ PAGE: STEP 2 BACKEND ============ -->
+<div class="page">
+  <p class="eyebrow">Part 3 · Starting the app, step by step</p>
+  <h1 class="section-title">Step 2 — Start the Backend</h1>
+  <p class="section-intro">The backend is the Java "brain" of the app. It must be started from
+  a Git Bash terminal (not PowerShell) because it uses a small helper script.</p>
+
+  <div class="callout warn">
+    <span class="lbl">Do not run "mvn spring-boot:run" directly</span>
+    It looks like the obvious command, and it will appear to work — but it silently skips
+    loading the settings from your <code class="inline">.env</code> file. On this exact project
+    that once caused password-reset emails and login codes to silently vanish for weeks,
+    because nobody noticed the one line in the log saying "Mail not configured." Always use the
+    script below instead — it loads <code class="inline">.env</code> first, then starts the
+    same backend.
+  </div>
+
+  <div class="step">
+    <div class="num">1</div>
+    <div class="body">
+      <h4>Open a <u>new</u> Git Bash window in the project folder</h4>
+      <p>Keep the previous terminal open too (it's not doing anything for the database anymore,
+      but there's no harm leaving it). Right-click in
+      <code class="inline">E:\Project\hardware-erp</code> → "Git Bash Here".</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">2</div>
+    <div class="body">
+      <h4>Run the start script</h4>
+      <div class="term">
+        <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">Git Bash — real output, captured on this PC</span></div>
+        <div><span class="prompt">$</span> <span class="cmd">./scripts/run-local.sh</span></div>
+        <div class="out">Starting Hardware ERP (local)
+  profile  : local
+  env file : /e/Project/hardware-erp/.env
+  mail     : Resend selected but RESEND_API_KEY / RESEND_FROM_EMAIL blank - codes and
+             links will be LOGGED, not sent
+  frontend : run the Vite dev server in frontend/ in a second terminal
+
+[INFO] Scanning for projects...
+[INFO] Building hardware-erp 1.0.0
+   <span class="warn">…this part takes the longest — compiling and connecting to the database…</span>
+22:33:34  Successfully validated 61 migrations
+22:33:34  Migrating schema "public" to version "56 - low stock snapshot"
+22:34:48  <span class="ok">Tomcat started on port 8080 (http) with context path '/api'</span>
+22:34:48  <span class="ok">Started HardwareErpApplication in 92.3 seconds</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout note">
+    <span class="lbl">The first run is always slow — this is normal, not a hang</span>
+    On this PC the very first start took <b>92 seconds</b>. Every start after that, once files
+    are already compiled, took about <b>44 seconds</b>. If your cursor just sits there for over
+    a minute the first time, that is expected — do not close the window or press Ctrl+C.
+  </div>
+
+  <div class="step">
+    <div class="num">3</div>
+    <div class="body">
+      <h4>Confirm the backend is actually alive</h4>
+      <p>Leave that terminal window open (closing it stops the backend) and, in any
+      <i>other</i> terminal, run:</p>
+      <div class="term">
+        <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">Terminal — real output, captured on this PC</span></div>
+        <div><span class="prompt">$</span> <span class="cmd">curl http://localhost:8080/api/actuator/health</span></div>
+        <div class="out">{"status":<span class="ok">"UP"</span>,"components":{"db":{"status":<span class="ok">"UP"</span>, …}}}</div>
+      </div>
+      <p><code class="inline">"status":"UP"</code> means the backend is running and it can talk
+      to the database. If you don't have <code class="inline">curl</code>, you can instead just
+      open <code class="inline">http://localhost:8080/api/actuator/health</code> in your browser
+      and look for the same text.</p>
+    </div>
+  </div>
+
+  <div class="running"><span>Hardware ERP — Local Developer Guide</span><span>Part 3 · Step 2 of 3</span></div>
+</div>
+
+<!-- ============ PAGE: STEP 3 FRONTEND ============ -->
+<div class="page">
+  <p class="eyebrow">Part 3 · Starting the app, step by step</p>
+  <h1 class="section-title">Step 3 — Start the Frontend</h1>
+  <p class="section-intro">This is the actual website — the part you will click around in.
+  It also needs its own terminal window, kept open the whole time you're using the app.</p>
+
+  <div class="step">
+    <div class="num">1</div>
+    <div class="body">
+      <h4>Open a third terminal, and go into the frontend folder</h4>
+      <div class="term">
+        <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">Terminal</span></div>
+        <div><span class="prompt">$</span> <span class="cmd">cd E:\Project\hardware-erp\frontend</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">2</div>
+    <div class="body">
+      <h4>Start it</h4>
+      <p>If you're in <b>PowerShell</b>, the normal command works fine:</p>
+      <div class="term">
+        <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">PowerShell</span></div>
+        <div><span class="prompt">PS&gt;</span> <span class="cmd">npm run dev</span></div>
+      </div>
+      <p>If you're in <b>Git Bash</b>, that same shortcut sometimes fails with
+      <code class="inline">'"node"' is not recognized</code> — a known quirk of this terminal on
+      this PC. Use this instead, which does exactly the same thing:</p>
+      <div class="term">
+        <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">Git Bash — real output, captured on this PC</span></div>
+        <div><span class="prompt">$</span> <span class="cmd">node ./node_modules/vite/bin/vite.js</span></div>
+        <div class="out">  <span class="ok">VITE v6.4.3</span>  ready in 2378 ms
+
+  ➜  Local:   <span class="ok">http://localhost:5173/</span>
+  ➜  Network: use --host to expose</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">3</div>
+    <div class="body">
+      <h4>Open the app</h4>
+      <p>Open any browser and go to <code class="inline">http://localhost:5173</code>. This is
+      the real sign-in screen of this project, captured directly from this running app —
+      not a mockup.</p>
+      <div class="shot-frame"><img src="{{LOGIN_SCREENSHOT}}" /></div>
+      <p class="shot-caption">The real Hardware ERP sign-in page, running on this PC during
+      the writing of this guide.</p>
+    </div>
+  </div>
+
+  <div class="callout note">
+    <span class="lbl">All three running at once = success</span>
+    You now have three terminal windows open: one for the database (or none, since Docker runs
+    it in the background), one running the backend, one running the frontend. Minimize all
+    three and just use the browser — don't close them.
+  </div>
+
+  <div class="running"><span>Hardware ERP — Local Developer Guide</span><span>Part 3 · Step 3 of 3</span></div>
+</div>
+
+<!-- ============ PAGE: STOPPING ============ -->
+<div class="page">
+  <p class="eyebrow">Part 4 · When you're done</p>
+  <h1 class="section-title">Stopping the App</h1>
+  <p class="section-intro">Shut things down in reverse order — it's not strictly required, but
+  it avoids confusing half-finished requests.</p>
+
+  <div class="two-col">
+    <div>
+      <h3 class="step-title">Frontend &amp; Backend</h3>
+      <p style="color:var(--ink-soft)">Click into each terminal window and press
+      <code class="inline">Ctrl</code> + <code class="inline">C</code>. That's it — the process
+      stops immediately. Closing the terminal window entirely does the same thing.</p>
+    </div>
+    <div>
+      <h3 class="step-title">Database</h3>
+      <p style="color:var(--ink-soft)">In any terminal, from the project folder:</p>
+      <div class="term">
+        <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+        <div><span class="prompt">$</span> <span class="cmd">docker compose down</span></div>
+        <div class="out">Container hardware-erp-postgres  Removed</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout danger">
+    <span class="lbl">One command to never run by habit</span>
+    <code class="inline">docker compose down -v</code> looks almost identical to the safe
+    version above, but the <code class="inline">-v</code> deletes the actual database
+    contents — every product, bill and customer you've entered — permanently. Only use it on
+    purpose, when you genuinely want to wipe local data and start clean.
+  </div>
+
+  <div class="callout note">
+    <span class="lbl">You don't have to stop the database every time</span>
+    It's fine to leave <code class="inline">docker compose up -d</code> running for days — it
+    uses very little on an idle machine. Most days you'll only need to redo Steps 2 and 3
+    (backend, frontend); the database can just stay up.
+  </div>
+
+  <div class="running"><span>Hardware ERP — Local Developer Guide</span><span>Part 4</span></div>
+</div>
+
+<!-- ============ PAGE: DOCKER DEEPER ============ -->
+<div class="page">
+  <p class="eyebrow">Part 5 · About Docker specifically</p>
+  <h1 class="section-title">Docker — What It Is, and When You'd Touch It</h1>
+  <p class="section-intro">You asked specifically how to "connect Docker" — here's the full
+  picture of where it fits, in plain terms.</p>
+
+  <h2 class="sub-title">What Docker actually does here</h2>
+  <p style="color:var(--ink-soft)">Docker runs a program inside a small, sealed, disposable
+  "container" — like a shipping container for software. In this project, Docker's <i>only</i>
+  job during normal day-to-day development is to hold the PostgreSQL database, so that:</p>
+  <ul class="plain">
+    <li>You never have to install PostgreSQL yourself, configure it, or worry about the
+    version matching.</li>
+    <li>It can't quietly break because of something unrelated installed on your Windows PC.</li>
+    <li>Deleting it and starting fresh is one command, with zero risk to anything else on
+    your computer.</li>
+  </ul>
+  <p style="color:var(--ink-soft)">The backend and frontend are <b>not</b> in Docker during
+  normal development — they run directly with Java and Node, because that gives you live
+  reload (the app updates the instant you or Claude change a file) and is much faster to
+  restart than rebuilding a container each time.</p>
+
+  <h2 class="sub-title">The one file that describes it — <code class="inline">docker-compose.yml</code></h2>
+  <p style="color:var(--ink-soft)">This file (in the project root) is a recipe telling Docker
+  "run PostgreSQL 16, call it <code class="inline">hardware-erp-postgres</code>, give it
+  port 5433, and remember its data even if the container restarts." You never need to write or
+  edit this file to develop the app — <code class="inline">docker compose up -d</code> just
+  reads it.</p>
+
+  <h2 class="sub-title">Checking Docker is "connected"</h2>
+  <table class="check">
+    <tr><th>Check</th><th>Command</th><th>What a good result looks like</th></tr>
+    <tr><td>Is Docker Desktop running at all?</td><td><code class="inline">docker info</code></td><td>Prints system details, not an error</td></tr>
+    <tr><td>Is our database container up?</td><td><code class="inline">docker compose ps</code></td><td>Shows <code class="inline">hardware-erp-postgres</code> as <code class="inline">Up … (healthy)</code></td></tr>
+    <tr><td>Can the backend reach it?</td><td><code class="inline">curl localhost:8080/api/actuator/health</code></td><td><code class="inline">"db":{"status":"UP"}</code></td></tr>
+  </table>
+
+  <h2 class="sub-title">The advanced case: putting the <i>whole app</i> in Docker</h2>
+  <p style="color:var(--ink-soft)">There is a second, separate setup — used for actually
+  handing the finished app to a real hardware shop's PC, not for day-to-day development on
+  yours — where Docker runs <i>all three pieces</i> together: database, backend and frontend.
+  You won't need this for normal work, but it exists if you ever want to try it:</p>
+  <div class="term">
+    <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">Git Bash — the "everything in Docker" version</span></div>
+    <div><span class="prompt">$</span> <span class="cmd">cp .env.selfhosted.example .env</span></div>
+    <div class="out">   # open .env and fill in the 5 required values</div>
+    <div><span class="prompt">$</span> <span class="cmd">docker compose -f docker-compose.selfhosted.yml up -d</span></div>
+    <div class="out">   # starts the database, backend AND frontend together
+   # open http://localhost — nothing after it</div>
+  </div>
+  <div class="callout warn">
+    <span class="lbl">Don't mix the two setups</span>
+    Never run both <code class="inline">docker-compose.yml</code> and
+    <code class="inline">docker-compose.selfhosted.yml</code> at the same time — they were
+    deliberately built as separate Docker projects specifically so one's
+    "wipe and start over" command can never delete the other's data, but running both means
+    two backends and two frontends competing for the same ports 8080/5173/80.
+  </div>
+
+  <div class="running"><span>Hardware ERP — Local Developer Guide</span><span>Part 5</span></div>
+</div>
+
+<!-- ============ PAGE: TROUBLESHOOTING 1 ============ -->
+<div class="page">
+  <p class="eyebrow">Part 6 · When something goes wrong</p>
+  <h1 class="section-title">Troubleshooting — Real Errors, Real Fixes</h1>
+  <p class="section-intro">Every error message below is a genuine one, reproduced on this PC
+  while preparing this guide — not a guess at what "might" show up.</p>
+
+  <h3 class="step-title">"Port already in use" — the backend (port 8080)</h3>
+  <p style="color:var(--ink-soft)">This is almost always because an <i>earlier</i> backend
+  window is still running somewhere — often minimized and forgotten.</p>
+  <div class="term">
+    <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">Real error, captured on this PC</span></div>
+    <div class="out"><span class="err">***************************
+APPLICATION FAILED TO START
+***************************</span>
+
+Description:
+
+Web server failed to start. <span class="err">Port 8080 was already in use.</span>
+
+Action:
+
+Identify and stop the process that's listening on port 8080 or configure
+this application to listen on another port.</div>
+  </div>
+  <p style="color:var(--ink-soft)"><b>Fix, easiest first:</b> look through your open windows
+  for another Git Bash/terminal already running <code class="inline">run-local.sh</code>, and
+  close it. If you truly can't find it, force it from a fresh terminal:</p>
+  <div class="term">
+    <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">PowerShell — find and stop whatever owns port 8080</span></div>
+    <div><span class="prompt">PS&gt;</span> <span class="cmd">netstat -ano | findstr :8080</span></div>
+    <div class="out">  TCP    0.0.0.0:8080     0.0.0.0:0    LISTENING    <span class="warn">18432</span>   ← the last number is the Process ID (PID)</div>
+    <div><span class="prompt">PS&gt;</span> <span class="cmd">taskkill /PID 18432 /F</span></div>
+    <div class="out">SUCCESS: The process with PID 18432 has been terminated.</div>
+  </div>
+  <p style="color:var(--ink-soft)">Then run <code class="inline">./scripts/run-local.sh</code> again.</p>
+
+  <h3 class="step-title">"Port already in use" — the frontend (port 5173)</h3>
+  <p style="color:var(--ink-soft)">Unlike the backend, Vite (the frontend tool) does not treat
+  this as an error — it just quietly moves to the next port:</p>
+  <div class="term">
+    <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">Real output, captured on this PC</span></div>
+    <div class="out"><span class="warn">Port 5173 is in use, trying another one...</span>
+
+  VITE v6.4.3  ready in 1090 ms
+
+  ➜  Local:   <span class="ok">http://localhost:5174/</span></div>
+  </div>
+  <div class="callout note">
+    <span class="lbl">This is not a bug</span>
+    Just read the new URL in that message — it will say <code class="inline">5174</code>,
+    <code class="inline">5175</code>, or similar. Open <i>that</i> address in your browser
+    instead of <code class="inline">5173</code>.
+  </div>
+
+  <div class="running"><span>Hardware ERP — Local Developer Guide</span><span>Part 6 · 1 of 2</span></div>
+</div>
+
+<!-- ============ PAGE: TROUBLESHOOTING 2 ============ -->
+<div class="page">
+  <p class="eyebrow">Part 6 · When something goes wrong</p>
+  <h1 class="section-title">Troubleshooting — Continued</h1>
+
+  <h3 class="step-title">"Docker is not running" / Docker commands fail</h3>
+  <div class="term">
+    <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">Real error, captured on this PC</span></div>
+    <div class="out"><span class="err">failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine:
+check if the path is correct and if the daemon is running</span></div>
+  </div>
+  <p style="color:var(--ink-soft)"><b>Fix:</b> Docker Desktop is simply not open (it does not
+  start automatically with Windows unless you've turned that setting on). Open Docker Desktop
+  from the Start menu, wait about 30–60 seconds for the whale icon to settle, then retry
+  <code class="inline">docker compose up -d</code>.</p>
+
+  <h3 class="step-title">Backend script says ".env not found"</h3>
+  <div class="term">
+    <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="label">The script's own real message</span></div>
+    <div class="out"><span class="err">ERROR: /e/Project/hardware-erp/.env not found.</span>
+Create it from the template:  cp .env.example .env</div>
+  </div>
+  <p style="color:var(--ink-soft)"><b>Fix:</b> you're most likely in the wrong folder, or the
+  <code class="inline">.env</code> file got moved/renamed. Run
+  <code class="inline">cd E:\Project\hardware-erp</code> first, confirm the file is there with
+  <code class="inline">ls -la .env</code>, and if it's genuinely missing, follow the message —
+  but never overwrite an existing working <code class="inline">.env</code> with the template.</p>
+
+  <h3 class="step-title">The website loads, but nothing works (spinning, or network errors)</h3>
+  <p style="color:var(--ink-soft)">The frontend (Step 3) can start perfectly well even if the
+  backend (Step 2) isn't running or hasn't finished booting yet — they're independent programs.
+  If the sign-in page appears but clicking "Sign in" does nothing or shows a network error,
+  go back to the backend's terminal window and check for the green
+  <code class="inline">Started HardwareErpApplication</code> line. If it's not there yet, wait;
+  if the window shows a red error block, read Troubleshooting for that specific error.</p>
+
+  <h3 class="step-title">Port 5433 (database) already in use / a stale container fights back</h3>
+  <p style="color:var(--ink-soft)">This usually means the container from a previous session
+  never fully stopped. Ask Docker what's actually running, and clean up the one occupying the
+  name:</p>
+  <div class="term">
+    <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+    <div><span class="prompt">$</span> <span class="cmd">docker compose down</span></div>
+    <div><span class="prompt">$</span> <span class="cmd">docker compose up -d</span></div>
+  </div>
+  <p style="color:var(--ink-soft)">This restarts cleanly without touching your actual data
+  (only <code class="inline">-v</code> deletes data — see Part 4).</p>
+
+  <h3 class="step-title">The backend takes over a minute and you're not sure if it's stuck</h3>
+  <p style="color:var(--ink-soft)">It probably isn't. The very first start after a restart
+  measured 92 seconds on this PC (compiling + database migrations + security setup). As long
+  as new lines keep appearing in the terminal every few seconds, it's working. Only worry if
+  the terminal goes completely silent for several minutes <i>and</i> shows no red error text.</p>
+
+  <div class="running"><span>Hardware ERP — Local Developer Guide</span><span>Part 6 · 2 of 2</span></div>
+</div>
+
+<!-- ============ PAGE: CHEAT SHEET ============ -->
+<div class="page">
+  <p class="eyebrow">Part 7 · For next time</p>
+  <h1 class="section-title">Quick Reference — Once You've Done It Once</h1>
+  <p class="section-intro">Everything above in three copy-paste blocks. Run each in the folder
+  named, in order, each in its own terminal window that you leave open.</p>
+
+  <div class="cheat-box">
+    <h5><span class="n">1</span> Database — any terminal, project root</h5>
+    <div class="term"><div><span class="prompt">$</span> <span class="cmd">cd E:\Project\hardware-erp &amp;&amp; docker compose up -d</span></div></div>
+  </div>
+
+  <div class="cheat-box">
+    <h5><span class="n">2</span> Backend — Git Bash only, project root</h5>
+    <div class="term"><div><span class="prompt">$</span> <span class="cmd">./scripts/run-local.sh</span></div></div>
+  </div>
+
+  <div class="cheat-box">
+    <h5><span class="n">3</span> Frontend — Git Bash, frontend folder</h5>
+    <div class="term"><div><span class="prompt">$</span> <span class="cmd">cd frontend &amp;&amp; node ./node_modules/vite/bin/vite.js</span></div></div>
+    <p style="color:var(--terminal-dim); font-size:10.5px; margin:6px 0 0 0;">(PowerShell users: <code style="color:#fff">npm run dev</code> instead)</p>
+  </div>
+
+  <div class="cheat-box">
+    <h5>→ Then open</h5>
+    <div class="term"><div class="out" style="color:#fff">http://localhost:5173</div></div>
+  </div>
+
+  <div class="cheat-box">
+    <h5>✕ To stop everything</h5>
+    <div class="term"><div class="out" style="color:#fff">Ctrl+C in the backend and frontend windows, then:</div><div><span class="prompt">$</span> <span class="cmd">docker compose down</span></div></div>
+  </div>
+
+  <div class="callout danger" style="margin-top:18px;">
+    <span class="lbl">Never, unless you mean it</span>
+    <code class="inline">docker compose down -v</code> — the <code class="inline">-v</code>
+    permanently deletes all database data.
+  </div>
+
+  <div class="running"><span>Hardware ERP — Local Developer Guide</span><span>Part 7 · Cheat sheet</span></div>
+</div>
+
+</body>
+</html>
